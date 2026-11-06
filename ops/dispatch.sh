@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
-# shellcheck source=ops/report.sh
-source "${BASH_SOURCE[0]%/*}/report.sh"
+# shellcheck source=ops/lib.sh
+source "${BASH_SOURCE[0]%/*}/lib.sh"
 [[ $# == 2 ]] || loom_error 'usage: dispatch.sh <consumer.toml> <issue#>'
 [[ $2 =~ ^[1-9][0-9]*$ ]] || loom_error 'issue must be a positive integer'
 [[ -f $1 ]] || loom_error 'consumer config not found'
@@ -42,33 +42,48 @@ elif git -C "$checkout" show-ref --verify --quiet "refs/heads/$default_branch"; 
 else
     loom_error 'default branch is not available locally; conductor must fetch it first'
 fi
+base_sha=$(git -C "$checkout" rev-parse --verify "$base^{commit}")
 loom_init
 loom_lock
+# One ticket, one live worker. Ended assignments only raise the attempt number.
+attempt=1
 shopt -s nullglob
 for file in "$LOOM_STATE"/*.json; do
     loom_validate "$file"
-    if jq -e --arg repo "$repo" --argjson ticket "$2" '.repo == $repo and .ticket == $ticket' "$file" >/dev/null; then
-        pid=$(jq -r '.worker_pid // empty' "$file")
-        [[ -z $pid ]] || ! kill -0 "$pid" 2>/dev/null || loom_error 'ticket already has a live assignment'
-    fi
+    jq -e --arg repo "$repo" --argjson ticket "$2" '.repo == $repo and .ticket == $ticket' "$file" >/dev/null || continue
+    ! loom_alive "$file" || loom_error "ticket already has a live assignment: $(basename "$file" .json)"
+    n=$(jq -r '.attempt' "$file")
+    (( n < attempt )) || attempt=$((n + 1))
 done
 mkdir -p "$worktrees"
-worktree="$worktrees/$short"
-[[ ! -e $worktree && ! -L $worktree ]] || loom_error 'worktree path already exists; conductor must resolve it'
-if git -C "$checkout" show-ref --verify --quiet "refs/heads/$short"; then
-    loom_error 'ticket branch already exists; conductor must resolve it'
-fi
-id="$short-$(jq -nr 'now | floor')-$$-$RANDOM"
-[[ ! -e $LOOM_STATE/$id.json ]] || loom_error 'assignment id collision'
-git -C "$checkout" worktree add -b "$short" "$worktree" "$base" >&2
-[[ ! -e $worktree/WORK.md && ! -L $worktree/WORK.md ]] || loom_error 'checkout already contains WORK.md; worktree retained for inspection'
+workdir="$worktrees/$short.$attempt"
+[[ ! -e $workdir && ! -L $workdir ]] || loom_error "workdir already exists; conductor must resolve it: $workdir"
+id="$short.$attempt"
+[[ ! -e $LOOM_STATE/$id.json ]] || loom_error "assignment id collision: $id"
+# A private clone, not a worktree: the worker owns its whole .git, so a
+# sandboxed executor can commit. The clone has no remote, so it cannot push.
+git clone -q --no-checkout "$checkout" "$workdir"
+git -C "$workdir" remote remove origin
+git -C "$workdir" fetch -q "$checkout" "$base_sha"
+git -C "$workdir" checkout -q -b "$short" "$base_sha"
+for key in user.name user.email; do
+    if value=$(git -C "$checkout" config --get "$key"); then
+        git -C "$workdir" config "$key" "$value"
+    fi
+done
+printf 'WORK.md\nREPORT.md\n' >> "$workdir/.git/info/exclude"
 {
     printf '# %s\n\n%s\n\n## Consumer laws\n\n' "$(jq -r '.title' <<< "$issue")" "$mandate"
-    jq -r '.laws[]' <<< "$config"
-} > "$worktree/WORK.md"
-jq -n --argjson ticket "$2" --arg repo "$repo" --arg short "$short" --arg worktree "$worktree" '
-  {ticket: $ticket, repo: $repo, short_name: $short, worktree: $worktree,
-   worker_pid: null, started_at: (now | todateiso8601), reports: []}
+    jq -r '.laws[] | "- " + .' <<< "$config"
+    printf '\n## How to report\n\nEnd every turn by appending one line to REPORT.md in this directory:\n\n    state: <ready|blocked|failed|waiting> — <one-line fact>\n\nready = a reviewable result is committed on branch %s; blocked = one concrete question; failed = what failed and why; waiting = turn done, nothing owed.\n' "$short"
+} > "$workdir/WORK.md"
+jq -n --argjson ticket "$2" --arg repo "$repo" --arg short "$short" \
+      --arg workdir "$workdir" --arg checkout "$checkout" --arg base "$base_sha" \
+      --argjson attempt "$attempt" '
+  {ticket: $ticket, repo: $repo, short_name: $short, attempt: $attempt,
+   workdir: $workdir, checkout: $checkout, base_sha: $base,
+   worker_pid: null, worker_start: null,
+   started_at: (now | todateiso8601), reports: []}
 ' > "$LOOM_STATE/.pending"
 mv "$LOOM_STATE/.pending" "$LOOM_STATE/$id.json"
-printf '%s\n%s\n' "$worktree" "$id"
+printf '%s\n%s\n' "$workdir" "$id"
