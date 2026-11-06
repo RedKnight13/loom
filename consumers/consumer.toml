@@ -1,0 +1,10 @@
+# First consumer: the remembrance engine.
+repo      = "example/consumer"
+checks    = "python3 -m pytest -q tests/"
+worktrees = "~/work/consumer-worktrees"
+laws = [
+  "Workers never push; only the conductor pushes, reviews and merges, under the owner's GitHub name.",
+  "Nothing identifying the owner enters any file, log, or commit.",
+  "GPU compute on build2 only; no paid API credits spent by a worker.",
+  "Captured exit codes only; a check that was not run is reported as not run.",
+]
