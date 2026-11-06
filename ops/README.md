@@ -1,155 +1,78 @@
-# Loom operations
+# Loom operations (v1)
 
-Run these scripts with Bash (3.2 or later). Runtime tools are Git, GitHub CLI
-(`gh`), and `jq` (1.6 or later), plus the ordinary filesystem utilities
-`mkdir`, `mv`, `rm`, and `rmdir`. The self-test also uses `chmod` and `cat`.
-There is no service, language runtime, TOML package, or worker launcher.
-ShellCheck is needed only for linting.
+Bash 3.2+, git, `gh`, `jq` 1.6+, and `ps`. No service, no runtime, no
+installer. ShellCheck only for linting.
 
-## Dispatch
+## The lifecycle
 
 ```bash
-LOOM_REPO=/path/to/consumer bash ops/dispatch.sh /path/to/consumer.toml 7
+# 1. Eval happened: the Ticket is a GitHub issue with a "## Mandate" block.
+LOOM_REPO=/path/to/consumer bash ops/dispatch.sh consumers/<repo>.toml 42
+#    → prints the workdir and the assignment id, e.g. pyz.1
+
+# 2. Run any worker in it (blocks until the worker exits; background it).
+bash ops/launch.sh pyz.1 -- codex exec -s workspace-write "Read WORK.md ..." &
+
+# 3. Every heartbeat:
+bash ops/watchdog.sh          # silent when healthy
+bash ops/status.sh            # only what waits for a person
+
+# 4. On ready: bring the branch home, re-run the checks yourself, then PR.
+bash ops/collect.sh pyz.1
 ```
 
-`LOOM_REPO` selects an existing local consumer checkout; it defaults to the
-current directory. The config's `repo` is the GitHub `organization/repository`,
-not a local path. Dispatch reads the issue's number, title and body with
-`gh issue view`, and its repository's default branch with `gh repo view`.
-These are the only network calls. It never clones, fetches, pushes, writes to
-GitHub, or starts a worker.
+## What each script guarantees
 
-The config accepts the registration format shown in `PROTOCOL.md`:
+| Script | Guarantee |
+| --- | --- |
+| `dispatch.sh <consumer.toml> <issue#>` | Reads the issue's Mandate via `gh`; refuses if the ticket already has a live worker. Creates `<worktrees>/<short>.<attempt>` as a **private clone** (own `.git`, **no remote**, so it can commit but cannot push), on branch `<short>` at the default branch, with the consumer's git identity. Writes `WORK.md` (mandate + laws + how to report), excluded from git. Records the assignment. |
+| `launch.sh <id> -- <cmd...>` | Runs the worker in its workdir with **no stdin** and its **own process group**; records PID + start time; logs to `$LOOM_STATE/<id>.log`. On exit, harvests the newest `state:` line the worker wrote **this launch** (older lines are skipped by offset). Exit with no line → `failed / worker_exit_no_report (exit N)`. |
+| `watchdog.sh [--limit-min N]` | Live worker silent past N minutes (default 30) → kills its **whole process group**, records `failed / watchdog_kill` once, keeps the workdir. Worker gone without its launcher (e.g. the conductor session died) → harvests its report or records `failed / worker_lost_no_report`. A recycled PID never matches the recorded start time and is never signalled. |
+| `status.sh` | One line per assignment whose latest report is `ready`, `blocked` or `failed` and has no live worker: `id<TAB>state<TAB>fact`. Silent when healthy. |
+| `collect.sh <id>` | Fetches the ticket branch from the worker clone into the consumer checkout and prints the commits over the recorded base. Never pushes. |
+| `report.sh <id> <state> "<fact>"` | Conductor-side manual report (e.g. recording a review verdict). |
+
+## The worker contract
+
+A worker only ever:
+
+1. reads `WORK.md` in its workdir,
+2. works and commits on its branch inside the workdir,
+3. ends its turn by appending one line to `REPORT.md`:
+
+```
+state: <ready|blocked|failed|waiting> — <one-line fact>
+```
+
+It never writes `$LOOM_STATE`, never pushes (the clone has no remote), and
+never leaves its workdir. Everything else is the conductor's.
+
+## State
+
+`$LOOM_STATE` (default `~/.loom`), conductor-only: one JSON record per
+assignment plus its log. Writes take a lock that records its owner; a lock
+whose owner died is broken automatically, a live one is waited on for
+`LOOM_LOCK_WAIT` seconds (default 10). Records are validated on every read;
+a corrupt record stops the scripts instead of reading as healthy.
+
+## Consumer config
 
 ```toml
-repo = "example/project"
-checks = "bash check.sh"
-worktrees = "~/work/project-worktrees"
-laws = [
-  "Workers never push.",
-  "Captured exit codes only.",
-]
+repo      = "owner/name"                  # where Tickets (issues) live
+checks    = "python3 -m pytest -q"        # what the conductor re-runs on ready
+worktrees = "~/Work/name-workdirs"        # where workdir clones go
+laws      = ["…", "…"]                    # copied verbatim into every WORK.md
 ```
 
-This deliberately bounded TOML reader supports double-quoted strings with
-JSON-compatible escapes, multiline arrays of those strings, trailing array
-commas, blank lines, and `#` comments outside strings. Required keys are
-`repo`, `worktrees`, and `laws`; `checks` is accepted but not executed.
-Duplicate/unknown keys and other TOML constructs are rejected. Paths must be
-absolute or start with `~/`; shell substitutions are never evaluated.
+A bounded TOML subset: double-quoted strings, string arrays (multiline,
+trailing comma), `#` comments outside strings. Unknown or duplicate keys are
+rejected; nothing is ever evaluated. `checks` is documentation for the
+conductor; loom never executes it.
 
-The issue must contain a `## Mandate` section with a line such as
-`**Ticket short name:** fixture-task` (an optional trailing HTML comment is
-accepted). Short names consist of lowercase letters/digits separated by
-single hyphens. The section ends at the next level-two heading or end of body.
-The worktree and new branch use this short name. The base is the locally
-available `origin/<default-branch>`, falling back to the local default branch.
-The conductor is responsible for fetching a current base beforehand.
+## Proof
 
-Dispatch writes the issue title, mandate, and verbatim consumer laws into
-`WORK.md`. An existing destination, branch, `WORK.md`, or live assignment for
-the ticket causes failure. It never overwrites a prior assignment or removes
-a worktree. If an error occurs after worktree creation, the worktree is kept
-for conductor inspection. Re-dispatch after a prior assignment requires the
-conductor to resolve the existing branch and worktree first.
-
-On success stdout is exactly two lines: the worktree path, then the assignment
-ID. Git progress and errors go to stderr.
-
-## Assignment records and worker attachment
-
-`LOOM_STATE` defaults to `~/.loom`. Each assignment lives directly in
-`$LOOM_STATE/<assignment-id>.json`:
-
-```json
-{
-  "ticket": 7,
-  "repo": "example/project",
-  "short_name": "fixture-task",
-  "worktree": "/path/to/worktrees/fixture-task",
-  "worker_pid": null,
-  "started_at": "2026-01-01T00:00:00Z",
-  "reports": []
-}
-```
-
-Timestamps are UTC ISO 8601 strings. Each report is an object with `at`,
-`state`, and `fact`. Dispatch leaves `worker_pid` null. The conductor launches
-the chosen worker, then attaches its positive numeric PID in this field.
-It must use the same state lock and atomic replacement described below and
-preserve all existing reports. Clear the PID after the worker exits. Start
-the worker promptly: until the first report, the deadline is `started_at`.
-
-State writers acquire `$LOOM_STATE/.lock` with `mkdir`, write `.pending`, and
-rename it onto the record. A competing writer fails nonzero rather than
-losing an appended report; retry after the operation finishes. Normal exits
-remove the lock. If a writer is forcibly killed, the conductor must check
-that no writer is active before removing an abandoned `.pending` and `.lock`.
-Do not edit records concurrently without this lock. The state directory and
-registered consumer configuration are trusted, local conductor inputs.
-
-## Report
-
-```bash
-bash ops/report.sh assignment-id ready "Checks passed; review the diff."
-bash ops/report.sh assignment-id blocked "Which compatibility target applies?"
-```
-
-Only `ready`, `blocked`, `failed`, and `waiting` are accepted. The ID must refer
-to an existing valid record and the fact must be nonempty. The new timestamped
-report is appended without replacing history. Exit 0 means it was recorded;
-invalid arguments, corrupt state, lock contention, or write errors return
-nonzero. Successful reporting is silent. `report.sh` also supplies the private
-state helpers sourced by the other scripts; sourcing it does not record a report.
-
-## Watchdog
-
-```bash
-bash ops/watchdog.sh                 # 30 minutes
-bash ops/watchdog.sh --limit-min 10
-```
-
-For each live numeric worker PID, compare the newest report timestamp (or
-`started_at` if there are no reports) to the deadline. A stale worker receives
-SIGKILL, ensuring a hung process cannot ignore termination. The watchdog then
-appends `failed` / `watchdog_kill`, clears the PID, and prints
-`<assignment-id> failed watchdog_kill`. It keeps the worktree and all previous
-reports. Fresh, absent, and dead PIDs produce no output. Dead PIDs are not
-silently classified as failed. A second run does not repeat a completed kill.
-The limit is a nonnegative integer in minutes; zero permits immediate expiry.
-
-PID-only tracking cannot distinguish a reused OS PID. The conductor must keep
-the field current and point it at the actual worker, not a process group or
-launcher. The watchdog signals only that PID, not its descendants. Errors go
-to stderr with a nonzero exit; a kill followed by a storage error is not a
-successfully recorded failure and requires conductor inspection.
-
-## Status
-
-```bash
-bash ops/status.sh
-```
-
-Only the latest report determines what currently needs a person. Each
-`blocked`, `ready`, or `failed` assignment prints one TSV line containing ID,
-state, and fact. Tabs/newlines/backslashes in facts are escaped, keeping each
-assignment on one line. `waiting`, no reports, or no assignments are silent.
-Malformed records produce an error instead of appearing healthy. Status does
-not modify state.
-
-## Verification
-
-```bash
-bash ops/selftest.sh
-shellcheck ops/*.sh
-```
-
-The self-test creates its throwaway repository, state, and worktrees under a
-temporary `ops/.selftest-*` directory and removes it on exit. It stubs only
-GitHub reads, makes no network calls, and uses disposable Bash child PIDs in
-place of real workers. Bash may print expected `Killed: 9` job notifications.
-It checks default-branch dispatch, paths with spaces, copied laws, duplicate
-dispatch rejection, report validation and preserved history, status filtering
-and escaping, fresh/stale/never-reporting workers, retained worktrees,
-watchdog repeat safety, invalid limits, lock contention, and corrupt records.
-It does not access real assignments. Both commands must exit 0.
+`bash ops/selftest.sh` runs the whole lifecycle offline against a throwaway
+repo with a stubbed `gh` and fake workers: ready, blocked, silent exit, hung
+worker with a child process, lost launcher, recycled PID, stale and live
+locks, corrupt state. Every guarantee in the table above has a test that a
+deliberate mutation of the code makes fail.

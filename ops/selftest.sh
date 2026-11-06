@@ -1,26 +1,32 @@
 #!/usr/bin/env bash
+# Offline self-test: a throwaway consumer repo, a stubbed gh, disposable
+# fake workers. No network, no pushes, no real worker is signalled.
 set -euo pipefail
 ops=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
-scratch="$ops/.selftest-$$-$RANDOM"
-worker=
+scratch=$(mktemp -d "${TMPDIR:-/tmp}/loom-selftest.XXXXXX")
+pids=()
 cleanup() {
-    if [[ -n $worker ]]; then
-        kill -KILL "$worker" 2>/dev/null || :
-        wait "$worker" 2>/dev/null || :
-    fi
+    local p
+    for p in ${pids[@]+"${pids[@]}"}; do kill -KILL "$p" 2>/dev/null || :; done
     rm -rf "$scratch"
 }
 trap cleanup EXIT
+fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
+pass() { printf 'ok  %s\n' "$*"; }
+
 mkdir -p "$scratch/bin" "$scratch/repo"
-export LOOM_STATE="$scratch/state" LOOM_REPO="$scratch/repo"
+export LOOM_STATE="$scratch/state" LOOM_REPO="$scratch/repo" LOOM_LOCK_WAIT=2
 export GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null
-export GIT_AUTHOR_NAME='Loom Test' GIT_AUTHOR_EMAIL='test@example.invalid'
-export GIT_COMMITTER_NAME="$GIT_AUTHOR_NAME" GIT_COMMITTER_EMAIL="$GIT_AUTHOR_EMAIL"
-git -C "$LOOM_REPO" init -q -b main
-git -C "$LOOM_REPO" -c commit.gpgsign=false commit -q --allow-empty -m fixture
-base=$(git -C "$LOOM_REPO" rev-parse HEAD)
-git -C "$LOOM_REPO" checkout -q -b unrelated
-git -C "$LOOM_REPO" -c commit.gpgsign=false commit -q --allow-empty -m unrelated
+repo=$LOOM_REPO
+git -C "$repo" init -q -b main
+git -C "$repo" config user.name 'Loom Fixture'
+git -C "$repo" config user.email 'fixture@example.invalid'
+git -C "$repo" config commit.gpgsign false
+git -C "$repo" commit -q --allow-empty -m fixture
+base=$(git -C "$repo" rev-parse HEAD)
+git -C "$repo" checkout -q -b unrelated
+git -C "$repo" commit -q --allow-empty -m unrelated
+
 cat > "$scratch/bin/gh" <<'EOF'
 #!/usr/bin/env bash
 set -eu
@@ -34,78 +40,146 @@ case "$1 $2" in
     *) exit 99 ;;
 esac
 EOF
+cat > "$scratch/bin/w-ready" <<'EOF'
+printf 'built\n' > out.txt
+git add out.txt
+git commit -q -m 'build out.txt'
+printf 'state: ready — built out.txt\n' >> REPORT.md
+EOF
+cat > "$scratch/bin/w-blocked" <<'EOF'
+printf 'state: blocked — Which license should the new file carry?\n' >> REPORT.md
+EOF
+printf 'exit 3\n' > "$scratch/bin/w-silent"
+cat > "$scratch/bin/w-hang" <<'EOF'
+sleep 1000 &
+printf '%s\n' "$!" > "$GRANDCHILD"
+wait
+EOF
 chmod +x "$scratch/bin/gh"
 export PATH="$scratch/bin:$PATH"
 cat > "$scratch/consumer.toml" <<EOF
 repo = "example/fixture" # test comments
 checks = "true"
-worktrees = "$scratch/worktrees with spaces"
+worktrees = "$scratch/work dirs"
 laws = [
   "Workers never push.",
   "Keep # inside strings.",
 ]
 EOF
-fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
-[[ -f $ops/dispatch.sh ]] || fail 'dispatch.sh is missing'
-result=$(bash "$ops/dispatch.sh" "$scratch/consumer.toml" 7)
-worktree=${result%$'\n'*}
-assignment=${result##*$'\n'}
-record="$LOOM_STATE/$assignment.json"
-[[ -f $worktree/WORK.md ]] || fail 'no mandate'
-[[ $(git -C "$worktree" branch --show-current) == fixture-task ]] || fail 'wrong branch'
-[[ $(git -C "$worktree" rev-parse HEAD) == "$base" ]] || fail 'worktree not based on default branch'
-[[ $(< "$worktree/WORK.md") == *'Keep # inside strings.'* ]] || fail 'laws missing'
-jq -e '.ticket == 7 and .repo == "example/fixture" and .short_name == "fixture-task" and .worker_pid == null and .reports == []' "$record" >/dev/null
-if bash "$ops/dispatch.sh" "$scratch/consumer.toml" 7 >/dev/null 2>&1; then fail 'duplicate dispatch accepted'; fi
-[[ -z $(bash "$ops/status.sh") ]] || fail 'unreported assignment needs no person'
-if bash "$ops/report.sh" "$assignment" unknown bad 2>/dev/null; then fail 'invalid state accepted'; fi
+
+dispatch() { bash "$ops/dispatch.sh" "$scratch/consumer.toml" 7; }
+rec() { printf '%s/%s.json' "$LOOM_STATE" "$1"; }
+age() {  # make an assignment look silent since 2000
+    jq '.started_at = "2000-01-01T00:00:00Z" | if has("launched_at") then .launched_at = "2000-01-01T00:00:00Z" else . end | .reports |= map(.at = "2000-01-01T00:00:00Z")' "$(rec "$1")" > "$scratch/aged"
+    mv "$scratch/aged" "$(rec "$1")"
+}
+await_pid() {
+    local _
+    for _ in $(seq 1 50); do
+        [[ $(jq -r '.worker_pid // empty' "$(rec "$1")") ]] && return 0
+        sleep 0.1
+    done
+    fail "worker pid never recorded for $1"
+}
+
+# --- dispatch: a private clone on the ticket branch, at the default branch ---
+out=$(dispatch)
+work1=${out%$'\n'*}; id1=${out##*$'\n'}
+[[ $id1 == fixture-task.1 ]] || fail "unexpected id $id1"
+[[ $(git -C "$work1" branch --show-current) == fixture-task ]] || fail 'wrong branch'
+[[ $(git -C "$work1" rev-parse HEAD) == "$base" ]] || fail 'not based on default branch'
+[[ -z $(git -C "$work1" remote) ]] || fail 'clone must have no remote'
+[[ -f $work1/.git/HEAD ]] || fail 'workdir must own its .git (clone, not worktree)'
+[[ $(< "$work1/WORK.md") == *'Keep # inside strings.'*'How to report'* ]] || fail 'mandate/laws/report contract missing'
+[[ -z $(git -C "$work1" status --porcelain) ]] || fail 'WORK.md must be excluded from git'
+jq -e '.attempt == 1 and .worker_pid == null and .reports == [] and .base_sha == "'"$base"'"' "$(rec "$id1")" >/dev/null || fail 'record shape'
+pass 'dispatch makes a private, remote-less clone with mandate'
+
+# --- conductor report validation ---
+if bash "$ops/report.sh" "$id1" unknown bad 2>/dev/null; then fail 'invalid state accepted'; fi
 if bash "$ops/report.sh" ../escape ready bad 2>/dev/null; then fail 'unsafe id accepted'; fi
 if bash "$ops/report.sh" missing ready bad 2>/dev/null; then fail 'missing assignment accepted'; fi
-jq -e '.reports == []' "$record" >/dev/null
-bash "$ops/report.sh" "$assignment" blocked 'Which branch?'
-[[ $(bash "$ops/status.sh") == *'blocked'*'Which branch?'* ]] || fail 'blocked not visible'
-bash "$ops/report.sh" "$assignment" ready $'review\nthis'
-status=$(bash "$ops/status.sh")
-[[ $status == *'ready'* && $status != *$'\n'* ]] || fail 'status must be one line'
-bash "$ops/report.sh" "$assignment" waiting 'continuing'
-jq -e '[.reports[].state] == ["blocked", "ready", "waiting"] and .reports[0].fact == "Which branch?"' "$record" >/dev/null
-[[ -z $(bash "$ops/status.sh") ]] || fail 'waiting should be silent'
-# A disposable Bash child stands in for a worker; no real worker is signalled.
-bash -c 'while :; do :; done' &
-worker=$!
-jq --argjson pid "$worker" '.worker_pid = $pid' "$record" > "$record.tmp"
-mv "$record.tmp" "$record"
-# An old start must not override a recent report.
-jq '.started_at = "2000-01-01T00:00:00Z"' "$record" > "$record.tmp"
-mv "$record.tmp" "$record"
-[[ -z $(bash "$ops/watchdog.sh") ]] || fail 'fresh reports must not trigger watchdog'
-kill -0 "$worker"
-jq '.started_at = "2000-01-01T00:00:00Z" | .reports |= map(.at = "2000-01-01T00:00:00Z")' "$record" > "$record.tmp"
-mv "$record.tmp" "$record"
-action=$(bash "$ops/watchdog.sh" --limit-min 1)
-[[ $action == *"$assignment"*watchdog_kill* ]] || fail 'watchdog action missing'
-wait "$worker" 2>/dev/null || :
-worker=
-jq -e '.worker_pid == null and (.reports | length) == 4 and .reports[-1].state == "failed" and .reports[-1].fact == "watchdog_kill"' "$record" >/dev/null
-[[ -d $worktree ]] || fail 'watchdog removed worktree'
-[[ $(bash "$ops/status.sh") == *failed*watchdog_kill* ]] || fail 'failure not visible'
-[[ -z $(bash "$ops/watchdog.sh" --limit-min 1) ]] || fail 'watchdog repeated action'
+[[ -z $(bash "$ops/status.sh") ]] || fail 'fresh assignment needs no person'
+pass 'report validation; fresh assignment is silent'
+
+# --- D1 shape: worker commits and reports ready; conductor collects ---
+out=$(bash "$ops/launch.sh" "$id1" -- bash "$scratch/bin/w-ready")
+[[ $out == *'ready (worker exit 0)'* ]] || fail "launch outcome: $out"
+jq -e '.worker_pid == null and .reports[-1].state == "ready" and .reports[-1].fact == "built out.txt" and has("launched_at")' "$(rec "$id1")" >/dev/null || fail 'ready not harvested'
+[[ $(bash "$ops/status.sh") == "$id1"$'\t'ready$'\t''built out.txt' ]] || fail 'status must show exactly the ready line'
+out=$(bash "$ops/collect.sh" "$id1")
+[[ $out == *'1 commit(s) over base'* ]] || fail "collect: $out"
+[[ $(git -C "$repo" log -1 --format=%s fixture-task) == 'build out.txt' ]] || fail 'branch not in checkout'
+[[ $(git -C "$repo" log -1 --format=%an fixture-task) == 'Loom Fixture' ]] || fail 'consumer identity not carried into clone'
+pass 'launch harvests ready; collect brings the branch home'
+
+# --- D2/D4: hung worker refused a twin, killed with its children, re-dispatchable ---
+out=$(dispatch)
+id2=${out##*$'\n'}
+[[ $id2 == fixture-task.2 ]] || fail 'ended assignment must allow attempt 2'
+export GRANDCHILD="$scratch/grandchild"
+bash "$ops/launch.sh" "$id2" -- bash "$scratch/bin/w-hang" > "$scratch/launch2.out" 2>&1 &
+launcher=$!; pids+=("$launcher")
+await_pid "$id2"
+worker=$(jq -r '.worker_pid' "$(rec "$id2")"); pids+=("$worker")
+for _ in $(seq 1 30); do [[ -s $GRANDCHILD ]] && break; sleep 0.1; done
+grandchild=$(< "$GRANDCHILD"); pids+=("$grandchild")
+if dispatch >/dev/null 2>&1; then fail 'second live assignment accepted (D4)'; fi
+[[ -z $(bash "$ops/watchdog.sh") ]] || fail 'fresh worker must not trip the watchdog'
+kill -0 "$worker" || fail 'watchdog killed a fresh worker'
+age "$id2"
+[[ $(bash "$ops/watchdog.sh" --limit-min 1) == "$id2 failed watchdog_kill" ]] || fail 'watchdog action missing'
+wait "$launcher" 2>/dev/null || :
+sleep 0.3
+! kill -0 "$worker" 2>/dev/null || fail 'worker survived'
+! kill -0 "$grandchild" 2>/dev/null || fail "worker's child survived (process group not killed)"
+[[ $(< "$scratch/launch2.out") == *'already settled by watchdog'* ]] || fail 'launcher double-reported'
+jq -e '[.reports[].state] == ["failed"] and .reports[0].fact == "watchdog_kill" and .worker_pid == null' "$(rec "$id2")" >/dev/null || fail 'watchdog record'
+[[ -d $(jq -r '.workdir' "$(rec "$id2")") ]] || fail 'watchdog must keep the workdir'
+[[ -z $(bash "$ops/watchdog.sh" --limit-min 1) ]] || fail 'watchdog repeated an action'
 if bash "$ops/watchdog.sh" --limit-min nope 2>/dev/null; then fail 'invalid limit accepted'; fi
-# A worker that never reports is timed from started_at.
-bash -c 'while :; do :; done' &
-worker=$!
-jq --argjson pid "$worker" '.worker_pid = $pid | .reports = []' "$record" > "$LOOM_STATE/never-reported.json"
-[[ $(bash "$ops/watchdog.sh" --limit-min 1) == 'never-reported failed watchdog_kill' ]] || fail 'missing first-report deadline'
-wait "$worker" 2>/dev/null || :
-worker=
-jq -e '.reports[0].fact == "watchdog_kill"' "$LOOM_STATE/never-reported.json" >/dev/null
-# The global lock must reject a competing writer without changing history.
-mkdir "$LOOM_STATE/.lock"
-if bash "$ops/report.sh" "$assignment" ready 'lost update' 2>/dev/null; then fail 'lock ignored'; fi
-rmdir "$LOOM_STATE/.lock"
-jq -e '(.reports | length) == 4' "$record" >/dev/null
-# Malformed records must not be treated as healthy.
+pass 'hung worker: twin refused, group killed, recorded once, workdir kept'
+
+# --- silent exit, then a blocked turn, then report_offset ignores old lines ---
+out=$(dispatch); id3=${out##*$'\n'}
+[[ $id3 == fixture-task.3 ]] || fail 're-dispatch after watchdog must yield exactly attempt 3'
+records=("$LOOM_STATE"/*.json)
+[[ ${#records[@]} == 3 ]] || fail 'expected exactly three records'
+bash "$ops/launch.sh" "$id3" -- bash "$scratch/bin/w-silent" >/dev/null
+jq -e '.reports[-1].state == "failed" and .reports[-1].fact == "worker_exit_no_report (exit 3)"' "$(rec "$id3")" >/dev/null || fail 'silent exit not failed'
+bash "$ops/launch.sh" "$id3" -- bash "$scratch/bin/w-blocked" >/dev/null
+st=$(bash "$ops/status.sh" | grep "^$id3")
+[[ $st == "$id3"$'\t'blocked$'\t''Which license should the new file carry?' ]] || fail "blocked line: $st"
+bash "$ops/launch.sh" "$id3" -- bash "$scratch/bin/w-silent" >/dev/null
+jq -e '[.reports[].state] == ["failed","blocked","failed"]' "$(rec "$id3")" >/dev/null || fail 'old REPORT.md line was re-harvested'
+pass 'silent exit fails; blocked shows its one question; old lines never re-read'
+
+# --- launcher lost: harvest the report; a recycled PID is never signalled ---
+out=$(dispatch); work4=${out%$'\n'*}; id4=${out##*$'\n'}
+printf 'state: ready — finished before its launcher died\n' >> "$work4/REPORT.md"
+sleep 1000 & stranger=$!; pids+=("$stranger")
+jq --argjson pid "$stranger" '.worker_pid = $pid | .worker_start = "Thu Jan  1 00:00:00 2001" | .launched_at = "2000-01-01T00:00:00Z" | .report_offset = 0' "$(rec "$id4")" > "$scratch/lost"
+mv "$scratch/lost" "$(rec "$id4")"
+[[ $(bash "$ops/watchdog.sh" --limit-min 1) == "$id4 ready worker_gone" ]] || fail 'lost worker not harvested'
+kill -0 "$stranger" || fail 'watchdog signalled a recycled PID'
+jq -e '.worker_pid == null and .reports[-1].fact == "finished before its launcher died"' "$(rec "$id4")" >/dev/null || fail 'lost harvest record'
+pass 'lost launcher harvested; recycled PID left alone'
+
+# --- the lock: a live holder blocks, a dead holder is broken ---
+n=$(jq '.reports | length' "$(rec "$id1")")
+mkdir "$LOOM_STATE/.lock"; printf '%s\n' "$$" > "$LOOM_STATE/.lock/owner"
+if LOOM_LOCK_WAIT=0 bash "$ops/report.sh" "$id1" ready 'lost update' 2>/dev/null; then fail 'live lock ignored'; fi
+bash -c 'exit 0' & dead=$!; wait "$dead"
+printf '%s\n' "$dead" > "$LOOM_STATE/.lock/owner"
+bash "$ops/report.sh" "$id1" waiting 'after stale lock' || fail 'stale lock not broken'
+[[ $(jq '.reports | length' "$(rec "$id1")") == $((n + 1)) ]] || fail 'lock history'
+[[ ! -d $LOOM_STATE/.lock ]] || fail 'lock not released'
+pass 'live lock holds, dead lock breaks'
+
+# --- corrupt state is never treated as healthy ---
 printf '{' > "$LOOM_STATE/broken.json"
 if bash "$ops/status.sh" >/dev/null 2>&1; then fail 'corrupt state ignored'; fi
 rm "$LOOM_STATE/broken.json"
-printf 'PASS: dispatch → report → watchdog → status\n'
+pass 'corrupt record refused'
+
+printf 'PASS: dispatch → launch → report/harvest → watchdog → status → collect\n'
