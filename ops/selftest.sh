@@ -375,6 +375,7 @@ case "$1" in
     orchestration)
         case "$2" in
             worker-start)
+                [[ ${ORCA_STUB_FAIL:-0} != unknown ]] || { echo '{"ok":false,"result":{"dispatchId":"disp-unknown","state":"failed","failedStage":"agent_readiness"}}'; exit 1; }
                 [[ ${ORCA_STUB_FAIL:-0} == 0 ]] || { echo '{"ok":false,"failedStage":"spawn"}'; exit 1; }
                 allargs="$*"
                 shift 2; name='' repo='' base='' spec=''
@@ -403,6 +404,7 @@ case "$1" in
             worker-show)
                 st='settled'
                 [[ -f $GH_STATE/show-$4 ]] && st=$(cat "$GH_STATE/show-$4")
+                [[ $st != notfound ]] || { echo '{"ok":false,"error":{"code":"dispatch_not_found"}}'; exit 1; }
                 jq -n --arg d "$4" --arg s "$st" '{ok: true, result: {dispatchId: $d, status: $s}}' ;;
             worker-read)
                 echo '{"ok":true,"result":{"source":"transcript","text":"worker transcript"}}' ;;
@@ -530,6 +532,20 @@ EOF
     out=$(dispatch); idf=${out##*$'\n'}
     ORCA_STUB_FAIL=1 bash "$ops/orca.sh" start "$idf" >/dev/null 2>&1 && fail 'failed worker-start reported success'
     jq -e '.executor.state == "failed_start" and (.reports[-1].fact | contains("orca-start.receipt"))' "$(rec "$idf")" >/dev/null || fail 'failed start record'
+    bash "$ops/orca.sh" abandon "$idf" >/dev/null 2>&1 && fail 'abandon accepted a failed start with no dispatch'
+    # gap #50: a failed start that Orca gave a dispatch can be abandoned through loom
+    ORCA_STUB_FAIL=unknown bash "$ops/orca.sh" start "$idf" >/dev/null 2>&1 && fail 'restart of a failed start accepted'
+    out=$(dispatch) || fail "dispatch for #50 failed: $out"; idu=${out##*$'\n'}
+    ORCA_STUB_FAIL=unknown bash "$ops/orca.sh" start "$idu" >/dev/null 2>&1 && fail 'failed worker-start reported success'
+    jq -e '.executor.state == "failed_start" and .executor.dispatch == "disp-unknown"' "$(rec "$idu")" >/dev/null || fail 'failed start lost its dispatch (#50)'
+    bash "$ops/orca.sh" abandon "$idu" >/dev/null || fail 'failed start with a dispatch not abandonable (#50)'
+    jq -e '.executor.state == "abandoned" and (.reports[-1].fact | startswith("owner_fenced"))' "$(rec "$idu")" >/dev/null || fail 'failed-start abandon record (#50)'
+    out=$(dispatch) || fail "dispatch for #50 failed: $out"; idn=${out##*$'\n'}
+    ORCA_STUB_FAIL=unknown bash "$ops/orca.sh" start "$idn" >/dev/null 2>&1 && fail 'failed worker-start reported success'
+    echo notfound > "$GH_STATE/show-disp-unknown"
+    bash "$ops/orca.sh" abandon "$idn" >/dev/null || fail 'abandon of a dispatch Orca forgot failed (#50)'
+    jq -e '.executor.state == "abandoned" and (.reports[-1].fact | contains("no longer knows"))' "$(rec "$idn")" >/dev/null || fail 'forgotten dispatch not recorded (#50)'
+    rm -f "$GH_STATE/show-disp-unknown"
 )
 pass 'orca executor: detect, route, start, harvest, stop only on confirmation, stale surfaced'
 
