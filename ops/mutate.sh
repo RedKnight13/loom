@@ -70,7 +70,7 @@ run launch.sh 's/if \[\[ $(jq -r .\.worker_pid \/\/ empty. "$file") == "$child" 
 run dispatch.sh 's/git -C "$workdir" remote remove origin/true/' "clone keeps a push remote" m5
 run watchdog.sh 's/($override \/\/ .limit_min \/\/ 30)/($override \/\/ 30)/' "watchdog ignores consumer limit" m6
 run lib.sh '/s="${s%"${s##\*\[!\[:space:\]\]}"}"/d' "start time not trimmed at the end" m7
-run lib.sh 's/git -C "$workdir" add -A \&\&/true \&\&/' "harvest does not stage worker files" m8
+run lib.sh 's/loom_ws "$host" "$workdir" git add -A \&\&/true \&\&/' "harvest does not stage worker files" m8
 run dispatch.sh 's/\.short_name == \$short/.short_name == "never"/' "attempts not numbered per short name" m9
 run verify.sh 's/(cd "$scratch\/tree" \&\& umask/(cd "$workdir" \&\& umask/' "verify runs in the worker clone" m10
 run verify.sh 's/^    126|127|255) verdict=.*/    126|127|255) verdict="checks exit $rc" ;;/' "could-not-run reported as a test failure" m11
@@ -85,7 +85,7 @@ run orca.sh "s/if \[\[ \$rc != 0 \]\] || grep -q 'stop_unknown' \"\$receipt\"; t
 run status.sh 's/select($last <= (now - $limit \* 60))/select(false)/' "stale Orca worker never surfaced" m20
 run dispatch.sh "s#\[\[ -n \$orca_runtime \]\] || loom_error 'executor orca required[^;]*; ##" "required Orca not enforced" m21
 run lib.sh 's/        loom_orca_running "$1"/        false/' "a running Orca worker is not live" m22
-run collect.sh 's/^if \[\[ $(cd "$workdir" \&\& cd/if true || [[ $(cd "$workdir" \&\& cd/' "collect fetches into a shared-repo branch" m23
+run collect.sh 's/^elif \[\[ $(cd "$workdir" \&\& cd/elif true || [[ $(cd "$workdir" \&\& cd/' "collect fetches into a shared-repo branch" m23
 run verify.sh 's/^\[\[ $kind == baseline \]\] || ! loom_alive/! loom_alive/' "baseline refused while the worker runs" m24
 run orca.sh 's/workdir=\${workspace##\*::}/workdir=/' "workspace split removed" m25
 run orca.sh '/branch is not collected/d' "release allowed before collect" m26
@@ -104,6 +104,12 @@ run ticket.sh 's/args+=(--label "\$label")/:/' "ticket.sh drops labels" m38
 run orca.sh 's/if \[\[ -z \$placement_host \]\]; then/if false; then/' "start ignores an unconnected Orca host" m39
 run orca.sh 's/tried+=("\$candidate: known to Orca but not connected")/break/' "placement stops at compute[0] (#45)" m40
 run lib.sh 's/select(.id == \$w or .name == \$w) | select(.connected == true or .kind == "local")\] | length > 0/select(.id == $w or .name == $w)][0] | .connected == true or .kind == "local"/' "a duplicate host name hides the connected one (#45)" m41
+run orca.sh 's/^        repo_sel="path:\$rpath"$/        :/' "remote worker given the conductor checkout (#47)" m42
+run orca.sh 's/^    ws_host=\$placement_host$/    ws_host=""/' "remote workspace treated as local (#47)" m43
+run lib.sh 's/^    host=\$(loom_ws_host "\$file")$/    host=""/' "harvest reads the workspace here, not on its host (#47)" m44
+run loom "s/items:\$items, actions:\$actions}' >\&3/items:\$items, actions:\$actions}'/" "failure JSON swallowed by the capture (#48)" m45
+run collect.sh 's/^    loom_git_ssh -C "\$checkout" fetch/    : fetch/' "collect skips the remote fetch (#47)" m46
+run orca.sh 's/\[\[ -n \$rpath \]\] || loom_error/[[ -n $rpath ]] || :/' "start without the project on the host (#47)" m47
 wait
 survived=0
 for n in "${order[@]}"; do

@@ -8,6 +8,9 @@ root=$(cd "$ops/.." && pwd)
 # shellcheck source=ops/lib.sh
 source "$ops/lib.sh"
 v=$(tr -d '[:space:]' < "$root/VERSION")
+# fd 3 is the caller's stdout: a failure emitted inside $(run_out ...) must not
+# be swallowed by the capture (gap #48).
+exec 3>&1
 cmd=${1:-}
 shift || true
 
@@ -25,7 +28,7 @@ emit() {  # emit <ok:true|false> <state> <fact> [id] [ticket] [items-json] [acti
         '{v:$v, cmd:$cmd, ok:$ok, state:$state, fact:$fact,
           id:(if $id == "" then null else $id end),
           ticket:(if $ticket == "" then null else ($ticket | tonumber) end),
-          items:$items, actions:$actions}'
+          items:$items, actions:$actions}' >&3
     if [[ -n $code ]]; then exit "$code"; fi
     [[ $ok == true ]] && exit 0 || exit 1
 }
