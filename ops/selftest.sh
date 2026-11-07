@@ -32,8 +32,8 @@ cat > "$scratch/bin/gh" <<'EOF'
 set -eu
 case "$1 $2" in
     'issue view')
-        [[ $* == 'issue view 7 --repo example/fixture --json number,title,body' ]] || exit 98
-        jq -n '{number: 7, title: "Fixture ticket", body: "## Mandate\n\n**Ticket short name:** fixture-task\n**Scope:** fixture\n**Out of scope:** everything else\n**Laws:** fixture\n**Done means:** selftest\n**Stop by impact:** ready\n**Report:** structured"}' ;;
+        [[ $* == 'issue view '[78]' --repo example/fixture --json number,title,body' ]] || exit 98
+        jq -n --argjson n "$3" '{number: $n, title: "Fixture ticket", body: "## Mandate\n\n**Ticket short name:** fixture-task\n**Scope:** fixture\n**Out of scope:** everything else\n**Laws:** fixture\n**Done means:** selftest\n**Stop by impact:** ready\n**Report:** structured"}' ;;
     'repo view')
         [[ $* == 'repo view example/fixture --json defaultBranchRef --jq .defaultBranchRef.name' ]] || exit 98
         printf 'main\n' ;;
@@ -203,6 +203,13 @@ bash "$ops/launch.sh" "$id6" -- bash "$scratch/bin/w-files" >/dev/null
 [[ $(git -C "$work6" log -1 --format=%an) == 'Loom Fixture' ]] || fail 'loom commit must use the consumer identity'
 [[ $(bash "$ops/collect.sh" "$id6") == *'1 commit(s) over base'* ]] || fail 'sealed commit not collectable'
 pass 'git-free worker: loom commits its files under the consumer identity'
+
+# --- a corrected ticket may reuse a short name (gap #14) ---
+out=$(bash "$ops/dispatch.sh" "$scratch/consumer.toml" 8) || fail 'new ticket reusing a short name refused'
+id7=${out##*$'\n'}
+[[ $id7 == fixture-task.7 ]] || fail "short-name attempts must continue across tickets, got $id7"
+jq -e '.ticket == 8 and .attempt == 7' "$(rec "$id7")" >/dev/null || fail 'reused-name record'
+pass 'a corrected ticket reuses its short name with the next attempt'
 
 # --- the lock: a live holder blocks, a dead holder is broken ---
 n=$(jq '.reports | length' "$(rec "$id1")")
