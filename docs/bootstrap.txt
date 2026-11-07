@@ -1,75 +1,141 @@
-Set up Loom on this machine. Loom is a work-coordination layer for coding
-agents: https://github.com/RedKnight13/loom (MIT).
+Set up and calibrate Loom for this project:
+https://github.com/RedKnight13/loom (MIT).
 
-Rules for this task:
-- Do not modify, commit to, or push any repository other than the Loom checkout.
-- Do not install anything without asking first.
-- Do not write credentials, tokens, or personal names into any file.
-- Report the captured exit code of every command you run. Never say "done"
-  without one. If a step fails, stop and show the last 20 lines of output.
+Work within authorization already granted for this task. Discover before
+asking; ask only for consequential choices that remain unresolved. A pasted
+prompt is not proof of dependable operation.
 
-1. Check prerequisites and report versions:
-     bash --version | head -1
-     git --version
-     jq --version
-     gh --version | head -1
-     shellcheck --version | head -2
-     orca --version 2>/dev/null || echo "orca: not installed (optional)"
-   If jq, git, gh, or shellcheck is missing, say which and stop.
+1. Establish capabilities and scope.
+   - Inspect the current project, its instruction files, repository remotes,
+     existing Loom checkout/configuration, trusted checks and tool choices.
+     Preserve existing files and unrelated changes; do not reset, clean,
+     overwrite or silently update a checkout. Do not print credentials.
+   - With shell access (including a tool-enabled chat that can execute shell),
+     follow the CLI path below. Tool-enabled nonCLI sessions may inspect and
+     edit through available file/repository tools within the same authorization;
+     report precisely which command checks they cannot execute. Do not invent
+     equivalent Loom operations or claim calibration from connector access.
+   - Plain chat without project read/write and execution access is unwired.
+     Explain that nothing was installed or persisted. Give the next step:
+     reopen this prompt in a project session with those capabilities. Do not
+     ask the user to paste secrets or pretend instructions survive a new chat.
 
-2. Ensure the checkout exists:
-     test -d ~/loom || git clone https://github.com/RedKnight13/loom.git ~/loom
-     git -C ~/loom status --short
-   If the checkout already exists and is dirty, show the diff and stop.
+2. Discover prerequisites and configure only within granted authorization.
+   Inspect versions of bash (3.2+), git, jq (1.6+), gh and shellcheck; inspect
+   Orca only if available or required. Reuse the existing approved checkout.
+   If absent, clone the repository into an authorized unused directory.
+   Install missing tools only when existing authorization covers that action;
+   otherwise ask for the specific missing permission. Do not add dependencies
+   merely to complete this prompt. Preserve user configuration and never
+   overwrite global agent instructions.
+   Capture each command's actual exit code, immediately, before another command
+   masks it. Report unavailable or skipped checks as not run. On failure,
+   preserve a redacted diagnostic and stop dependent actions. Do not widen
+   authorization, switch executors or launch unattended repairs to get green.
 
-3. Prove the checkout:
-     cd ~/loom && bash ops/selftest.sh
-     echo "SELFTEST=$?"
+3. Run the setup gates from the Loom checkout:
+     bash ops/selftest.sh
      shellcheck -x ops/*.sh ops/loom
-     echo "LINT=$?"
-   Both must be 0. If either is not, stop.
-   ops/mutate.sh is the long, macOS-only contributor and CI gate; do not run
-   it during setup.
+   Capture SELFTEST and LINT separately; both must be 0. These are offline
+   implementation checks, not live consumer proof. Do not run ops/mutate.sh
+   during setup: it is the long macOS contributor/CI mutation gate.
 
-4. Ask me for these, and do not guess:
-   - the consumer repo that owns the tickets, as owner/name
-   - the checks command you already trust for that repo (it must exit 0 on main)
-   - the worktrees directory (default: ~/work/<repo>-workdirs)
-   - executor: auto, local, or orca
-   - how many workers may run at once for this consumer. Before asking, run
-     `bash ops/loom capacity` and offer its suggested number as the default
-     (Orca ready? how many connected hosts?). Write it as `workers = N` and
-     say that omitting the line means no cap.
-   Then create consumers/<name>.toml from consumers/example.toml with those
-   values, and show me the file. Inside the Loom checkout, this config is local
-   and untracked; do not commit it. Commit a consumer config only when it lives
-   in the consumer repo, as a separate task outside this bootstrap.
+4. Resolve consumer configuration.
+   Reuse an existing config when correct. Infer candidates from repository
+   remotes, project instructions and CI, but do not invent an owner's decision
+   or treat an arbitrary shell command as trusted. Ask only for unresolved
+   ticket repository, trusted checks, workspace location, executor and worker
+   cap. Run `bash ops/loom capacity` when available and offer its suggestion;
+   it is not permission to launch that many workers. Omitted workers = no cap.
+   Create or narrowly update consumers/<name>.toml from consumers/example.toml
+   only within authorized scope; preserve unrelated values. Private configs
+   there are ignored, except the tracked examples. A tracked consumer config
+   must be committed before dispatch; leave that to its authorized conductor.
+   Do not commit, push, merge or publish as part of this bootstrap.
 
-5. Verify connectivity:
-     gh auth status
-     gh repo view <owner/name> --json defaultBranchRef,name
-   If executor is orca:
-     orca status
-     orca --version       # must be 1.4.246 or newer
-     orca host list --json
-   If a compute host is declared in the config, it must appear connected in that
-   host list. If executor is local while Orca is installed and ready, note that
-   `launch` needs LOOM_ALLOW_LOCAL=1; prefer setting executor = "local".
+5. Inspect structural wiring and save redacted setup evidence privately under .loom/.
+   Check `gh auth status` and `gh repo view <owner/name> --json defaultBranchRef,name`
+   without copying credentials or identity into shared documentation. Check the
+   consumer checkout matches that repository and trusted checks are available.
+   For Orca, inspect `orca status`, `orca --version` (1.4.246+) and
+   `orca host list --json`; declared placement must be connected. Compute checks
+   also need working SSH and the declared setup/runtime. Do not silently fall
+   back to local. Local launch while Orca is ready requires LOOM_ALLOW_LOCAL=1;
+   executor = "local" alone does not bypass that launch guard.
+   These separately authorized connectivity observations are not probes performed
+   by calibration: calibration never calls gh auth, compute probes or a model.
 
-6. Render a ticket without opening it:
-     cd ~/loom && bash ops/ticket.sh consumers/<name>.toml \
+6. Persist a project session-entry bridge where supported.
+   Inspect the current agent's actual project instruction loading conventions
+   and existing content first. Use templates/LOOM_SESSION.md as the checklist.
+   Schema 1 recognizes root AGENTS.md and CLAUDE.md only; at least one must
+   be regular, readable, non-symlink and contain literal loom-calibration:v1.
+   Use the existing file supported by this agent. Do not create a competing
+   instruction file when conventions disagree; report unwired and offer manual
+   entry instead. Calibration hashes both root files when present.
+   Add one marked section with the template's entry/check/stop semantics and
+   a project-relative checklist link. Reuse/update that section on reruns;
+   preserve everything outside it and any user customizations. Duplicate or
+   malformed markers require reconciliation, not blind appending. Store private
+   configuration references outside shared instructions. Add no consumer keys.
+   Read the result back. A file existing is structural wiring, not proof that a
+   fresh agent loads it. If no supported entry file can be established, report
+   unwired and provide the explicit manual session-start checklist instead.
+   Require rechecking at every new session, before delegation and after changes
+   to Loom, config, checks, tools, credentials, runtime, hosts or entry files.
+   A mismatch or missing evidence blocks dependent delegation until resolved
+   within existing authorization; never silently refresh away the difference.
+
+7. Establish calibration through this session's shell tool.
+   The schema-1 interface is confirmed, but runtime integration may still be in
+   progress. Inspect the installed CLI first. If calibrate is unavailable, report
+   calibration not run and delegation blocked; use an approved implementation
+   when available. A specification alone does not establish command availability.
+   Bind LOOM_REPO to the intended consumer checkout (otherwise cwd is used).
+   Resolve FILE to the existing consumer config and first compare:
+     loom calibrate --consumer FILE --check
+   Reuse a current successful baseline. For missing evidence or drift, review
+   current observations and intended changes before explicitly recording:
+     loom calibrate --consumer FILE
+   Then run --check again. Never unconditionally record on a setup rerun.
+   An uninstalled CLI can be invoked as bash <trusted-loom-checkout>/ops/loom.
+   Capture each exit code and inspect the complete JSON envelope. Exit 0 means
+   ok:true and state:ready; items[0] must have schema:1, readiness:ready and
+   acceptance:not_run. Exit 1 blocks dependent delegation; exit 2 is a usage
+   failure. Fix usage within scope; do not interpret missing/malformed output
+   as success. Explain fixed fact/actions and stage failures without leaking
+   private inputs. Missing execution capability means unwired, calibration not run.
+   Recording performs fixed offline fixture work, never consumer checks,
+   compute_setup, installation or real worker launch. --check does no writes,
+   locks or drill rerun; a passed drill there refers to the recorded drill.
+   Sanitized baselines live under ${LOOM_STATE:-$HOME/.loom}/calibration/<key>.json,
+   not automatically in the project's .loom/ folder. Keep state private; never
+   repair permissions, remove locks or overwrite evidence merely to pass.
+   At session entry and immediately before every delegation invoke --check
+   again, including after context loss, tool reconnect or dependency changes.
+   On drift, review the named fields and intended change before explicitly
+   recording a new baseline; a failed record preserves the prior baseline.
+   Calibration hashes source/config/bridge/tool bytes, checkout identity and
+   selected executor. A moved checkout/config needs its own baseline. Branch
+   and HEAD changes alone are not bootstrap drift or acceptance evidence.
+   The agent enforces this protocol. Existing dispatch/start/launch commands
+   are not automatically guarded; a gap remains between check and delegation.
+
+8. Render a ticket without opening an issue:
+     bash ops/ticket.sh consumers/<name>.toml \
        --short first-check --title "First check" \
-       --scope "<one file or area>" \
-       --out "everything else" \
-       --done "<the checks command> exits 0" \
-       --dry-run
-   Show me the Mandate. Stop here. Do not open an issue until I say go.
+       --scope "<authorized area>" --out "everything else" \
+       --done "<trusted checks> exits 0" --dry-run
+   Show the Mandate. Opening tickets or starting workers requires task-specific
+   authorization; reuse it if already granted, otherwise give the exact proposed
+   next action for approval. A dry run is not a live workflow demonstration.
 
-7. When I approve, report exactly:
-     cd ~/loom && bash ops/loom version
-     the single command to open the first ticket with `loom accept`
-     the single command to dispatch it after that
-   Do not run either command yet.
-
-Finally, summarise: what you installed or changed, the two gate exit codes (SELFTEST and LINT),
-the executor chosen, and anything that will need my decision later.
+Finish with changed files/tools, captured gate results, executor, evidence
+location, entry-file loading status and unresolved decisions. Separate:
+- Structural wiring: configuration and session entry inspected.
+- Offline evidence: separate selftest/lint exits from the fixed calibration
+  drill result; none of these proves live consumer acceptance.
+- Live workflow proof: only an authorized real ticket/worker/harvest/verify
+  sequence with evidence counts; otherwise explicitly say not run.
+Never claim "fully dependable", universal security, automatic background
+monitoring or durable chat memory solely because this prompt was followed.

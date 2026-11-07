@@ -4,6 +4,10 @@ Loom is plain bash plus `git`, `jq`, `gh`, and optionally [Orca](https://github.
 (MIT) and an SSH host.
 There is nothing to build and no service to run.
 
+For agent-assisted setup, paste [bootstrap.txt](bootstrap.txt). It discovers
+existing choices before asking and preserves user files. See
+[the session-entry checklist](../templates/LOOM_SESSION.md) for continuity.
+
 ## 1. Requirements
 
 | Tool | Version | Needed for |
@@ -34,7 +38,10 @@ shellcheck -x ops/*.sh ops/loom
 ```
 
 `ops/selftest.sh` needs no network, signals no real worker, and uses stubs for
-`gh`, `orca`, `ssh` and `ps`. If it fails, stop: the environment is not ready.
+`gh`, `orca`, `ssh` and `ps`. If it fails, stop dependent setup work and retain the captured exit code.
+Capture the selftest and lint exits separately; both must be 0.
+These offline gates do not prove live consumer operation. `ops/mutate.sh` is
+the long macOS contributor/CI gate, not a setup requirement.
 
 ## 3. State
 
@@ -76,8 +83,9 @@ executor  = "auto"                   # auto | local | orca
 workers   = 3                        # optional: max open assignments; omit = unlimited
 ```
 
-The config must be committed if its directory is a git work tree; the record
-pins the exact commit the assignment ran under.
+A tracked config must be committed before dispatch; the record pins that
+commit. Ignored, untracked private configs in Loom’s `consumers/` do not need
+a commit. Preserve existing configuration; bootstrap does not commit it.
 
 ### Worker cap
 
@@ -87,7 +95,12 @@ cap with the ids that hold the slots. Omit the key for no cap.
 
 `loom capacity` reports what Orca can carry right now — runtime ready, connected
 hosts — and suggests a number (one per connected host, minimum one). The
-bootstrap prompt asks for this number and writes it into the config.
+bootstrap prompt reuses an existing cap or offers this suggestion when the
+choice is unresolved. A capacity suggestion is not authorization to launch.
+
+Declaring `executor = "local"` selects local dispatch. If Orca is installed
+and ready, `launch` still requires `LOOM_ALLOW_LOCAL=1`; the config alone
+does not bypass that guard.
 
 ## 5. Local executor
 
@@ -169,12 +182,74 @@ falls back to the conductor's machine. A failing `compute_setup` is reported as
 
 - [ ] `bash ops/selftest.sh` exits 0
 - [ ] `shellcheck -x ops/*.sh ops/loom` exits 0
-- [ ] the consumer config is committed
+- [ ] any tracked consumer config is committed by its authorized conductor
 - [ ] `gh auth status` shows the account that owns the repo
 - [ ] the checkout's git identity is the one you want in commits
   (Loom copies `user.name`/`user.email` into a local clone)
 - [ ] if `compute` is declared: `bash ops/loom compute --consumer FILE` names a host
 - [ ] if `executor = "orca"`: `orca status` is ready and the host is connected
+
+### Calibration and session entry (schema 1)
+
+Runtime integration is in progress for this documentation revision; runtime
+calibration tests are **not run** here. Confirm command availability in the
+installed checkout first. If absent, report calibration not run and stop
+dependent delegation until an approved implementation is available.
+
+Install the [session bridge](../templates/LOOM_SESSION.md) only after inspecting
+the agent's project loading convention and existing content. Schema 1 requires
+literal `loom-calibration:v1` in root `AGENTS.md` or `CLAUDE.md` (regular,
+readable, non-symlink); both are fingerprinted if present. Preserve existing
+content and user customizations; reuse one marked section. Unsupported entry
+conventions remain unwired. No new consumer TOML keys are required.
+
+With `LOOM_REPO` bound to the intended consumer checkout (otherwise cwd), use
+the trusted Loom installation and the resolved consumer `FILE`:
+
+```sh
+loom calibrate --consumer FILE
+loom calibrate --consumer FILE --check
+```
+
+For an existing setup, run `--check` first and reuse a current baseline. Review
+missing evidence or drift before recording; rerunning setup must not silently
+replace the baseline.
+
+Recording runs a fixed isolated offline report/envelope drill and records only
+complete success. Comparison writes nothing, acquires no locks and reruns no
+drill. Neither invokes consumer checks, `compute_setup`, authentication probes,
+installers or real workers. The earlier `gh`/compute setup checks are separate,
+authorized observations. Compute aliases in calibration must match
+`^[A-Za-z0-9][A-Za-z0-9._-]*$`; user/port syntax and shell fragments are rejected.
+
+Capture exits and inspect the complete JSON envelope. Exit 0 requires `ok:true`
+and `state:ready`; schema-1 `items[0]` reports readiness, fingerprint, stages,
+sorted drift field names and `acceptance:not_run`. Exit 1 blocks dependent
+work; exit 2 reports usage errors. A passed drill in check mode is recorded
+proof, not a new execution. `ready` never means project acceptance.
+
+Private sanitized records live at
+`${LOOM_STATE:-$HOME/.loom}/calibration/<key>.json`. Missing baseline blocks;
+corrupt/unknown schema, unsafe state or symlinks fail closed. Do not delete
+locks or change permissions as an automatic repair. Failed recording preserves
+the prior baseline. Keep separately redacted setup evidence under `.loom/`
+only where private; do not publish paths, identities, hosts or credentials.
+
+Every new session and immediately before delegation, invoke `--check`, including
+after context loss, tool reconnect or dependency changes. Read the bridge
+explicitly if loading is uncertain and confirm it was read. Review drift before
+explicit recording; comparison never accepts changes. Fingerprints cover Loom
+source/version, consumer and bridge bytes, checkout identity, tools and executor.
+A new checkout/config location needs a new baseline; branch/HEAD changes alone
+do not imply bootstrap drift or project acceptance.
+
+Tool-enabled sessions with shell execution follow the same protocol as CLI
+agents. Without execution, say **unwired; calibration not run** and resume in a
+capable session. A shell route does not grant delegation permission. Marker
+presence proves structure only; confirm actual loading in a fresh session before
+claiming continuity. Schema 1 relies on the agent: existing dispatch/start/launch
+commands are not automatically gated, and a comparison-to-delegation gap remains.
+No background monitor, persistent model memory or unattended repair is installed.
 
 ## 9. Troubleshooting
 
@@ -194,5 +269,8 @@ falls back to the conductor's machine. A failing `compute_setup` is reported as
 
 ## 10. Uninstall
 
-Delete the checkout and `$LOOM_STATE`. Nothing is installed elsewhere and no
-process runs in the background.
+Inspect active assignments before removing their state. Remove only the Loom
+checkout/state and project bridge you intend to uninstall; preserve surrounding
+project instructions and user files. Bootstrap may have installed authorized
+prerequisites or a project checklist, so review its change report separately.
+Loom does not install a persistent background service.

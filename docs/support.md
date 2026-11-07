@@ -30,6 +30,46 @@ What works today, what does not, and what it was tested on. Version **0.6.0**.
 | Multi-conductor coordination | ❌ | one state dir, one conductor at a time |
 | Windows native | ❌ | bash 3.2+/POSIX shell expected; WSL untested |
 
+## Bootstrap and continuity limits
+
+The [bootstrap prompt](bootstrap.txt) supports capability-based setup: shell
+execution, tool-enabled inspection/editing without execution, and explicitly
+unwired plain chat. It preserves existing files and asks only for unresolved
+consequential decisions. Installation is limited to granted authorization.
+
+[LOOM_SESSION.md](../templates/LOOM_SESSION.md) is a project checklist, not an
+automatic hook. Its bridge requires `loom-calibration:v1` in root `AGENTS.md`
+or `CLAUDE.md`, only after supported loading conventions are inspected. Both
+files are fingerprinted when present; neither may be substituted with a global
+instruction overwrite. Fresh-session loading must be observed;
+otherwise continuity is unverified. Unsupported clients must open it manually.
+Rechecking at session entry, before delegation and after dependency changes is
+an agent instruction, not guaranteed runtime enforcement or background repair.
+
+The confirmed schema-1 contract provides `loom calibrate --consumer FILE`
+(explicit record plus fixed offline drill) and `loom calibrate --consumer FILE
+--check` (comparison without writes, locks or drill rerun). Runtime implementation
+is still in progress for this documentation revision; runtime calibration tests
+and integrated bootstrap validation are **not run** here. Do not infer command
+availability from this contract. No additional TOML keys are required.
+
+Ready means current prerequisites and offline drill only; acceptance is always
+`not_run`. Exit 0 is ready, 1 is blocked/failed and 2 is usage failure. Sanitized
+private baselines are under `${LOOM_STATE:-$HOME/.loom}/calibration/<key>.json`.
+Fingerprint changes require review before explicit re-recording; check never
+refreshes evidence. A failed record preserves the previous baseline. No model,
+provider authentication, real worker, consumer checks or remote compute is
+proved by calibration. The tools' byte hashes detect accidental change; they
+are not cryptographic attestation or proof that an executable is trustworthy.
+
+Schema 1 does not automatically guard existing dispatch/start/launch commands.
+The session agent must invoke and inspect the check, confirm it read the bridge,
+and stop delegation on failure. The comparison-to-delegation gap remains.
+Structural wiring, offline selftest/lint and live ticket-to-verification proof are separate
+evidence levels. The first two never imply the third. A prompt cannot establish
+universal security, automatic monitoring or full dependability. Setup uses
+selftest/lint; contributors and CI also use the macOS mutation gate.
+
 ## Platform
 
 | Platform | Status |
@@ -57,7 +97,9 @@ Tracked as issues on the repository. At 0.6.0:
   consumer's `start_timeout_ms` raised (for example `300000`).
 - The verification drills (D1–D4) were captured at 0.5.0; 0.6.0 changes
   placement and compute, so the evidence needs a refresh against this code.
-- `dispatch` accepts a checkout whose `origin` is not the ticket's repo (#54).
+- `dispatch` checks checkout origin against the ticket repository; the explicit
+  `LOOM_ALLOW_ANY_CHECKOUT=1` override relaxes it and must not be enabled by
+  bootstrap merely to bypass a mismatch.
 - No CI. The gate is `selftest` + `shellcheck` + `mutate` on the conductor's machine.
 
 ## Getting help
