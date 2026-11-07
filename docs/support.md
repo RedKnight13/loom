@@ -58,7 +58,6 @@ Tracked as issues on the repository. At 0.6.0:
   placement and compute, so the evidence needs a refresh against this code.
 - `dispatch` accepts a checkout whose `origin` is not the ticket's repo (#54).
 - No CI. The gate is `selftest` + `shellcheck` + `mutate` on the conductor's machine.
-- No `LICENSE` file yet. Until one is added, no licence is granted.
 
 ## Getting help
 
