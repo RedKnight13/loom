@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2030,SC2031  # subshell-scoped env/pids are intentional
 # Offline self-test: a throwaway consumer repo, a stubbed gh, disposable
 # fake workers. No network, no pushes, no real worker is signalled.
 set -euo pipefail
@@ -44,9 +45,24 @@ case "$1 $2" in
         [[ $* == 'issue view '[78]' --repo example/fixture --json number,title,body' ]] || exit 98
         jq -n --argjson n "$3" '{number: $n, title: "Fixture ticket", body: "## Mandate\n\n**Ticket short name:** fixture-task\n**Scope:** fixture\n**Out of scope:** everything else\n**Laws:** fixture\n**Done means:** selftest\n**Stop by impact:** ready\n**Report:** structured"}' ;;
     'issue create')
-        [[ $3 == --repo && $4 == example/fixture && $5 == --title && $7 == --body ]] || exit 97
-        printf '%s' "$8" > "$GH_STATE/issue9.body"
+        shift 2
+        repo='' title='' body='' labels=''
+        while [[ $# -gt 0 ]]; do
+            case $1 in
+                --repo) repo=$2; shift 2 ;;
+                --title) title=$2; shift 2 ;;
+                --body) body=$2; shift 2 ;;
+                --label) labels="$labels$2"$'\n'; shift 2 ;;
+                *) exit 97 ;;
+            esac
+        done
+        [[ $repo == example/fixture ]] || exit 97
+        printf '%s' "$body" > "$GH_STATE/issue9.body"
+        printf '%s' "$labels" > "$GH_STATE/issue9.labels"
         printf 'https://github.com/example/fixture/issues/9\n' ;;
+    'label list')
+        [[ $* == *'--repo example/fixture'* ]] || exit 98
+        printf 'bug\nloom-ready\n' ;;
     'repo view')
         [[ $* == 'repo view example/fixture --json defaultBranchRef --jq .defaultBranchRef.name' ]] || exit 98
         printf 'main\n' ;;
@@ -360,6 +376,7 @@ case "$1" in
         case "$2" in
             worker-start)
                 [[ ${ORCA_STUB_FAIL:-0} == 0 ]] || { echo '{"ok":false,"failedStage":"spawn"}'; exit 1; }
+                allargs="$*"
                 shift 2; name='' repo='' base='' spec=''
                 while [[ $# -gt 0 ]]; do
                     case $1 in
@@ -373,6 +390,7 @@ case "$1" in
                 cp "$spec" "$GH_STATE/spec-$name.md"
                 ( cd "$ws" && exec bash "$ORCA_STUB_WORKER" ) </dev/null >/dev/null 2>&1 &
                 printf '%s\n' "$!" > "$GH_STATE/disp-$name.pid"
+                printf '%s\n' "$allargs" > "$GH_STATE/start-$name.args"
                 # Real receipt shape (gap #29): workspace is "<repo-id>::<path>", no worktree.path.
                 jq -n --arg d "disp-$name" --arg w "$ws" '{ok: true, result: {dispatchId: $d, taskId: "task-1", runId: "run-1", workspace: ("repo-stub::" + $w), terminal: {id: "term-1"}, keptOpen: true}}' ;;
             worker-stop)
@@ -382,8 +400,41 @@ case "$1" in
             worker-release)
                 if [[ ${ORCA_STUB_RELEASE:-ok} == fail ]]; then echo '{"ok":false}'; exit 1; fi
                 echo '{"ok":true,"result":{"released":true}}' ;;
+            worker-show)
+                st='settled'
+                [[ -f $GH_STATE/show-$4 ]] && st=$(cat "$GH_STATE/show-$4")
+                jq -n --arg d "$4" --arg s "$st" '{ok: true, result: {dispatchId: $d, status: $s}}' ;;
+            worker-read)
+                echo '{"ok":true,"result":{"source":"transcript","text":"worker transcript"}}' ;;
+            worker-abandon)
+                echo '{"ok":true,"result":{"status":"abandoned","stopped":false}}' ;;
+            worker-keep-open)
+                echo '{"ok":true,"result":{"keptOpen":true}}' ;;
+            worker-list)
+                echo '{"ok":true,"result":{"workers":[{"dispatchId":"disp-listed","terminalState":"settled","agent":"codex","name":"listed"}]}}' ;;
+            request-show)
+                echo '{"ok":true,"result":{"request":"applied"}}' ;;
+            check)
+                [[ $* == *--peek* ]] || exit 97
+                echo '{"ok":true,"result":{"messages":[]}}' ;;
+            inbox)
+                echo '{"ok":true,"result":{"messages":[]}}' ;;
+            send|ask|reply)
+                shift 2
+                echo "{\"ok\":true,\"result\":{\"args\":\"$*\"}}" ;;
+            gate-create|gate-resolve|gate-list)
+                echo '{"ok":true,"result":{"gate":"g1"}}' ;;
+            task-create|task-update)
+                echo '{"ok":true,"result":{"task":"t1"}}' ;;
+            run-create|run-use|run-current|run-show|run-list)
+                echo '{"ok":true,"result":{"run":"r1"}}' ;;
             *) exit 98 ;;
         esac ;;
+    host)
+        [[ $2 == list ]] || exit 98
+        echo '{"ok":true,"result":{"hosts":[{"kind":"ssh","name":"orca-host","id":"ssh-on","connected":true,"selector":"--host ssh:ssh-on"},{"kind":"ssh","name":"orca-off","id":"ssh-off","connected":false,"selector":"--host ssh:ssh-off"}]}}' ;;
+    reference|worktree|repo|automations)
+        echo '{"ok":true,"result":{"stub":"ok"}}' ;;
     *) exit 99 ;;
 esac
 EOF
@@ -473,6 +524,81 @@ EOF
     jq -e '.executor.state == "failed_start" and (.reports[-1].fact | contains("orca-start.receipt"))' "$(rec "$idf")" >/dev/null || fail 'failed start record'
 )
 pass 'orca executor: detect, route, start, harvest, stop only on confirmation, stale surfaced'
+
+# --- ticket labels (#38) ---
+bash "$ops/ticket.sh" "$scratch/consumer.toml" --short labeled-task --title t --scope s --out o --done d >/dev/null
+grep -qx 'loom-ready' "$GH_STATE/issue9.labels" || fail 'default loom-ready label not added'
+bash "$ops/ticket.sh" "$scratch/consumer.toml" --short labeled-task --title t --scope s --out o --done d --label custom --label custom >/dev/null
+[[ $(grep -c '^custom$' "$GH_STATE/issue9.labels") == 1 ]] || fail 'duplicate label not collapsed'
+grep -qx 'loom-ready' "$GH_STATE/issue9.labels" || fail 'explicit labels dropped the default'
+bash "$ops/ticket.sh" "$scratch/consumer.toml" --short labeled-task --title t --scope s --out o --done d --no-default-label >/dev/null
+! grep -qx 'loom-ready' "$GH_STATE/issue9.labels" || fail '--no-default-label ignored'
+pass 'ticket labels: repeatable, default loom-ready, no-default'
+
+# --- Orca placement and the map (#37, #35) ---
+(
+    export LOOM_ORCA="$scratch/bin/orca"
+    sed 's/^checks = "true"$/checks = "true"\nexecutor = "orca"\ncompute = "orca-host"/' "$scratch/consumer.toml" > "$scratch/placement.toml"
+    out=$(bash "$ops/dispatch.sh" "$scratch/placement.toml" 7); idp=${out##*$'\n'}
+    export ORCA_STUB_WORKER="$scratch/bin/w-slow"
+    bash "$ops/orca.sh" start "$idp" >/dev/null || fail 'start on a connected compute host'
+    grep -q -- '--on orca-host' "$GH_STATE/start-$idp.args" || fail 'worker not placed on the compute host'
+    jq -e '.executor.placement.host == "orca-host"' "$(rec "$idp")" >/dev/null || fail 'placement not recorded'
+    pid=$(cat "$GH_STATE/disp-$idp.pid"); for _ in $(seq 1 50); do kill -0 "$pid" 2>/dev/null || break; sleep 0.1; done
+    sed 's/^compute = "orca-host"$/compute = "orca-off"/' "$scratch/placement.toml" > "$scratch/unplaced.toml"
+    out=$(bash "$ops/dispatch.sh" "$scratch/unplaced.toml" 8); idb=${out##*$'\n'}
+    bash "$ops/orca.sh" start "$idb" >/dev/null 2>&1 && fail 'start on an unconnected host accepted'
+    jq -e '.executor.state == "pending"' "$(rec "$idb")" >/dev/null || fail 'a refused placement changed state'
+
+    [[ $(bash "$ops/orca.sh" show "$idp") == *settled* ]] || fail 'worker-show verdict'
+    bash "$ops/orca.sh" read "$idp" >/dev/null || fail 'worker-read'
+    [[ -s $LOOM_STATE/$idp.evidence/orca-transcript.txt ]] || fail 'transcript not saved as evidence'
+    bash "$ops/orca.sh" keep-open "$idp" >/dev/null || fail 'keep-open'
+    jq -e '.executor.kept_open == true' "$(rec "$idp")" >/dev/null || fail 'keep-open not recorded'
+    bash "$ops/orca.sh" list | grep -q 'disp-' || fail 'worker-list empty'
+    bash "$ops/orca.sh" peek | jq -e '.ok == true' >/dev/null || fail 'peek'
+    bash "$ops/orca.sh" send "$idp" --subject hi --body there | jq -e '.ok == true' >/dev/null || fail 'send'
+    bash "$ops/orca.sh" ask "$idp" --question 'why?' | jq -e '.ok == true' >/dev/null || fail 'ask'
+    bash "$ops/orca.sh" reply --id m1 --body 'because' | jq -e '.ok == true' >/dev/null || fail 'reply'
+    bash "$ops/orca.sh" gate list | jq -e '.ok == true' >/dev/null || fail 'gate list'
+    bash "$ops/orca.sh" run create --objective x | jq -e '.ok == true' >/dev/null || fail 'run create'
+    # Every mapped row answers. Existence and shape, not yet behaviour.
+    while IFS= read -r line; do
+        [[ -n $line ]] || continue
+        # shellcheck disable=SC2086  # the line is a verb plus its args
+        bash "$ops/orca.sh" $line | jq -e '.ok == true' >/dev/null || fail "verb failed: $line"
+    done <<'VERBS'
+inbox
+request --request r1
+task update --id t1 --status done
+run use --id r1
+run current
+run show --id r1
+run list
+reference find --url https://github.com/example/fixture/issues/7
+reference list --worktree path:/tmp
+worktree rm --worktree name:gone
+worktree ps
+worktree list
+repo --path /tmp
+base-ref main
+automation list
+automation run a1
+automation remove a1
+VERBS
+    bash "$ops/orca.sh" harvest "$idp" >/dev/null || fail 'harvest after the read checks'
+
+    export ORCA_STUB_WORKER="$scratch/bin/w-hang" GRANDCHILD="$scratch/orca-grandchild"
+    out=$(bash "$ops/dispatch.sh" "$scratch/placement.toml" 7); ida=${out##*$'\n'}
+    bash "$ops/orca.sh" start "$ida" >/dev/null || fail 'start for the active-harvest case'
+    pids+=("$(cat "$GH_STATE/disp-$ida.pid")")
+    printf 'active\n' > "$GH_STATE/show-disp-$ida"
+    bash "$ops/orca.sh" harvest "$ida" >/dev/null 2>&1 && fail 'harvest while the dispatch is active'
+    jq -e '.executor.state == "running"' "$(rec "$ida")" >/dev/null || fail 'refused harvest changed the record'
+    bash "$ops/orca.sh" abandon "$ida" >/dev/null || fail 'abandon'
+    jq -e '.executor.state == "abandoned" and (.reports[-1].fact | startswith("owner_fenced"))' "$(rec "$ida")" >/dev/null || fail 'abandon recorded as a stop'
+)
+pass 'orca map: placement refused when unconnected, show/read/keep-open/list/peek/send/gate/run, abandon is fencing'
 
 # --- checks run on the compute host, never silently here (gap #36) ---
 (

@@ -18,6 +18,11 @@ the work. Contract: [docs/superpowers/specs/2026-11-07-loom-0.5.0-design.md](doc
 Loom is repo-agnostic. A consumer repo (smriti, argos, anything) adds a small
 config and uses loom's scripts against its own issues.
 
+**Where it runs.** 0.6.0 adds `compute`: checks run on the consumer's compute
+host over SSH and workers are placed there through Orca. A declared host that
+is unreachable refuses; it never falls back to the conductor's machine.
+Contract: [docs/superpowers/specs/2026-11-07-loom-0.6.0-design.md](docs/superpowers/specs/2026-11-07-loom-0.6.0-design.md).
+
 ## Why it exists
 
 Hand-run delegation fails the same ways everywhere: a worker hangs for 92

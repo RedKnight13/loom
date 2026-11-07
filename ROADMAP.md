@@ -76,8 +76,11 @@ gate: green drills = loom is certified as the coordination layer. **Green as of
 `ops/loom`: one command, one JSON object, the same for Claude, Codex, or any
 later harness. Closes the four gaps the first real Orca run found: #29 (receipt
 workspace), #30 (kept-open release), #31 (ack), #33 (evidence). Spec:
-`docs/superpowers/specs/2026-11-07-loom-0.5.0-design.md`. Issue #35's remaining
-Orca rows are specified there and deliberately not built.
+`docs/superpowers/specs/2026-11-07-loom-0.5.0-design.md`.
+
+### L2.6 — where it runs, and the map (0.6.0)
+Compute host for checks and placement (#36, #37), ticket labels (#38), and every
+#35 row as a verb. Spec: `docs/superpowers/specs/2026-11-07-loom-0.6.0-design.md`.
 
 ### L3 — adoption
 - smriti ticket #42 (`smriti-pyz`) completes through loom machinery end to end.
