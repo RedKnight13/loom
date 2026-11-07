@@ -101,7 +101,9 @@ run orca.sh 's/worker-show --dispatch "\$dispatch"/show --dispatch "$dispatch"/'
 run orca.sh 's/check --peek --json/check --json/' "check scripted without --peek" m36
 run orca.sh 's/owner_fenced/stopped/' "abandon recorded as a stop" m37
 run ticket.sh 's/args+=(--label "\$label")/:/' "ticket.sh drops labels" m38
-run orca.sh 's/elif \[\[ \$rc == 2 \]\]; then/elif false; then/' "start ignores an unconnected Orca host" m39
+run orca.sh 's/if \[\[ -z \$placement_host \]\]; then/if false; then/' "start ignores an unconnected Orca host" m39
+run orca.sh 's/tried+=("\$candidate: known to Orca but not connected")/break/' "placement stops at compute[0] (#45)" m40
+run lib.sh 's/select(.id == \$w or .name == \$w) | select(.connected == true or .kind == "local")\] | length > 0/select(.id == $w or .name == $w)][0] | .connected == true or .kind == "local"/' "a duplicate host name hides the connected one (#45)" m41
 wait
 survived=0
 for n in "${order[@]}"; do

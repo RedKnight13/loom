@@ -106,13 +106,23 @@ start)
     placement_host=''
     placement_selector=''
     if [[ $hosts != '[]' && $hosts != 'null' ]]; then
-        placement_host=$(jq -r '.compute[0]' "$file")
-        rc=0
-        loom_orca_host "$placement_host" >/dev/null || rc=$?
-        if [[ $rc == 1 ]]; then
-            loom_error "compute host '$placement_host' is not a known Orca host; connect it in Orca first"
-        elif [[ $rc == 2 ]]; then
-            loom_error "compute host '$placement_host' is known to Orca but not connected; connect it in Orca first"
+        # The first host Orca reports connected wins (#45), the same rule
+        # verify uses; none connected = refuse, never the local machine.
+        tried=()
+        while IFS= read -r candidate; do
+            rc=0
+            loom_orca_host "$candidate" >/dev/null || rc=$?
+            if [[ $rc == 0 ]]; then
+                placement_host=$candidate
+                break
+            elif [[ $rc == 1 ]]; then
+                tried+=("$candidate: not a known Orca host")
+            else
+                tried+=("$candidate: known to Orca but not connected")
+            fi
+        done < <(jq -r '.compute[]' "$file")
+        if [[ -z $placement_host ]]; then
+            loom_error "no compute host is connected in Orca ($(IFS=';'; echo "${tried[*]}")); connect one in Orca first"
         fi
         placement_selector=$(jq -r '.compute_selector // empty' "$file" 2>/dev/null || :)
         if [[ -n $placement_selector ]]; then
