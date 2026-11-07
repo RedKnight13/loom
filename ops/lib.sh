@@ -7,6 +7,12 @@
 
 loom_error() { printf 'loom: %s\n' "$*" >&2; exit 1; }
 
+# Loom's own state is private (umask 077), but children loom runs (workers,
+# checks) get the caller's umask: a tightened umask changes file modes and
+# breaks consumers' tests (found by the D1 baseline, gap #19).
+LOOM_CALLER_UMASK=${LOOM_CALLER_UMASK:-$(umask)}
+export LOOM_CALLER_UMASK
+
 loom_init() {
     umask 077
     LOOM_STATE=${LOOM_STATE:-$HOME/.loom}
@@ -60,6 +66,7 @@ loom_validate() {
       (.worker_pid == null or (.worker_start | type == "string" and length > 0)) and
       (.started_at | iso) and
       ((has("launched_at") | not) or (.launched_at | iso)) and
+      ((has("config_commit") | not) or .config_commit == null or (.config_commit | type == "string" and test("^[0-9a-f]{40}$"))) and
       ((has("checks") | not) or .checks == null or (.checks | type == "string")) and
       ((has("checks_runs") | not) or (.checks_runs | type == "array" and
           all(.[]; (.kind == "baseline" or .kind == "branch") and (.sha | type == "string") and
