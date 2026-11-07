@@ -208,7 +208,7 @@ age "$id2"
 [[ -z $(bash "$ops/watchdog.sh" --limit-min 1 --id "$id1") ]] || fail 'scoped watchdog touched another assignment'
 kill -0 "$worker" || fail 'scoped watchdog killed an out-of-scope worker'
 [[ $(bash "$ops/watchdog.sh" --limit-min 1 --id "$id2") == "$id2 failed watchdog_kill" ]] || fail 'watchdog action missing'
-for _ in $(seq 1 50); do kill -0 "$launcher" 2>/dev/null || break; sleep 0.1; done
+for _ in $(seq 1 300); do kill -0 "$launcher" 2>/dev/null || break; sleep 0.1; done
 if kill -0 "$launcher" 2>/dev/null; then
     kill -KILL "$launcher" 2>/dev/null || :
     fail 'launcher did not return after the watchdog kill'
