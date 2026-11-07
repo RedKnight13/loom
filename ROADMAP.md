@@ -5,6 +5,18 @@ not "done" when its scripts exist; it is done when its failure drills pass
 against a real repository with a real worker, with evidence recorded. This
 document defines that bar and the path to it.
 
+## Status (2026-11-07, at handover)
+
+| Layer | Status |
+| --- | --- |
+| L0 the law | merged |
+| L1 mechanics v0 | merged (PR #2) |
+| L1.5 mechanics v1 + gap fixes | merged (PRs #3, #15, #16, #17, #18, #21, #23); 16 gaps found by real runs, 16 fixed |
+| L2 drills | **D1–D4 PASS** — loom certified (drills/EVIDENCE-2026-11-07.md) |
+| L3 adoption | the consumer is the first real consumer (the consumer#43 → PR #44 merged through loom); the governance layer not yet wired |
+
+See HANDOVER.md.
+
 ## Definition of "loom works" (written before the code)
 
 Loom works when all four drills below pass, each leaving captured evidence
