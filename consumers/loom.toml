@@ -2,7 +2,7 @@
 # Loom's code is written by the conductor; workers on loom tickets are drill
 # subjects, and drill branches are never merged.
 repo      = "RedKnight13/loom"
-checks    = "bash ops/selftest.sh && shellcheck -x ops/*.sh"
+checks    = "bash ops/selftest.sh && shellcheck -x ops/*.sh ops/loom"
 worktrees = "~/Work/claude-code/loom-workdirs"
 laws = [
   "Workers never push; only the conductor pushes, reviews and merges, under the owner's GitHub name.",
