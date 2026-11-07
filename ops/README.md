@@ -37,9 +37,9 @@ scripts under `ops/` remain the mechanism; `ops/loom` is the contract.
 
 | Script | Guarantee |
 | --- | --- |
-| `loom <verb> …` | The call. One JSON object on stdout, exit 0 iff `ok`. `loom version`, `accept`, `ignore`, `dispatch`, `launch`, `start`, `harvest`, `stop`, `release`, `watch`, `status`, `verify`, `collect`, `report`, `ack`, `detect`. See the 0.5.0 spec. |
+| `loom <verb> …` | The call. One JSON object on stdout, exit 0 iff `ok`. `version`, `accept`, `ignore`, `dispatch`, `launch`, `start`, `harvest`, `stop`, `release`, `watch`, `status`, `verify` (`--on HOST`), `collect`, `report`, `ack`, `detect`, `compute`, `hosts`, `show`, `read`, `abandon`, `keep-open`, `list`, `request`, `peek`, `inbox`, `send`, `ask`, `reply`, `gate`, `task`, `run`, `reference`, `worktree`, `repo`, `base-ref`, `automation`. See the specs. |
 | `ack.sh <id> "<why>"` | A person has dealt with this assignment: sets `.acked` once, refuses a live worker. Status drops the report row; history stays. |
-| `ticket.sh <consumer.toml> --short … --title … --scope … --out … --done …` | Renders the Mandate exactly from the template, proves dispatch's own parser accepts it, opens the issue. Ticket text is literal, never evaluated. `--dry-run` prints the body. |
+| `ticket.sh <consumer.toml> --short … --title … --scope … --out … --done … [--label NAME]… [--no-default-label]` | Renders the Mandate exactly from the template, proves dispatch's own parser accepts it, opens the issue with its labels. `loom-ready` is added by default when the repo has that label (#38). Ticket text is literal, never evaluated. `--dry-run` prints the body. |
 | `dispatch.sh <consumer.toml> <issue#>` | Reads the issue's Mandate via `gh`; refuses if the ticket already has a live worker. Creates `<worktrees>/<short>.<attempt>` as a **private clone** (own `.git`, **no remote**, so it can commit but cannot push), on branch `<short>` at the default branch, with the consumer's git identity. Writes `WORK.md` (mandate + laws + how to report), excluded from git. Records the assignment. |
 | `launch.sh <id> -- <cmd...>` | Runs the worker in its workdir with **no stdin** and its **own process group**; records PID + start time; logs to `$LOOM_STATE/<id>.log`. On exit, harvests the newest `state:` line the worker wrote **this launch** (older lines are skipped by offset). Exit with no line → `failed / worker_exit_no_report (exit N)`. |
 | `watchdog.sh [--limit-min N]` | Live worker silent past N minutes (default 30) → kills its **whole process group**, records `failed / watchdog_kill` once, keeps the workdir. Worker gone without its launcher (e.g. the conductor session died) → harvests its report or records `failed / worker_lost_no_report`. A recycled PID never matches the recorded start time and is never signalled. |
@@ -98,11 +98,12 @@ silent exit, hung worker with a child process, lost launcher, recycled PID,
 git-free worker, per-consumer limits, reused short names, verify (fresh clone,
 baseline, could-not-run), the Orca executor (workspace receipt, release only
 after collect, stop only on confirmation), evidence handling, ack, the `loom`
-call, stale and live locks, corrupt state.
+call, stale and live locks, corrupt state, ticket labels, compute-host checks, Orca placement, and the
+0.6.0 Orca verbs.
 
 `bash ops/mutate.sh` proves the selftest has teeth: each mutant re-introduces
 a fixed defect and the selftest must fail on every one. A gap fix lands with
-its selftest case **and** its mutant. 0.5.0 adds m25–m29 for #29, #30, #31, #33.
+its selftest case **and** its mutant. 0.5.0 adds m25–m29; 0.6.0 adds m30–m39.
 
 ## Executors: Orca first
 
@@ -142,7 +143,7 @@ bash ops/verify.sh <id> && bash ops/collect.sh <id>
 - Raw Orca receipts are kept as `$LOOM_STATE/<id>.orca-*.receipt`.
 - Do not poll Orca's mailbox from scripts: Orca wakes the conductor.
 
-## Compute hosts
+## Compute hosts and placement
 
 Owner (2026-11-07): compute runs on build, never the conductor's laptop.
 
@@ -160,4 +161,8 @@ compute_setup = ". ~/.venvs/checks/bin/activate" # run on the host before the ch
 - A failing `compute_setup` (or ssh itself failing) is reported as
   **could not run** (126/255), never as a test failure.
 - Without `compute`, checks run locally as before (generic consumers).
-- Worker placement on the compute host is #37.
+- `--on HOST` names a host for one run (an assignment dispatched before its
+  consumer declared one).
+- Worker placement: `orca.sh start` uses the first `compute` host. It refuses
+  when Orca does not know the host or has not connected it (#37); it never
+  places the worker on the conductor's machine.

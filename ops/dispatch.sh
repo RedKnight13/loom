@@ -105,10 +105,16 @@ jq -n --argjson ticket "$2" --arg repo "$repo" --arg short "$short" \
       --argjson checks "$(jq '.checks // null' <<< "$config")" --argjson config_commit "$config_commit" \
       --arg executor "$executor" --arg runtime "$orca_runtime" \
       --argjson compute "$(jq 'if has("compute") then [.compute] | flatten else null end' <<< "$config")" \
-      --argjson compute_setup "$(jq '.compute_setup // null' <<< "$config")" '
+      --argjson compute_setup "$(jq '.compute_setup // null' <<< "$config")" \
+      --argjson compute_selector "$(jq '.compute_selector // null' <<< "$config")" \
+      --argjson model "$(jq '.model // null' <<< "$config")" \
+      --argjson effort "$(jq '.effort // null' <<< "$config")" \
+      --argjson timeout "$(jq '.start_timeout_ms // null' <<< "$config")" '
   {ticket: $ticket, repo: $repo, short_name: $short, attempt: $attempt,
    workdir: $workdir, checkout: $checkout, base_sha: $base,
-   checks: $checks, compute: $compute, compute_setup: $compute_setup, config_commit: $config_commit, limit_min: $limit, worker_pid: null, worker_start: null,
+   checks: $checks, compute: $compute, compute_setup: $compute_setup,
+   compute_selector: $compute_selector, model: $model, effort: $effort,
+   start_timeout_ms: $timeout, config_commit: $config_commit, limit_min: $limit, worker_pid: null, worker_start: null,
    executor: (if $executor == "orca" then {kind: "orca", state: "pending", runtime: $runtime} else {kind: "local"} end),
    started_at: (now | todateiso8601), reports: []}
 ' > "$LOOM_STATE/.pending"

@@ -1,27 +1,38 @@
 #!/usr/bin/env bash
-# ticket.sh <consumer.toml> --short NAME --title TITLE --scope TEXT --out TEXT --done TEXT [--dry-run]
+# ticket.sh <consumer.toml> --short NAME --title TITLE --scope TEXT --out TEXT --done TEXT
+#           [--label NAME]... [--no-default-label] [--dry-run]
 #
 # Renders a Ticket whose Mandate is exactly the template (templates/MANDATE.md),
 # proves dispatch will accept it by parsing it with dispatch's own parser, and
 # opens it as an issue in the consumer repo (prints the URL). --dry-run prints
 # the body instead. Hand-typed tickets drift; rendered ones cannot.
+#
+# Labels (#38): --label is repeatable. When the consumer repo has a `loom-ready`
+# label, it is added by default unless --no-default-label is given.
 set -euo pipefail
 # shellcheck source=ops/lib.sh
 source "${BASH_SOURCE[0]%/*}/lib.sh"
-usage='usage: ticket.sh <consumer.toml> --short NAME --title TITLE --scope TEXT --out TEXT --done TEXT [--dry-run]'
+usage='usage: ticket.sh <consumer.toml> --short NAME --title TITLE --scope TEXT --out TEXT --done TEXT [--label NAME]... [--no-default-label] [--dry-run]'
 [[ $# -ge 1 ]] || loom_error "$usage"
 config=$(loom_config "$1")
 shift
 short='' title='' scope='' out='' done_means='' dry=false
+labels=()
+default_label=true
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --short|--title|--scope|--out|--done)
+        --short|--title|--scope|--out|--done|--label)
             [[ $# -ge 2 && -n $2 ]] || loom_error "$1 needs a non-empty value"
             case $1 in
                 --short) short=$2 ;; --title) title=$2 ;; --scope) scope=$2 ;;
                 --out) out=$2 ;; --done) done_means=$2 ;;
+                --label)
+                    [[ $2 =~ ^[A-Za-z0-9][A-Za-z0-9\ ._-]*$ ]] || loom_error "invalid label: $2"
+                    labels+=("$2")
+                    ;;
             esac
             shift 2 ;;
+        --no-default-label) default_label=false; shift ;;
         --dry-run) dry=true; shift ;;
         *) loom_error "$usage" ;;
     esac
@@ -51,4 +62,21 @@ if $dry; then
     exit 0
 fi
 repo=$(jq -r '.repo' <<< "$config")
-gh issue create --repo "$repo" --title "Ticket: $short — $title" --body "$body"
+# Default label: only when the repo actually has it (#38). A repo without the
+# label is not an error; a failed label listing only skips the default.
+if $default_label; then
+    have=''
+    have=$(gh label list --repo "$repo" --limit 200 --json name --jq '.[].name' 2>/dev/null || true)
+    if grep -qxF 'loom-ready' <<< "$have"; then
+        labels+=('loom-ready')
+    fi
+fi
+args=(--repo "$repo" --title "Ticket: $short — $title" --body "$body")
+# Collapse duplicates while keeping order.
+seen=' '
+for label in ${labels[@]+"${labels[@]}"}; do
+    if [[ $seen == *" $label "* ]]; then continue; fi
+    seen="$seen$label "
+    args+=(--label "$label")
+done
+gh issue create "${args[@]}"

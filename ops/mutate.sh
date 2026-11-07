@@ -97,6 +97,11 @@ run verify.sh "s/^hosts=\$(jq -r '(.compute \/\/ \[\])\[\]' \"\$file\")/hosts=''
 run verify.sh 's/if ! eval %q; then/if ! true %q; then/' "compute_setup never applied" m32
 run verify.sh 's/^\[\[ -z $on \]\] || hosts=$on/:/' "--on host ignored" m33
 run loom 's/base_args+=(--on "$2"); shift 2 ;;/shift 2 ;;/' "loom verify drops --on" m34
+run orca.sh 's/worker-show --dispatch "\$dispatch"/show --dispatch "$dispatch"/' "harvest never asks worker-show" m35
+run orca.sh 's/check --peek --json/check --json/' "check scripted without --peek" m36
+run orca.sh 's/owner_fenced/stopped/' "abandon recorded as a stop" m37
+run ticket.sh 's/args+=(--label "\$label")/:/' "ticket.sh drops labels" m38
+run orca.sh 's/elif \[\[ \$rc == 2 \]\]; then/elif false; then/' "start ignores an unconnected Orca host" m39
 wait
 survived=0
 for n in "${order[@]}"; do
