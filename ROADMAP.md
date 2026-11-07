@@ -90,9 +90,9 @@ Compute host for checks and placement (#36, #37), ticket labels (#38), and every
   turns its events into Triggers.
 
 ### L4 — public, and proven at the current version
-- A `LICENSE` file exists and the owner has chosen it (D3).
+- A `LICENSE` file exists: MIT (D3 answered 2026-11-07).
 - The repository is public with no private project names, hosts, or paths in
-  the public surface (README, docs pages, templates).
+  the tracked tree; private consumer configs are gitignored.
 - D1–D4 are re-run against the released version and the evidence committed.
 - GitHub Pages publishes `docs/` as the project site.
 

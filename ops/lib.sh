@@ -299,7 +299,7 @@ loom_orca_running() {
 }
 
 # --- compute hosts (gap #36) --------------------------------------------------
-# Owner, 2026-11-07: "why are you doing it here instead of agni1 ??". Checks
+# Owner, 2026-11-07: "why are you doing it here instead of the build host ??". Checks
 # run on the consumer's compute host, never silently on the conductor's
 # machine. LOOM_SSH names the ssh binary (tests stub it).
 loom_ssh() { "${LOOM_SSH:-ssh}" -o BatchMode=yes -o ConnectTimeout=5 "$@"; }

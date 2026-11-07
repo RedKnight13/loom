@@ -674,11 +674,11 @@ pass 'orca map: placement refused when unconnected, show/read/keep-open/list/pee
 (
     cat > "$scratch/bin/ssh" <<'EOF'
 #!/usr/bin/env bash
-# ssh stub: fake-agni* hosts get their own HOME (with a marker the conductor's
+# ssh stub: fake-build* hosts get their own HOME (with a marker the conductor's
 # HOME lacks); anything else fails like an unreachable host.
 while [[ $1 == -o ]]; do shift 2; done
 host=$1; shift
-[[ $host == fake-agni* ]] || exit 255
+[[ $host == fake-build* ]] || exit 255
 export HOME="$GH_STATE/remote-home-$host"
 mkdir -p "$HOME"; : > "$HOME/.remote-marker"
 cd "$HOME"
@@ -690,18 +690,18 @@ EOF
     mk() {  # mk <name> <compute line> [setup line]: a consumer whose check passes only remotely
         sed "s|^checks = \"true\"$|checks = \"test -f \$HOME/.remote-marker \&\& test \$LOOM_SETUP_OK = 1\"\n$2\ncompute_setup = \"${3:-export LOOM_SETUP_OK=1}\"|" "$scratch/consumer.toml" > "$scratch/$1.toml"
     }
-    mk fallback 'compute = ["dead-agni", "fake-agni"]'
+    mk fallback 'compute = ["dead-build", "fake-build"]'
     out=$(bash "$ops/dispatch.sh" "$scratch/fallback.toml" 7); idc=${out##*$'\n'}
-    jq -e '.compute == ["dead-agni", "fake-agni"]' "$(rec "$idc")" >/dev/null || fail 'compute not recorded as a list'
+    jq -e '.compute == ["dead-build", "fake-build"]' "$(rec "$idc")" >/dev/null || fail 'compute not recorded as a list'
     obj=$(bash "$ops/loom" compute --consumer "$scratch/fallback.toml")
-    jq -e '.ok == true and .fact == "compute host: fake-agni"' <<< "$obj" >/dev/null || fail "loom compute: $obj"
+    jq -e '.ok == true and .fact == "compute host: fake-build"' <<< "$obj" >/dev/null || fail "loom compute: $obj"
     out=$(bash "$ops/verify.sh" "$idc" --baseline) || fail "remote baseline failed: $out $(cat "$LOOM_STATE/$idc.checks-baseline.log")"
-    [[ $out == *' on fake-agni' ]] || fail "verify must name the compute host: $out"
-    jq -e '.checks_runs[-1] | .host == "fake-agni" and .exit == 0' "$(rec "$idc")" >/dev/null || fail 'run not recorded with its host'
-    grep -q '^== on compute host fake-agni$' "$LOOM_STATE/$idc.checks-baseline.log" || fail 'log does not say where it ran'
-    [[ -z $(ls -A "$GH_STATE/remote-home-fake-agni/.loom-remote") ]] || fail 'remote workspace not cleaned up'
+    [[ $out == *' on fake-build' ]] || fail "verify must name the compute host: $out"
+    jq -e '.checks_runs[-1] | .host == "fake-build" and .exit == 0' "$(rec "$idc")" >/dev/null || fail 'run not recorded with its host'
+    grep -q '^== on compute host fake-build$' "$LOOM_STATE/$idc.checks-baseline.log" || fail 'log does not say where it ran'
+    [[ -z $(ls -A "$GH_STATE/remote-home-fake-build/.loom-remote") ]] || fail 'remote workspace not cleaned up'
 
-    mk dead 'compute = "dead-agni"'
+    mk dead 'compute = "dead-build"'
     out=$(bash "$ops/dispatch.sh" "$scratch/dead.toml" 7); idd=${out##*$'\n'}
     err=$(bash "$ops/verify.sh" "$idd" --baseline 2>&1) && fail 'verify ran with no reachable compute host'
     [[ $err == *"refusing to run checks on the conductor's machine"* ]] || fail "wrong refusal: $err"
@@ -709,15 +709,15 @@ EOF
 
     # --on: a record without compute (dispatched before the consumer declared one)
     out=$(bash "$ops/dispatch.sh" "$scratch/consumer.toml" 7); idn=${out##*$'\n'}
-    out=$(bash "$ops/verify.sh" "$idn" --baseline --on fake-agni-2) || fail "--on run failed: $out"
-    jq -e '.compute == null and .checks_runs[-1].host == "fake-agni-2"' "$(rec "$idn")" >/dev/null || fail '--on host not recorded'
-    bash "$ops/verify.sh" "$idn" --baseline --on dead-agni >/dev/null 2>&1 && fail '--on an unreachable host ran'
+    out=$(bash "$ops/verify.sh" "$idn" --baseline --on fake-build-2) || fail "--on run failed: $out"
+    jq -e '.compute == null and .checks_runs[-1].host == "fake-build-2"' "$(rec "$idn")" >/dev/null || fail '--on host not recorded'
+    bash "$ops/verify.sh" "$idn" --baseline --on dead-build >/dev/null 2>&1 && fail '--on an unreachable host ran'
     bash "$ops/verify.sh" "$idn" --on 'bad;host' >/dev/null 2>&1 && fail 'unsafe --on host accepted'
-    obj=$(bash "$ops/loom" verify "$idn" --baseline --on fake-agni-3) || fail "loom verify --on failed: $obj"
+    obj=$(bash "$ops/loom" verify "$idn" --baseline --on fake-build-3) || fail "loom verify --on failed: $obj"
     jq -e '.ok == true' <<< "$obj" >/dev/null || fail "loom verify --on not ok: $obj"
-    jq -e '.checks_runs[-1].host == "fake-agni-3"' "$(rec "$idn")" >/dev/null || fail 'loom verify --on did not reach the host'
+    jq -e '.checks_runs[-1].host == "fake-build-3"' "$(rec "$idn")" >/dev/null || fail 'loom verify --on did not reach the host'
 
-    mk badsetup 'compute = "fake-agni"' 'false'
+    mk badsetup 'compute = "fake-build"' 'false'
     out=$(bash "$ops/dispatch.sh" "$scratch/badsetup.toml" 7); idb=${out##*$'\n'}
     rc=0; bash "$ops/verify.sh" "$idb" --baseline >/dev/null 2>&1 || rc=$?
     [[ $rc == 126 ]] || fail "failed compute_setup must be could-not-run (126), got $rc"

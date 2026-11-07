@@ -3,7 +3,7 @@
 # subjects, and drill branches are never merged.
 repo      = "RedKnight13/loom"
 checks    = "bash ops/selftest.sh && shellcheck -x ops/*.sh ops/loom"
-worktrees = "~/Work/claude-code/loom-workdirs"
+worktrees = "~/work/loom-workdirs"
 laws = [
   "Workers never push; only the conductor pushes, reviews and merges, under the owner's GitHub name.",
   "Nothing identifying the owner enters any file, log, or commit.",

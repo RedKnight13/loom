@@ -1,0 +1,23 @@
+# Example consumer: a repository whose issues become Tickets.
+#
+# Copy this file to consumers/<name>.toml and fill it in. A private config is
+# gitignored; only this example and consumers/loom.toml are tracked.
+repo      = "you/your-repo"              # where Tickets (issues) live
+checks    = "make check"                 # verify.sh runs this in a fresh clone
+worktrees = "~/work/your-repo-workdirs"  # local executor workspace root
+limit_min = 45                           # optional watchdog limit (default 30)
+
+# auto = Orca when its runtime is ready, else the local launcher.
+# orca = required; never a silent local fallback.  local = never Orca.
+executor  = "auto"
+
+# Optional: run checks (and Orca workers) on a build host over SSH.
+# compute   = ["build1", "build2"]       # first connected/reachable wins
+# compute_setup = ". ~/.venvs/checks/bin/activate"
+# start_timeout_ms = 300000              # slow remote agent startup
+
+laws = [
+  "Workers never push; only the conductor pushes, reviews and merges.",
+  "Nothing identifying the owner enters any file, log, or commit.",
+  "Captured exit codes only; a check that was not run is reported as not run.",
+]

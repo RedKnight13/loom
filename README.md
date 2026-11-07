@@ -1,136 +1,212 @@
 # loom
 
-**Work coordination for agent executors.** A request becomes a Ticket. The
-Ticket carries an immutable Mandate. One worker gets one isolated workspace and
-ends every turn with a structured report. A watchdog holds the clock. Only the
-conductor pushes, reviews and merges.
+**Work coordination for coding agents.** You write the work as a ticket. One
+agent gets one isolated copy of the repo. Every turn ends with one structured
+line. A watchdog holds the clock. Only you push.
 
-Loom is not an agent and not an orchestrator service. It is a small protocol and
-a set of bash tools that make delegation bounded, observable and resumable —
-with as little human attention as possible.
+Version **0.6.0** · MIT · ~2,700 lines of bash and rules · no server, no
+database, no model of its own.
+
+---
+
+## What this is
+
+You have a coding agent. You want it to do real work in your repo without
+handing it the keys: no pushes, no merges, no ninety minutes of silence you
+cannot explain afterwards.
+
+Loom is the thin layer between you and the agent that makes that safe and
+boring.
+
+1. **You write the work down once.** A ticket is a GitHub issue with a fixed
+   scope, an explicit out-of-scope, and a "done means" check. It cannot drift
+   mid-run, because the worker is not allowed to widen it.
+2. **Loom gives one agent one workspace.** A private clone with no remote, or an
+   Orca-supervised worktree. It records who started, when, and where.
+3. **The agent reports in one line.** Not prose. `ready`, `blocked`, `failed` or
+   `waiting`, plus one fact. If it exits without one, that is a failure, not a
+   mystery.
+4. **If it goes quiet, it dies.** The watchdog matches the PID *and* its process
+   start time, kills the whole process group, records `failed / watchdog_kill`
+   once, and leaves the ticket clean for one new attempt.
+5. **"Ready" is a claim, not a result.** Loom re-runs your checks itself, in a
+   fresh clone the worker never touched — on your build host if you name one.
+   Exit 126 means "could not run", never "tests failed".
+6. **Only you finish.** Loom fetches the branch into your checkout and stops.
+   You review, push, open the PR, merge. Every commit is yours.
+
+Everything else is deliberately absent: no agent framework, no scheduler, no
+memory store, no model router, no multi-tenant service. Loom is the part that
+makes delegation *bounded*; the agent, the harness and the machine stay
+replaceable.
+
+### A ticket, concretely
 
 ```text
-request ──► Ticket (issue + Mandate) ──► Assignment (one worker, one workspace)
-                                              │
-                                              ▼
-                            REPORT.md: ready | blocked | failed | waiting
-                                              │
-                     watchdog ──► verify (fresh clone) ──► collect ──► PR
-                                              │
-                                       status: only what needs a person
+Issue #42: "Add --json to the CLI"
+
+Mandate (written before any code):
+  scope:      cmd/main.go, cmd/main_test.go
+  out:        everything else
+  done means: make check exits 0
+
+Loom:      dispatch → private clone, branch add-json, no remote
+Agent:     edits two files, appends REPORT.md:
+             state: ready — added --json and a golden test
+Loom:      commits that work as one commit on add-json
+Watchdog:  fires only if the turn goes past limit_min
+You:       loom verify add-json.1 → fresh clone, make check, exit 0
+           loom collect add-json.1 → branch in your checkout
+           git push, open PR, merge            ← the only manual step
 ```
 
-Version **0.6.0**. MIT lineage, but see [License](#license) — a licence file is
-not yet in the tree.
+### What it is not
+
+- **Not an orchestrator service.** There is no daemon and nothing to deploy.
+- **Not an agent.** It does not call a model; it bounds one.
+- **Not a CI system.** `verify` runs your existing checks; it does not replace them.
+- **Not a replacement for review.** It makes review the only human step left.
+
+Loom's domain model is adapted from DeepSeek's `dsh-superagent` prototype (MIT),
+stripped of its service layer. The lineage is MIT; so is this repository.
 
 ---
 
 ## What is supported
 
-Everything below is exercised by `ops/selftest.sh` and protected by a mutant in
+Every row below is exercised by `ops/selftest.sh` and protected by a mutant in
 `ops/mutate.sh` (50 mutants, 0 survivors).
 
 | Area | Supported |
 | --- | --- |
-| **One call** | `ops/loom` — one command, one JSON object on stdout, exit 0 iff `ok`. The same call for Claude, Codex or any scriptable worker. |
-| **Tickets** | Rendered from `templates/MANDATE.md` by `ticket.sh`; the renderer proves the parser accepts its own output. Repeatable `--label`, `loom-ready` defaulted when the repo has it. |
+| **One call** | `ops/loom` — one command, one JSON object on stdout, exit 0 iff `ok`. The same call for any harness. |
+| **Tickets** | Rendered from `templates/MANDATE.md`; the renderer proves the parser accepts its own output. Repeatable `--label`; `loom-ready` defaulted when the repo has it. |
 | **Eval record** | `accept` opens a Ticket; `ignore` records the decision without one. |
-| **Executors** | `local` (private clone, no remote) and `orca` (Orca supervises the worker). `auto` detects Orca. |
-| **Placement** | Consumer `compute` hosts; `start` uses the first one Orca reports connected and refuses when none is. Never a silent local fallback. |
-| **Checks** | `verify` runs the consumer's checks in a fresh clone, locally or over SSH on the compute host. Unreachable host or failed setup is *could not run*, never a test failure. |
-| **Reports** | `ready | blocked | failed | waiting`, written to `REPORT.md`; harvest folds the newest line into the assignment record and commits the work. |
+| **Executors** | `local` (private clone, no remote) and `orca` (supervised worker). `auto` detects Orca. |
+| **Placement** | Consumer `compute` hosts; `start` uses the first one Orca reports connected, and refuses when none is. Never a silent local fallback. |
+| **Checks** | `verify` runs the consumer's checks in a fresh clone, locally or over SSH on the compute host. Unreachable host or failed setup is *could not run*. |
+| **Reports** | `ready | blocked | failed | waiting` in `REPORT.md`; harvest folds the newest line into the record and commits the work. |
 | **Watchdog** | PID + process-start identity, process-group kill, per-consumer limit, `failed / watchdog_kill` exactly once. Orca workers are surfaced `stale`, never signalled. |
-| **Attention** | `status` prints only `ready`, `blocked`, `failed`, `stale` and unreleased workspaces. `ack` settles a handled result while keeping history. |
-| **Orca map** | `show read abandon keep-open list request peek inbox send ask reply gate task run reference worktree repo base-ref automation`. Harvest asks `worker-show` first; `check` only ever with `--peek`. |
+| **Attention** | `status` prints only what a person must act on. `ack` settles a handled result and keeps history. |
+| **Orca map** | `show read abandon keep-open list request peek inbox send ask reply gate task run reference worktree repo base-ref automation`. Harvest asks `worker-show` first; `check` only with `--peek`. |
 
-### Not supported (on purpose)
-
-- Loom does not start agents itself. A harness or Orca does.
-- Loom never pushes, opens a PR, or merges. `collect` brings the branch home and stops.
-- No daemon and no scheduler. `watch` is the conductor's clock while a session is awake.
-- No identity layer, no per-worker credentials, no multi-tenant server.
-- Orca task-DAG starts (`worker-start --task --deps`) are mapped but not wired.
-- Automations are a pass-through verb; Loom schedules nothing.
+**Not supported, on purpose:** push/PR/merge automation, a scheduler, a daemon,
+per-worker credentials, a non-GitHub ticket source, Orca task-DAG starts, and
+any behaviour inferred from prose.
 
 ---
 
-## Requirements
+## Recommended install
 
-- macOS or Linux, **bash 3.2+**
-- `git`, [`jq`](https://jqlang.github.io/jq/) 1.6+, [`gh`](https://cli.github.com/) (authenticated)
-- `shellcheck` for linting
-- Optional: the [Orca](https://github.com/) CLI for supervised workers (the
-  `orca` executor) and a reachable SSH host for `compute`
-
-No service, daemon, database or language runtime. State is JSON on disk.
-
----
-
-## Install
+One path. It is the one the project itself uses and tests.
 
 ```bash
-git clone https://github.com/RedKnight13/loom.git
-cd loom
-bash ops/selftest.sh          # offline proof: throwaway repo, stubbed gh/orca/ssh
-shellcheck -x ops/*.sh ops/loom
+# 1. Dependencies (macOS shown; on Linux use your package manager)
+brew install jq gh shellcheck
+gh auth login
+
+# 2. Clone once, outside any other repo
+git clone https://github.com/RedKnight13/loom.git ~/loom
+
+# 3. Put the single entry point on PATH
+echo 'export PATH="$HOME/loom/ops:$PATH"' >> ~/.zshrc   # or ~/.bashrc
+exec $SHELL -l
+loom version                                            # {"v":"0.6.0",...}
+
+# 4. Prove the machine before trusting it
+cd ~/loom
+bash ops/selftest.sh                                    # exit 0
+shellcheck -x ops/*.sh ops/loom                         # exit 0
+bash ops/mutate.sh                                      # exit 0, SURVIVED=0
 ```
 
-Put `ops/` on your path, or call it by path. The only entry point a harness
-needs is `ops/loom`.
+That is the whole install. Nothing runs in the background, nothing is written
+outside `$LOOM_STATE` (default `~/.loom`).
 
-## Quickstart
+**Other options:** call `ops/loom` by path instead of putting `ops/` on PATH;
+run from any checkout with `LOOM_STATE=/path/to/state`; skip Orca if you only
+want the local launcher. Nothing else changes.
+
+## Recommended setup
+
+For a first real use, this is the configuration and the loop that will not
+surprise you.
 
 ```bash
-# 1. Register a consumer repo (where tickets live).
-cat > consumers/example.toml <<'EOF'
+cp consumers/example.toml consumers/myrepo.toml
+```
+
+```toml
+# consumers/myrepo.toml
 repo      = "you/your-repo"
-checks    = "make check"
+checks    = "make check"                  # the command you already trust
 worktrees = "~/work/your-repo-workdirs"
-limit_min = 45
-laws      = ["Workers never push; only the conductor pushes, reviews and merges."]
-EOF
-
-# 2. Write a Ticket (the Mandate is immutable; Done means is written first).
-bash ops/loom accept --consumer consumers/example.toml \
-  --short add-flag --title "Add --json" \
-  --scope "cmd/main.go: add a --json flag" --out "everything else" \
-  --done "make check exits 0"
-
-# 3. Dispatch it.
-LOOM_REPO=~/src/your-repo bash ops/loom dispatch \
-  --consumer consumers/example.toml --issue 42
-
-# 4. Start a worker. Local executor:
-bash ops/loom launch add-flag.1 -- codex exec -s workspace-write \
-  "You are a loom worker. Read WORK.md."
-# Orca executor:
-bash ops/loom start add-flag.1
-
-# 5. Hold the clock until it settles.
-bash ops/loom watch --until add-flag.1
-
-# 6. Re-check in a fresh clone, bring the branch home.
-bash ops/loom verify add-flag.1 --baseline   # what was already true
-bash ops/loom verify add-flag.1
-bash ops/loom collect add-flag.1
-
-# 7. Push, open the PR, merge — conductor only. Then settle it.
-bash ops/loom ack add-flag.1 "merged as #43"
+limit_min = 45                            # generous enough for one honest turn
+executor  = "auto"                        # Orca if ready, else local
+laws = [
+  "Workers never push; only the conductor pushes, reviews and merges.",
+  "Captured exit codes only; a check that was not run is reported as not run.",
+]
 ```
 
-Full setup, including Orca and a compute host: [docs/setup.md](docs/setup.md).
+Then, for every ticket:
+
+```bash
+# 0. One ticket, one scope, written down.
+loom accept --consumer consumers/myrepo.toml --short add-json \
+  --title "Add --json" --scope "cmd/main.go, cmd/main_test.go" \
+  --out "everything else" --done "make check exits 0"
+
+# 1. Dispatch it. Prints the workdir and the assignment id.
+LOOM_REPO=~/src/your-repo loom dispatch --consumer consumers/myrepo.toml --issue 42
+
+# 2. Record what "already true" means, then start one worker.
+loom verify add-json.1 --baseline &
+loom start add-json.1          # Orca; or: loom launch add-json.1 -- codex exec ...
+
+# 3. Hold the clock. Silent while healthy.
+loom watch --until add-json.1
+
+# 4. On ready: re-check in a fresh clone, bring the branch home.
+loom verify add-json.1
+loom collect add-json.1
+
+# 5. Review, push, PR, merge — yours. Then settle it out of status.
+loom ack add-json.1 "merged as #43"
+```
+
+**Recommendations that come from running it, not from taste:**
+
+- **Write "done means" before the code.** A check you cannot run is a ticket
+  you cannot close.
+- **One ticket, one attempt.** If it comes back `blocked`, answer the question
+  and re-dispatch; do not edit the Mandate (it is immutable — open a new ticket
+  for wider scope).
+- **Run `verify --baseline` before or beside the worker.** Without it, "no new
+  failures" is an opinion.
+- **Keep `limit_min` at 45 for real work, less for drills.** The watchdog is the
+  only thing that can end a silent worker.
+- **Declare `compute` when checks are slow.** Checks are the expensive part;
+  moving them to a build host is the single biggest quality-of-life change.
+- **Use Orca when you want supervision and placement.** Use the local executor
+  when you want the smallest possible setup. The call above does not change.
+- **Start with a docs or single-test ticket.** Let the first real ticket be one
+  whose failure teaches you the system cheaply.
+
+A pre-flight checklist and a troubleshooting table live in
+[docs/setup.md](docs/setup.md).
 
 ---
 
 ## The call
 
 ```bash
-$ bash ops/loom status
+$ loom status
 {"v":"0.6.0","cmd":"status","ok":true,"state":"waiting","fact":"nothing waits for a person","id":null,"ticket":null,"items":[],"actions":[]}
 ```
 
-Every invocation prints exactly one JSON object. Diagnostics go to stderr.
-Exit `0` iff `ok` is true; `2` on a usage error (the object is still printed).
+Every invocation prints exactly one JSON object. Diagnostics go to stderr. Exit
+`0` iff `ok` is true; `2` on a usage error (the object is still printed).
 
 | Key | Meaning |
 | --- | --- |
@@ -156,7 +232,7 @@ laws      = ["…", "…"]              # copied verbatim into every WORK.md
 limit_min = 45                      # optional watchdog limit (default 30)
 
 executor  = "auto"                  # auto | local | orca
-compute   = ["build1", "build2"]      # optional SSH hosts, first reachable wins
+compute   = ["build1", "build2"]    # optional SSH hosts, first reachable wins
 compute_setup = ". ~/.venvs/checks/bin/activate"   # optional, runs on the host
 compute_selector = "--host ssh:<id>"               # optional exact Orca selector
 model     = "…"                     # optional: worker-start --model
@@ -165,7 +241,8 @@ start_timeout_ms = 300000           # optional: worker-start --timeout-ms
 ```
 
 Unknown or duplicate keys are rejected. Nothing in the config is evaluated at
-parse time.
+parse time. Private consumer configs are gitignored; `consumers/example.toml`
+and `consumers/loom.toml` are the tracked ones.
 
 ## Execution models
 
@@ -200,8 +277,10 @@ conductor's laptop.
   dispatch judgement and merges need a session awake.
 - `watch` stops when the conductor stops. There is no scheduler yet.
 - Tested on macOS (bash 3.2) and Linux; the selftest is offline and hermetic.
-- Tickets are GitHub issues (`gh` is a dependency). A non-GitHub Source is a
+- Tickets are GitHub issues (`gh` is a dependency). A non-GitHub source is a
   later seam, not a feature.
+- `VERSION` is `0.x`: the call contract may still change; breaking changes get a
+  new spec.
 
 ## Documentation
 
@@ -222,7 +301,6 @@ Small, evidenced changes. A fix lands with a selftest case *and* a mutant, and
 
 ## License
 
-The domain model is adapted from DeepSeek's `dsh-superagent` prototype (MIT).
-This repository does not yet carry a `LICENSE` file, so no licence is granted
-until one is added. MIT is the intended choice; it is the owner's decision, and
-the project's own drill D3 is exactly that question.
+MIT. See [LICENSE](LICENSE). The domain model is adapted from DeepSeek's
+`dsh-superagent` prototype (MIT); this repository keeps the law and drops the
+service layer.
