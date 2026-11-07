@@ -69,7 +69,15 @@ used here only as drill subjects.
 ### L2 — confirmation: run the drills
 `drills/` holds one script or checklist per drill. D2's hung worker is
 `sleep`-based, costless. Evidence file committed per run. This layer is the
-gate: green drills = loom is certified as the coordination layer.
+gate: green drills = loom is certified as the coordination layer. **Green as of
+2026-11-07** — D1 (the consumer#43 → the consumer#44), D2, D3, D4; see `HANDOVER.md`.
+
+### L2.5 — the call (0.5.0)
+`ops/loom`: one command, one JSON object, the same for Claude, Codex, or any
+later harness. Closes the four gaps the first real Orca run found: #29 (receipt
+workspace), #30 (kept-open release), #31 (ack), #33 (evidence). Spec:
+`docs/superpowers/specs/2026-11-07-loom-0.5.0-design.md`. Issue #35's remaining
+Orca rows are specified there and deliberately not built.
 
 ### L3 — adoption
 - the consumer ticket #42 (`pyz`) completes through loom machinery end to end.

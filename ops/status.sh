@@ -22,8 +22,15 @@ for file in "$LOOM_STATE"/*.json; do
       [$id, "stale", "no report for \(((now - $last) / 60) | floor) min (Orca dispatch \(.executor.dispatch)); owner decides: ops/orca.sh stop \($id)"] | @tsv
     ' "$file"
     jq -r --arg id "${id%.json}" '
-      select(.worker_pid == null and ((.executor.state // "") | IN("running", "starting") | not)) | .reports[-1] // empty |
+      select(.worker_pid == null and ((.executor.state // "") | IN("running", "starting") | not)) |
+      select(has("acked") | not) | .reports[-1] // empty |
       select(.state == "blocked" or .state == "ready" or .state == "failed") |
       [$id, .state, (.fact | gsub("[\\t\\r\\n]+"; " "))] | @tsv
+    ' "$file"
+    # Ack settles the report. It does not settle a kept-open workspace (gap #30).
+    jq -r --arg id "${id%.json}" '
+      select(.executor.kind == "orca" and .executor.state == "settled" and .executor.kept_open == true) |
+      select(.collected_sha != null and .executor.released != true) |
+      [$id, "release", "kept-open workspace not released (Orca dispatch \(.executor.dispatch))"] | @tsv
     ' "$file"
 done

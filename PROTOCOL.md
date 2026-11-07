@@ -24,9 +24,10 @@ scripts a conductor runs. The principle it inherits whole:
 | Ticket | A GitHub issue in the consumer repo, labeled `loom` | The unit of authorized work. Carries exactly one Mandate block. Open → ended; a person's message can reopen it under the same Mandate. |
 | Mandate | A block on the issue body (see templates/MANDATE.md) | Immutable. Names the scope, the constraints (the consumer's standing laws), and the stop-by-impact line. Wider scope = new Ticket. Only the owner withdraws one. |
 | Assignment | One worker bound to one Ticket | A JSON record in the loom state dir: ticket, worker PID, worktree, started-at, report log. Several Assignments per Ticket over time; at most one live. |
-| Worktree | `git worktree` named after the Ticket's short name | A PR belongs to a Ticket when its branch matches the Ticket's short name. The conductor creates and removes it. |
-| Report | One line of structured facts per worker turn | `ready | blocked | failed | waiting`, plus a short fact string. Appended to the Assignment record by ops/report.sh. Never inferred from prose. |
-| Watchdog | ops/watchdog.sh under the conductor's heartbeat | No report within the limit (default 30 min) → kill the PID, mark the Assignment `failed` with `watchdog_kill`, leave the worktree for autopsy. The Ticket stays open and clean for re-dispatch. |
+| Worktree | `git worktree` created by Orca, or a private clone by `dispatch.sh` for the local executor | A PR belongs to a Ticket when its branch matches the Ticket's short name (Orca names its own branch). The conductor creates and removes it. |
+| Report | One line of structured facts per worker turn | `ready | blocked | failed | waiting`, plus a short fact string. Folded into the Assignment record by harvest. Never inferred from prose. |
+| Watchdog | ops/watchdog.sh under the conductor's heartbeat | No report within the limit (default 30 min) → kill the PID, mark the Assignment `failed` with `watchdog_kill`, leave the worktree for autopsy. The Ticket stays open and clean for re-dispatch. An Orca worker is surfaced as `stale` and never signalled by loom. |
+| Call | ops/loom | One JSON object per invocation, the same for every calling harness. Contract: `docs/superpowers/specs/2026-11-07-loom-0.5.0-design.md`. |
 
 ## Report states
 

@@ -77,6 +77,8 @@ loom_validate() {
               (.exit | type == "number") and (.at | iso)))) and
       ((has("limit_min") | not) or .limit_min == null or (.limit_min | type == "number" and . > 0)) and
       ((has("report_offset") | not) or (.report_offset | type == "number" and . >= 0)) and
+      ((has("collected_sha") | not) or (.collected_sha | type == "string" and test("^[0-9a-f]{40}$"))) and
+      ((has("acked") | not) or (.acked | type == "object" and (.at | iso) and (.fact | type == "string" and length > 0))) and
       (.reports | type == "array") and
       all(.reports[]; (.at | iso) and
           (.state == "ready" or .state == "blocked" or .state == "failed" or .state == "waiting") and
@@ -123,6 +125,29 @@ loom_alive() {  # loom_alive <file>: the recorded worker is live (local process 
     [[ $now == "$start" ]]
 }
 
+# Keep loom's own files out of the consumer commit. .loom/ is the worker's
+# evidence directory (gap #33): copied into state, never committed.
+loom_exclude() {  # loom_exclude <workdir>
+    local workdir=$1 common f
+    [[ -d $workdir ]] || return 0
+    common=$(git -C "$workdir" rev-parse --git-common-dir 2>/dev/null) || return 0
+    [[ $common == /* ]] || common="$workdir/$common"
+    mkdir -p "$common/info"
+    for f in WORK.md REPORT.md .loom/; do
+        grep -qxF "$f" "$common/info/exclude" 2>/dev/null || printf '%s\n' "$f" >> "$common/info/exclude"
+    done
+}
+
+# Copy .loom/ to $LOOM_STATE/<id>.evidence before the commit. A symlink is
+# refused: evidence must not walk out of the workdir.
+loom_take_evidence() {  # loom_take_evidence <workdir> <id>
+    local src="$1/.loom" dest="$LOOM_STATE/$2.evidence"
+    [[ -e $src || -L $src ]] || return 0
+    [[ -d $src && ! -L $src ]] || loom_error "evidence path is not a directory: $src"
+    rm -rf "$dest"
+    cp -R "$src" "$dest"
+}
+
 # Fold the newest state line written since launch into the record and clear the
 # worker. Accepted line: "state: <ready|blocked|failed|waiting> — <fact>"
 # (separator may be —, --, - or :).
@@ -147,6 +172,8 @@ loom_harvest() {  # loom_harvest <file> <why-if-silent>
     # branch. WORK.md and REPORT.md are excluded at dispatch.
     local id=${file##*/}
     id=${id%.json}
+    loom_exclude "$workdir"
+    loom_take_evidence "$workdir" "$id"
     # The consumer's commit hooks run (they are its quality gate). Auto-fixers
     # rewrite files and fail the first commit by design, so loom re-stages and
     # retries once, as a person would; a second failure is logged (gap #22).
