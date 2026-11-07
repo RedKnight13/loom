@@ -71,9 +71,10 @@ echo 'export PATH="$HOME/loom/ops:$PATH"' &gt;&gt; ~/.zshrc
 exec $SHELL -l
 cd ~/loom
 bash ops/selftest.sh          # exit 0
-shellcheck -x ops/*.sh ops/loom
-bash ops/mutate.sh            # exit 0, SURVIVED=0</pre>
+shellcheck -x ops/*.sh ops/loom</pre>
 <button class="copy" data-copy="#install-cmds">Copy install commands</button>
+<p>The long, macOS-only contributor and CI gate is separate from setup:</p>
+<pre>bash ops/mutate.sh            # exit 0, SURVIVED=0</pre>
 
 <h2>Or let an agent set it up</h2>
 <p>Paste one prompt into Claude Code or Codex. It checks prerequisites, clones and proves the
@@ -81,7 +82,7 @@ checkout, asks for your repo and checks command, and stops before creating an is
 <span class="tag">one click to copy</span></p>
 
 <button class="copy" data-copy-file="bootstrap.txt">Copy the bootstrap prompt</button>
-<p class="muted">It runs the selftest, <code>shellcheck</code>, and the mutant suite; it never pushes,
+<p class="muted">It runs the selftest and <code>shellcheck</code>; it never pushes,
 merges, or writes credentials, and it does not claim success without a captured exit code.
 Read it first: <a href="bootstrap.txt">bootstrap.txt</a> · <a href="copy.html">the full page</a></p>
 
