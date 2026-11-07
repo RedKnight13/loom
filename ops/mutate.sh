@@ -118,6 +118,7 @@ run orca.sh "s/grep -q 'dispatch_not_found' \"\$show\" || loom_error/false || lo
 run dispatch.sh 's/if \[\[ \$workers != null \]\]; then/if false; then/' "worker limit ignored" m53
 run dispatch.sh '/git -C "\$config_dir" ls-files --error-unmatch/c\
     true; then' "ignored config records an empty commit (#68)" m54
+run loom 's/ ${label_args\[@\]+"${label_args\[@\]}"}//' "loom accept drops label pass-through (#67)" m67
 wait
 survived=0
 for n in "${order[@]}"; do
