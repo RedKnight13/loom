@@ -68,10 +68,14 @@ loom_validate() {
       ((has("launched_at") | not) or (.launched_at | iso)) and
       ((has("executor") | not) or (.executor | type == "object" and
           (.kind == "local" or .kind == "orca") and
-          (.kind == "local" or (.state | IN("pending", "starting", "running", "settled", "failed_start"))))) and
+          (.kind == "local" or (.state | IN("pending", "starting", "running", "settled", "failed_start", "abandoned"))))) and
       ((has("branch") | not) or .branch == null or (.branch | type == "string")) and
       ((has("compute") | not) or .compute == null or (.compute | type == "array" and all(.[]; type == "string"))) and
       ((has("compute_setup") | not) or .compute_setup == null or (.compute_setup | type == "string")) and
+      ((has("compute_selector") | not) or .compute_selector == null or (.compute_selector | type == "string")) and
+      ((has("model") | not) or .model == null or (.model | type == "string")) and
+      ((has("effort") | not) or .effort == null or (.effort | type == "string")) and
+      ((has("start_timeout_ms") | not) or .start_timeout_ms == null or (.start_timeout_ms | type == "number" and . > 0)) and
       ((has("config_commit") | not) or .config_commit == null or (.config_commit | type == "string" and test("^[0-9a-f]{40}$"))) and
       ((has("checks") | not) or .checks == null or (.checks | type == "string")) and
       ((has("checks_runs") | not) or (.checks_runs | type == "array" and
@@ -217,7 +221,11 @@ loom_config() {
      ((has("executor") | not) or (.executor | IN("auto", "local", "orca"))) and
      ((has("compute") | not) or (.compute | (type == "string" and length > 0) or (type == "array" and length > 0 and all(.[]; type == "string" and length > 0)))) and
      ((has("compute_setup") | not) or (.compute_setup | type == "string")) and
-     ((keys - ["repo", "checks", "worktrees", "laws", "limit_min", "executor", "compute", "compute_setup"]) | length == 0)
+     ((has("compute_selector") | not) or (.compute_selector | type == "string" and startswith("--") and (test("\n") | not))) and
+     ((has("model") | not) or (.model | type == "string" and (test("[\\s]") | not))) and
+     ((has("effort") | not) or (.effort | type == "string" and (test("[\\s]") | not))) and
+     ((has("start_timeout_ms") | not) or (.start_timeout_ms | type == "number" and . > 0 and . == floor)) and
+     ((keys - ["repo", "checks", "worktrees", "laws", "limit_min", "executor", "compute", "compute_setup", "compute_selector", "model", "effort", "start_timeout_ms"]) | length == 0)
   then . else error("invalid consumer config") end
 ' "$1" || loom_error 'unsupported or invalid consumer TOML; see ops/README.md'
 }
@@ -273,4 +281,18 @@ loom_compute_pick() {  # loom_compute_pick <host>...: first reachable host
         fi
     done
     return 1
+}
+
+# Resolve a host name/id in Orca's host list. Prints "<name>\t<selector>" when
+# the host exists and is connected; returns 1 when missing, 2 when disconnected.
+loom_orca_host() {  # loom_orca_host <name-or-id>
+    local want=$1 out
+    out=$(loom_orca host list --json 2>/dev/null) || return 1
+    jq -e --arg w "$want" '[.result.hosts[] | select(.id == $w or .name == $w)] | length > 0'         <<< "$out" >/dev/null 2>&1 || return 1
+    jq -e --arg w "$want" '
+      [.result.hosts[] | select(.id == $w or .name == $w)][0] | .connected == true or .kind == "local"
+    ' <<< "$out" >/dev/null 2>&1 || return 2
+    jq -r --arg w "$want" '
+      [.result.hosts[] | select(.id == $w or .name == $w)][0] | [.name, (.selector // "--host \(.id)")] | @tsv
+    ' <<< "$out"
 }
