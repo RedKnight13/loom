@@ -9,6 +9,9 @@ pids=()
 cleanup() {
     local p
     for p in ${pids[@]+"${pids[@]}"}; do kill -KILL "$p" 2>/dev/null || :; done
+    # Stub workers started by the Orca stub are not all in pids; their command
+    # lines carry the scratch path. Kill them so the suite leaves no orphans.
+    pkill -f "$scratch" 2>/dev/null || :
     rm -rf "$scratch"
 }
 trap cleanup EXIT
