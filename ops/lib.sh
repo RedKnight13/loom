@@ -60,6 +60,10 @@ loom_validate() {
       (.worker_pid == null or (.worker_start | type == "string" and length > 0)) and
       (.started_at | iso) and
       ((has("launched_at") | not) or (.launched_at | iso)) and
+      ((has("checks") | not) or .checks == null or (.checks | type == "string")) and
+      ((has("checks_runs") | not) or (.checks_runs | type == "array" and
+          all(.[]; (.kind == "baseline" or .kind == "branch") and (.sha | type == "string") and
+              (.exit | type == "number") and (.at | iso)))) and
       ((has("limit_min") | not) or .limit_min == null or (.limit_min | type == "number" and . > 0)) and
       ((has("report_offset") | not) or (.report_offset | type == "number" and . >= 0)) and
       (.reports | type == "array") and

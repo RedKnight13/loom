@@ -26,5 +26,7 @@ run watchdog.sh 's/($override \/\/ .limit_min \/\/ 30)/($override \/\/ 30)/' "wa
 run lib.sh '/s="${s%"${s##\*\[!\[:space:\]\]}"}"/d' "start time not trimmed at the end" m7
 run lib.sh 's/git -C "$workdir" add -A \&\&/true \&\&/' "harvest does not stage worker files" m8
 run dispatch.sh 's/\.short_name == \$short/.short_name == "never"/' "attempts not numbered per short name" m9
+run verify.sh 's/(cd "$scratch\/tree" \&\& exec bash/(cd "$workdir" \&\& exec bash/' "verify runs in the worker clone" m10
+run verify.sh '/126|127) verdict=/d' "could-not-run reported as a test failure" m11
 echo "SURVIVED=$survived"
 exit "$survived"
