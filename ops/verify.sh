@@ -42,7 +42,7 @@ git -C "$scratch/tree" -c advice.detachedHead=false checkout -q "$sha"
 log="$LOOM_STATE/$1.checks-$kind.log"
 started=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 rc=0
-(cd "$scratch/tree" && exec bash -c "$checks") < /dev/null > "$log" 2>&1 || rc=$?
+(cd "$scratch/tree" && umask "$LOOM_CALLER_UMASK" && exec bash -c "$checks") < /dev/null > "$log" 2>&1 || rc=$?
 case $rc in
     0) verdict="checks exit 0" ;;
     126|127) verdict="checks could not run (exit $rc): see ${log##*/}" ;;
