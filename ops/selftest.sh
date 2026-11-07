@@ -211,6 +211,33 @@ id7=${out##*$'\n'}
 jq -e '.ticket == 8 and .attempt == 7' "$(rec "$id7")" >/dev/null || fail 'reused-name record'
 pass 'a corrected ticket reuses its short name with the next attempt'
 
+# --- the conductor's re-check (gaps #9, #12, #13) ---
+sed 's/^checks = "true"$/checks = "test -f out.txt"/' "$scratch/consumer.toml" > "$scratch/checked.toml"
+out=$(bash "$ops/dispatch.sh" "$scratch/checked.toml" 8); work8=${out%$'\n'*}; id8=${out##*$'\n'}
+[[ $(< "$work8/WORK.md") == *'Checks the conductor will run'*'test -f out.txt'* ]] || fail 'WORK.md must show the checks'
+rc=0; bash "$ops/verify.sh" "$id8" --baseline >/dev/null 2>&1 || rc=$?
+[[ $rc == 1 ]] || fail "baseline must fail before the work exists (got $rc)"
+jq -e '.checks_runs[-1].kind == "baseline" and .checks_runs[-1].exit == 1 and (.reports | length) == 0' "$(rec "$id8")" >/dev/null || fail 'baseline must be recorded, not reported'
+bash "$ops/launch.sh" "$id8" -- bash "$scratch/bin/w-ready" >/dev/null
+out=$(bash "$ops/verify.sh" "$id8") || fail "verify of a good branch failed: $out"
+jq -e '.reports[-1].state == "ready" and (.reports[-1].fact | startswith("conductor verified: checks exit 0")) and (.reports[-1].fact | endswith("(baseline: 1)"))' "$(rec "$id8")" >/dev/null || fail 'verified report'
+# The worker's uncommitted leftovers must not influence verification.
+sed 's/^checks = "true"$/checks = "test -f leftover.txt"/' "$scratch/consumer.toml" > "$scratch/left.toml"
+out=$(bash "$ops/dispatch.sh" "$scratch/left.toml" 8); work9=${out%$'\n'*}; id9=${out##*$'\n'}
+bash "$ops/launch.sh" "$id9" -- bash "$scratch/bin/w-ready" >/dev/null
+printf 'x\n' > "$work9/leftover.txt"
+if bash "$ops/verify.sh" "$id9" >/dev/null 2>&1; then fail 'verify read the worker clone instead of a fresh clone'; fi
+jq -e '.reports[-1].state == "failed" and (.reports[-1].fact | startswith("conductor check: checks exit 1"))' "$(rec "$id9")" >/dev/null || fail 'failed check report'
+# A check that cannot start is not a test failure.
+sed 's/^checks = "true"$/checks = "no-such-loom-check-cmd"/' "$scratch/consumer.toml" > "$scratch/norun.toml"
+out=$(bash "$ops/dispatch.sh" "$scratch/norun.toml" 8); id10=${out##*$'\n'}
+rc=0; bash "$ops/verify.sh" "$id10" --baseline >/dev/null 2>&1 || rc=$?
+[[ $rc == 127 ]] || fail "unrunnable check must exit 127 (got $rc)"
+bash "$ops/launch.sh" "$id10" -- bash "$scratch/bin/w-files" >/dev/null
+bash "$ops/verify.sh" "$id10" >/dev/null 2>&1 || :
+jq -e '.reports[-1].fact | startswith("conductor check: checks could not run (exit 127)")' "$(rec "$id10")" >/dev/null || fail 'could-not-run not distinguished'
+pass 'verify: fresh clone, baseline recorded, could-not-run distinguished'
+
 # --- the lock: a live holder blocks, a dead holder is broken ---
 n=$(jq '.reports | length' "$(rec "$id1")")
 mkdir "$LOOM_STATE/.lock"; printf '%s\n' "$$" > "$LOOM_STATE/.lock/owner"

@@ -79,14 +79,18 @@ printf 'WORK.md\nREPORT.md\n' >> "$workdir/.git/info/exclude"
 {
     printf '# %s\n\n%s\n\n## Consumer laws\n\n' "$(jq -r '.title' <<< "$issue")" "$mandate"
     jq -r '.laws[] | "- " + .' <<< "$config"
+    if [[ $(jq -r '.checks // empty' <<< "$config") ]]; then
+        printf '\n## Checks the conductor will run\n\nOn ready, the conductor runs exactly this in a fresh clone of your branch; run it yourself before reporting:\n\n    %s\n' "$(jq -r '.checks' <<< "$config")"
+    fi
     printf '\n## How to report\n\nEnd every turn by appending one line to REPORT.md in this directory:\n\n    state: <ready|blocked|failed|waiting> — <one-line fact>\n\nready = a reviewable result is in this directory; blocked = one concrete question; failed = what failed and why; waiting = turn done, nothing owed.\n\nDo not run git add or git commit: leave your changes in the working tree. Loom commits them onto branch %s when you report.\n' "$short"
 } > "$workdir/WORK.md"
 jq -n --argjson ticket "$2" --arg repo "$repo" --arg short "$short" \
       --arg workdir "$workdir" --arg checkout "$checkout" --arg base "$base_sha" \
-      --argjson attempt "$attempt" --argjson limit "$(jq '.limit_min // null' <<< "$config")" '
+      --argjson attempt "$attempt" --argjson limit "$(jq '.limit_min // null' <<< "$config")" \
+      --argjson checks "$(jq '.checks // null' <<< "$config")" '
   {ticket: $ticket, repo: $repo, short_name: $short, attempt: $attempt,
    workdir: $workdir, checkout: $checkout, base_sha: $base,
-   limit_min: $limit, worker_pid: null, worker_start: null,
+   checks: $checks, limit_min: $limit, worker_pid: null, worker_start: null,
    started_at: (now | todateiso8601), reports: []}
 ' > "$LOOM_STATE/.pending"
 mv "$LOOM_STATE/.pending" "$LOOM_STATE/$id.json"
