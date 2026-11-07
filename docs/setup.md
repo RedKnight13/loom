@@ -1,0 +1,184 @@
+# Setup
+
+Loom is plain bash plus `git`, `jq`, `gh`, and optionally Orca and an SSH host.
+There is nothing to build and no service to run.
+
+## 1. Requirements
+
+| Tool | Version | Needed for |
+| --- | --- | --- |
+| bash | 3.2+ | everything |
+| git | any recent | dispatch, harvest, collect, verify |
+| jq | 1.6+ | every record and config read |
+| gh | any recent, authenticated | tickets, issues, labels |
+| shellcheck | any recent | `shellcheck -x ops/*.sh ops/loom` |
+| Orca CLI | optional | the `orca` executor, placement, worker mail |
+| ssh | optional | `compute` host for checks and placement |
+
+Check:
+
+```bash
+bash --version | head -1
+jq --version
+gh auth status
+```
+
+## 2. Get the tools
+
+```bash
+git clone https://github.com/RedKnight13/loom.git
+cd loom
+bash ops/selftest.sh                          # offline, hermetic, ~1 min
+shellcheck -x ops/*.sh ops/loom
+```
+
+`ops/selftest.sh` needs no network, signals no real worker, and uses stubs for
+`gh`, `orca`, `ssh` and `ps`. If it fails, stop: the environment is not ready.
+
+## 3. State
+
+Loom keeps one JSON record per assignment in `$LOOM_STATE` (default `~/.loom`).
+It is conductor-only; workers never write it.
+
+```bash
+export LOOM_STATE="$HOME/.loom"     # optional; this is the default
+```
+
+Records are validated on every read. A corrupt record stops the scripts rather
+than reading as healthy.
+
+| Variable | Meaning |
+| --- | --- |
+| `LOOM_STATE` | state directory (default `~/.loom`) |
+| `LOOM_REPO` | consumer checkout for `dispatch`/`collect` (default: cwd) |
+| `LOOM_LOCK_WAIT` | seconds to wait for a live lock (default 10) |
+| `LOOM_ORCA` | Orca binary (tests stub it) |
+| `LOOM_SSH` | ssh binary used for compute hosts (tests stub it) |
+| `LOOM_ALLOW_LOCAL` | `1` lets `launch` start a local worker while Orca is ready |
+| `LOOM_CALLER_UMASK` | umask handed to workers and checks |
+
+## 4. Register a consumer
+
+A consumer is any repo that owns tickets. One TOML file per consumer in
+`consumers/`, or anywhere you like.
+
+```toml
+repo      = "you/your-repo"          # where issues live
+checks    = "make check"             # run by verify.sh in a fresh clone
+worktrees = "~/work/your-workdirs"   # local executor workspace root
+laws      = [                        # copied verbatim into every WORK.md
+  "Workers never push; only the conductor pushes, reviews and merges.",
+  "Captured exit codes only; a check that was not run is reported as not run.",
+]
+limit_min = 45                       # optional; default 30
+executor  = "auto"                   # auto | local | orca
+```
+
+The config must be committed if its directory is a git work tree; the record
+pins the exact commit the assignment ran under.
+
+## 5. Local executor
+
+```bash
+bash ops/loom dispatch --consumer consumers/example.toml --issue 42
+# → {"id":"add-flag.1","fact":"/home/you/work/your-workdirs/add-flag.1", ...}
+
+bash ops/loom launch add-flag.1 -- bash -c 'my-agent "Read WORK.md"'
+bash ops/loom watch --until add-flag.1
+```
+
+`dispatch` creates a **private clone** with its own `.git` and **no remote**.
+The worker reads `WORK.md`, leaves files in the working tree, and appends one
+line to `REPORT.md`:
+
+```
+state: ready — added the flag and a test
+```
+
+It never runs git. Loom commits what it left, on branch `<short>`, when the turn
+is harvested. `WORK.md`, `REPORT.md` and `.loom/` are excluded from that commit;
+`.loom/` is copied to `$LOOM_STATE/<id>.evidence/` instead.
+
+## 6. Orca executor
+
+Orca supervises workers and, when a `compute` host is declared, places them
+there.
+
+```bash
+orca status                       # runtime reachable and ready
+orca repo add --path ~/src/your-repo
+orca host list                    # connect the target in the Orca app first
+
+executor = "orca"                 # in the consumer config
+compute  = ["build1", "build2"]   # optional; first connected Orca host wins
+
+bash ops/loom dispatch --consumer consumers/example.toml --issue 42
+bash ops/loom start add-flag.1                    # first connected host; refuses if none
+# Orca wakes the conductor when the worker is done:
+bash ops/loom harvest add-flag.1
+bash ops/loom verify add-flag.1
+bash ops/loom collect add-flag.1
+bash ops/loom release add-flag.1                  # after collect
+```
+
+Rules Loom keeps for Orca:
+
+- Orca creates the workspace. Loom adopts it.
+- Loom never signals an Orca worker. A silent one is shown as `stale`; you decide.
+- `stop` records a stop only when Orca confirms one; `stop_unknown` changes nothing.
+- `abandon` fences and records `failed / owner_fenced`; it never claims a stop.
+- A failed `worker-start` is recorded and never retried.
+- `check` is only ever called with `--peek`; `inbox` is the other read path.
+
+## 7. Compute host
+
+`compute` moves the checks (and Orca workers) off the conductor's machine.
+
+```toml
+compute       = ["build1", "build2"]                  # first reachable wins
+compute_setup = ". ~/.venvs/checks/bin/activate"    # run before each check
+```
+
+Requirements on the host:
+
+- SSH key auth works non-interactively (`ssh -o BatchMode=yes host true`)
+- `git` and the runtime your `checks` need
+- whatever `compute_setup` expects (a venv, a toolchain)
+
+`verify` ships the exact commit as a git bundle over SSH, builds a fresh tree in
+`$HOME/.loom-remote/<id>`, runs setup then checks, streams the log back, records
+the host, and deletes its folder. A host that is unreachable refuses; Loom never
+falls back to the conductor's machine. A failing `compute_setup` is reported as
+**could not run** (exit 126), never as a test failure.
+
+## 8. First ticket checklist
+
+- [ ] `bash ops/selftest.sh` exits 0
+- [ ] `shellcheck -x ops/*.sh ops/loom` exits 0
+- [ ] the consumer config is committed
+- [ ] `gh auth status` shows the account that owns the repo
+- [ ] the checkout's git identity is the one you want in commits
+  (Loom copies `user.name`/`user.email` into a local clone)
+- [ ] if `compute` is declared: `bash ops/loom compute --consumer FILE` names a host
+- [ ] if `executor = "orca"`: `orca status` is ready and the host is connected
+
+## 9. Troubleshooting
+
+| Symptom | Cause | Fix |
+| --- | --- | --- |
+| `consumer config has uncommitted changes` | config under git, edited | commit it; the record pins the config commit |
+| `ticket already has a live assignment` | one-ticket-one-worker rule | wait, `stop`, or dispatch a new attempt after it settles |
+| `executor orca required but ... not ready` | Orca runtime down | start Orca; Loom never silently falls back |
+| `no compute host is connected in Orca` | none of `compute` is connected | connect one in Orca; Loom does not connect hosts |
+| `no compute host reachable ... refusing` | SSH/setup | fix SSH or the host; do not expect a local run |
+| `checks could not run (exit 126/127/255)` | setup, ssh, missing runtime | read `$LOOM_STATE/<id>.checks-<kind>.log`; it is not a test failure |
+| `worker_exit_no_report` | worker exited without a `state:` line | read the log, re-dispatch with clearer instructions |
+| `watchdog_kill` | no report within `limit_min` | autopsy the workdir; the ticket stays open |
+| `orca could not confirm the stop` | `stop_unknown` | inspect with `worker-show`; `abandon` is fencing, not a stop |
+| `agent_readiness` timeout on a remote host | agent startup slower than Orca's wait | raise `start_timeout_ms` (for example `300000`) |
+| `git staging exits 128 ... .git is read-only` | old executor sandbox | workers never run git; harvest commits. Re-dispatch on 0.6.0 |
+
+## 10. Uninstall
+
+Delete the checkout and `$LOOM_STATE`. Nothing is installed elsewhere and no
+process runs in the background.
