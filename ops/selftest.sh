@@ -319,6 +319,43 @@ bash "$ops/verify.sh" "$id10" >/dev/null 2>&1 || :
 jq -e '.reports[-1].fact | startswith("conductor check: checks could not run (exit 127)")' "$(rec "$id10")" >/dev/null || fail 'could-not-run not distinguished'
 pass 'verify: fresh clone, baseline recorded, could-not-run distinguished'
 
+# --- collected branches can be rebased by the conductor (gap #74) ---
+(
+    bash "$ops/collect.sh" "$id8" >/dev/null
+    old_tip=$(git -C "$work8" rev-parse HEAD)
+    new_base=$(git -C "$repo" commit-tree "$base^{tree}" -p "$base" -m 'new base for verification')
+    git -C "$repo" rebase --onto "$new_base" "$base" fixture-task >/dev/null 2>&1
+    tip=$(git -C "$repo" rev-parse HEAD)
+    git -C "$repo" checkout -q unrelated
+    [[ $tip != "$old_tip" ]] || fail 'fixture: rebase did not change the branch tip'
+    [[ $(git -C "$work8" rev-parse HEAD) == "$old_tip" ]] || fail 'fixture: worker tip moved'
+    # Prove the checks themselves run at the new tip, not just the report.
+    checks="test -f out.txt && test \"\$(git rev-parse HEAD)\" = $tip"
+    jq --arg checks "$checks" '.checks = $checks' "$(rec "$id8")" > "$scratch/rebased"
+    mv "$scratch/rebased" "$(rec "$id8")"
+    obj=$(bash "$ops/loom" verify "$id8") || fail "verify after rebase failed: $obj"
+    jq -e --arg tip "$tip" '.ok == true and (.fact | endswith(" at " + $tip))' <<< "$obj" >/dev/null || fail 'verify did not report the rebased tip'
+    jq -e --arg tip "$tip" --arg old "$old_tip" '.collected_sha == $old and .checks_runs[-1].sha == $tip and .checks_runs[-1].exit == 0 and .reports[-1].state == "ready" and (.reports[-1].fact | contains($tip))' "$(rec "$id8")" >/dev/null || fail 'rebased check record or report names the wrong SHA'
+
+    # A missing collected branch must never fall back to the old worker tip.
+    runs=$(jq '.checks_runs | length' "$(rec "$id8")")
+    git -C "$repo" update-ref -d refs/heads/fixture-task "$tip"
+    rc=0; err=$(bash "$ops/verify.sh" "$id8" 2>&1) || rc=$?
+    [[ $rc == 1 && $err == *'consumer checkout has no branch fixture-task'*"$old_tip"* ]] || fail "missing collected branch not refused: $err"
+    [[ $(jq '.checks_runs | length' "$(rec "$id8")") == "$runs" ]] || fail 'missing branch recorded a check run'
+    git -C "$repo" update-ref refs/heads/fixture-task "$tip"
+
+    # Deterministically move the consumer branch while its checks are running.
+    printf -v checks 'git -C %q update-ref refs/heads/fixture-task %q %q' "$repo" "$old_tip" "$tip"
+    jq --arg checks "$checks" '.checks = $checks' "$(rec "$id8")" > "$scratch/moved"
+    mv "$scratch/moved" "$(rec "$id8")"
+    rc=0; obj=$(bash "$ops/loom" verify "$id8") || rc=$?
+    [[ $rc == 1 ]] || fail 'verify passed after the branch moved during checks'
+    jq -e --arg tip "$tip" --arg old "$old_tip" '.ok == false and (.fact | contains("checked " + $tip)) and (.fact | contains("current " + $old))' <<< "$obj" >/dev/null || fail 'moved branch refusal must name both SHAs'
+    jq -e --arg tip "$tip" '.checks_runs[-1].sha == $tip and .checks_runs[-1].exit == 0 and .reports[-1].state == "failed"' "$(rec "$id8")" >/dev/null || fail 'moved branch must preserve the actual check result without certifying it'
+)
+pass 'verify: collected rebased tip checked and reported; missing or moving branch refused (#74)'
+
 # --- rendered tickets cannot drift (gap #8) ---
 if bash "$ops/ticket.sh" "$scratch/consumer.toml" --short Bad_Name --title t --scope s --out o --done d --dry-run >/dev/null 2>&1; then fail 'unparseable short name rendered'; fi
 if bash "$ops/ticket.sh" "$scratch/consumer.toml" --short ok-name --title t --scope $'two\nlines' --out o --done d --dry-run >/dev/null 2>&1; then fail 'multi-line field accepted'; fi
