@@ -515,6 +515,9 @@ EOF
     jq -e '.compute == null and .checks_runs[-1].host == "fake-agni-2"' "$(rec "$idn")" >/dev/null || fail '--on host not recorded'
     bash "$ops/verify.sh" "$idn" --baseline --on dead-agni >/dev/null 2>&1 && fail '--on an unreachable host ran'
     bash "$ops/verify.sh" "$idn" --on 'bad;host' >/dev/null 2>&1 && fail 'unsafe --on host accepted'
+    obj=$(bash "$ops/loom" verify "$idn" --baseline --on fake-agni-3) || fail "loom verify --on failed: $obj"
+    jq -e '.ok == true' <<< "$obj" >/dev/null || fail "loom verify --on not ok: $obj"
+    jq -e '.checks_runs[-1].host == "fake-agni-3"' "$(rec "$idn")" >/dev/null || fail 'loom verify --on did not reach the host'
 
     mk badsetup 'compute = "fake-agni"' 'false'
     out=$(bash "$ops/dispatch.sh" "$scratch/badsetup.toml" 7); idb=${out##*$'\n'}

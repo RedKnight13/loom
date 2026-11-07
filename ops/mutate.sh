@@ -52,5 +52,6 @@ run verify.sh 's/^    host=$(loom_compute_pick $hosts) || loom_error .*/    host
 run verify.sh "s/^hosts=\$(jq -r '(.compute \/\/ \[\])\[\]' \"\$file\")/hosts=''/" "compute host ignored" m31
 run verify.sh 's/if ! eval %q; then/if ! true %q; then/' "compute_setup never applied" m32
 run verify.sh 's/^\[\[ -z $on \]\] || hosts=$on/:/' "--on host ignored" m33
+run loom 's/base_args+=(--on "$2"); shift 2 ;;/shift 2 ;;/' "loom verify drops --on" m34
 echo "SURVIVED=$survived"
 exit "$survived"
