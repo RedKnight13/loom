@@ -95,20 +95,22 @@ case $cmd in
         ;;
     accept)
         consumer='' short='' title='' scope='' outf='' done=''
+        label_args=()
         while [[ $# -gt 0 ]]; do
             case $1 in
-                --consumer|--short|--title|--scope|--out|--done)
+                --consumer|--short|--title|--scope|--out|--done|--label)
                     [[ $# -ge 2 ]] || emit false failed "$usage" "" "" "[]" "[]" 2
                     case $1 in
                         --consumer) consumer=$2 ;; --short) short=$2 ;; --title) title=$2 ;;
                         --scope) scope=$2 ;; --out) outf=$2 ;; --done) done=$2 ;;
+                        --label) label_args+=(--label "$2") ;;
                     esac
                     shift 2 ;;
                 *) emit false failed "$usage" "" "" "[]" "[]" 2 ;;
             esac
         done
         [[ -n $consumer && -n $short && -n $title && -n $scope && -n $outf && -n $done ]] || emit false failed "$usage" "" "" "[]" "[]" 2
-        url=$(run_out bash "$ops/ticket.sh" "$consumer" --short "$short" --title "$title" --scope "$scope" --out "$outf" --done "$done")
+        url=$(run_out bash "$ops/ticket.sh" "$consumer" --short "$short" --title "$title" --scope "$scope" --out "$outf" --done "$done" ${label_args[@]+"${label_args[@]}"})
         ticket=${url##*/}
         [[ $ticket =~ ^[1-9][0-9]*$ ]] || emit false failed "ticket URL did not end in an issue number: $url"
         emit true accepted "ticket opened" "" "$ticket"

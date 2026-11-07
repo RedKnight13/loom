@@ -617,6 +617,21 @@ bash "$ops/ticket.sh" "$scratch/consumer.toml" --short labeled-task --title t --
 ! grep -qx 'loom-ready' "$GH_STATE/issue9.labels" || fail '--no-default-label ignored'
 pass 'ticket labels: repeatable, default loom-ready, no-default'
 
+# --- loom accept forwards repeatable labels (gap #67) ---
+out=$(bash "$ops/loom" accept --consumer "$scratch/consumer.toml" --short accepted-task --title t --scope s --out o --done d) || fail 'loom accept without labels failed'
+jq -e '.ok == true and .state == "accepted" and .ticket == 9' <<< "$out" >/dev/null || fail 'loom accept did not return the created ticket'
+grep -qx 'loom-ready' "$GH_STATE/issue9.labels" || fail 'loom accept without labels lost the default'
+out=$(bash "$ops/loom" accept --consumer "$scratch/consumer.toml" --label custom --short accepted-task --title t --scope s --out o --done d --label 'needs review') || fail 'loom accept rejected repeatable labels'
+jq -e '.ok == true and .state == "accepted" and .ticket == 9' <<< "$out" >/dev/null || fail 'labeled loom accept did not return the created ticket'
+grep -qx 'custom' "$GH_STATE/issue9.labels" || fail 'loom accept dropped the first label (#67)'
+grep -qx 'needs review' "$GH_STATE/issue9.labels" || fail 'loom accept dropped the second label or split its value (#67)'
+grep -qx 'loom-ready' "$GH_STATE/issue9.labels" || fail 'loom accept labels dropped the default'
+rc=0
+out=$(bash "$ops/loom" accept --consumer "$scratch/consumer.toml" --short accepted-task --title t --scope s --out o --done d --label) || rc=$?
+[[ $rc == 2 ]] || fail "loom accept --label without a value must exit 2 (got $rc)"
+jq -e '.ok == false and (.fact | contains("[--label L]"))' <<< "$out" >/dev/null || fail 'loom accept missing label value did not return usage'
+pass 'loom accept: zero or repeatable labels reach issue creation; missing value rejected'
+
 # --- Orca placement and the map (#37, #35) ---
 (
     export LOOM_ORCA="$scratch/bin/orca"
