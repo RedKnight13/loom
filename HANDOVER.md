@@ -24,7 +24,7 @@ under the owner's GitHub name.
 | Code | `main` (PRs #2, #3, #15, #16, #17, #18, #21, #23 merged) |
 | Version | **0.6.0** — `ops/loom` is the one call; compute host for checks and placement; ticket labels; the Orca map. Specs: `docs/superpowers/specs/2026-11-07-loom-0.5.0-design.md`, `…-0.6.0-design.md`. |
 | Scripts | `ticket` → `dispatch` → `launch` → `heartbeat` (watchdog + status) → `verify` → `collect`; plus `report`, `selftest`, `mutate` |
-| Proof | `bash ops/selftest.sh` exit 0 · `shellcheck -x ops/*.sh` exit 0 · `bash ops/mutate.sh`: 17 mutants, all caught |
+| Proof | `bash ops/selftest.sh` exit 0 · `shellcheck -x ops/*.sh ops/loom` exit 0 · `bash ops/mutate.sh`: 39 mutants, all caught |
 | Drills | **D1, D2, D3, D4 PASS** on real repos — D1 = smriti#43, merged as smriti#44 (first real work through loom) |
 | Gaps | 16 found by running real workers, 16 fixed (issues labelled `gap`, all closed) |
 | Consumers | `consumers/smriti.toml` (first real consumer), `consumers/loom.toml` (drills only) |
