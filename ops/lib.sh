@@ -290,9 +290,10 @@ loom_orca_host() {  # loom_orca_host <name-or-id>
     out=$(loom_orca host list --json 2>/dev/null) || return 1
     jq -e --arg w "$want" '[.result.hosts[] | select(.id == $w or .name == $w)] | length > 0'         <<< "$out" >/dev/null 2>&1 || return 1
     jq -e --arg w "$want" '
-      [.result.hosts[] | select(.id == $w or .name == $w)][0] | .connected == true or .kind == "local"
+      [.result.hosts[] | select(.id == $w or .name == $w) | select(.connected == true or .kind == "local")] | length > 0
     ' <<< "$out" >/dev/null 2>&1 || return 2
+    # A name can appear twice (an ssh target and an environment); take the connected one.
     jq -r --arg w "$want" '
-      [.result.hosts[] | select(.id == $w or .name == $w)][0] | [.name, (.selector // "--host \(.id)")] | @tsv
+      [.result.hosts[] | select(.id == $w or .name == $w) | select(.connected == true or .kind == "local")][0] | [.name, (.selector // "--host \(.id)")] | @tsv
     ' <<< "$out"
 }
