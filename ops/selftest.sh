@@ -286,6 +286,32 @@ grep -q "$idk failed watchdog_kill" "$scratch/hb2" || fail 'heartbeat must surfa
 if bash "$ops/heartbeat.sh" --until nobody.1 --every 1 >/dev/null 2>&1; then fail 'heartbeat on a missing assignment'; fi
 pass 'heartbeat ends on settle, surfaces kills, ends with status'
 
+# --- children get the caller's umask, not loom's private 077 (gap #19) ---
+(
+    umask 022
+    # shellcheck disable=SC2016  # $(umask) must reach the checks unexpanded
+    sed 's/^checks = "true"$/checks = "test $(umask) = 0022"/' "$scratch/consumer.toml" > "$scratch/umask.toml"
+    out=$(bash "$ops/dispatch.sh" "$scratch/umask.toml" 7); idu=${out##*$'\n'}
+    bash "$ops/launch.sh" "$idu" -- bash -c 'printf "state: ready — umask %s\n" "$(umask)" >> REPORT.md' >/dev/null
+    jq -e '.reports[-1].fact == "umask 0022"' "$(rec "$idu")" >/dev/null || fail "worker ran under loom's umask: $(jq -r '.reports[-1].fact' "$(rec "$idu")")"
+    bash "$ops/verify.sh" "$idu" --baseline >/dev/null 2>&1 || fail "checks ran under loom's umask"
+)
+pass "workers and checks run under the caller's umask"
+
+# --- a versioned consumer config must be committed (gap #20) ---
+mkdir -p "$scratch/cfg"
+git -C "$scratch/cfg" init -q
+cp "$scratch/consumer.toml" "$scratch/cfg/consumer.toml"
+git -C "$scratch/cfg" add consumer.toml
+git -C "$scratch/cfg" -c user.name=t -c user.email=t@example.invalid -c commit.gpgsign=false commit -q -m cfg
+cfgsha=$(git -C "$scratch/cfg" rev-parse HEAD)
+out=$(bash "$ops/dispatch.sh" "$scratch/cfg/consumer.toml" 7) || fail 'committed config refused'
+jq -e --arg c "$cfgsha" '.config_commit == $c' "$(rec "${out##*$'\n'}")" >/dev/null || fail 'config commit not pinned in the record'
+printf '# drift\n' >> "$scratch/cfg/consumer.toml"
+if bash "$ops/dispatch.sh" "$scratch/cfg/consumer.toml" 7 >/dev/null 2>&1; then fail 'uncommitted config accepted'; fi
+jq -e '.config_commit == null' "$(rec "$id1")" >/dev/null || fail 'unversioned config must record null'
+pass 'versioned config: committed is pinned, uncommitted is refused'
+
 # --- the lock: a live holder blocks, a dead holder is broken ---
 n=$(jq '.reports | length' "$(rec "$id1")")
 mkdir "$LOOM_STATE/.lock"; printf '%s\n' "$$" > "$LOOM_STATE/.lock/owner"
