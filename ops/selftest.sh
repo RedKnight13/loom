@@ -156,6 +156,22 @@ out=$(LOOM_ALLOW_ANY_CHECKOUT=1 LOOM_REPO="$scratch/other" bash "$ops/dispatch.s
 rm -rf "${out%$'\n'*}" "$LOOM_STATE/${out##*$'\n'}.json"
 pass 'dispatch refuses a foreign checkout; the override is explicit (#54)'
 
+# --- workers: a declared cap limits open assignments (bootstrap asks for it) ---
+(
+    export LOOM_STATE="$scratch/limit-state"
+    sed -e 's/^checks = "true"$/checks = "true"\nexecutor = "local"\nworkers = 1/' \
+        -e "s|^worktrees = .*|worktrees = \"$scratch/limit-dirs\"|" "$scratch/consumer.toml" > "$scratch/limit1.toml"
+    out=$(bash "$ops/dispatch.sh" "$scratch/limit1.toml" 7) || fail 'first dispatch under workers=1 refused'
+    id1=${out##*$'\n'}
+    jq -e '.workers == 1' "$LOOM_STATE/$id1.json" >/dev/null || fail 'workers not recorded'
+    err=$(bash "$ops/dispatch.sh" "$scratch/limit1.toml" 8 2>&1) && fail 'workers=1 allowed a second open assignment'
+    [[ $err == *'worker limit reached (workers=1)'* ]] || fail "wrong worker-limit error: $err"
+    sed 's/^workers = 1$/workers = 2/' "$scratch/limit1.toml" > "$scratch/limit2.toml"
+    bash "$ops/dispatch.sh" "$scratch/limit2.toml" 8 >/dev/null || fail 'workers=2 refused a second assignment'
+    rm -rf "$scratch/limit-state" "$scratch/limit-dirs"
+)
+pass 'workers cap: open assignments stop at the declared number (#64)'
+
 # --- conductor report validation ---
 if bash "$ops/report.sh" "$id1" unknown bad 2>/dev/null; then fail 'invalid state accepted'; fi
 if bash "$ops/report.sh" ../escape ready bad 2>/dev/null; then fail 'unsafe id accepted'; fi
@@ -477,6 +493,8 @@ EOF
     # detection
     ORCA_STUB_MODE=down bash "$ops/orca.sh" detect >/dev/null && fail 'detect: down runtime reported ready'
     [[ $(bash "$ops/orca.sh" detect) == 'orca ready: runtime stub-runtime-1' ]] || fail 'detect: ready runtime not reported'
+    obj=$(bash "$ops/loom" capacity)
+    jq -e '.ok == true and (.fact | test("suggested workers: [1-9]"))' <<< "$obj" >/dev/null || fail "capacity: $obj"
     sed 's/^checks = "true"$/checks = "true"\nexecutor = "orca"/' "$scratch/consumer.toml" > "$scratch/orca.toml"
     ORCA_STUB_MODE=down bash "$ops/dispatch.sh" "$scratch/orca.toml" 7 >/dev/null 2>&1 && fail 'required orca not ready: dispatch accepted'
     bash "$ops/dispatch.sh" "$scratch/orca.toml" 7 --executor local >/dev/null 2>&1 && fail 'consumer requires orca: --executor local accepted'

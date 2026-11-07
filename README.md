@@ -87,6 +87,7 @@ Every row below is exercised by `ops/selftest.sh` and protected by a mutant in
 | **Checks** | `verify` runs the consumer's checks in a fresh clone, locally or over SSH on the compute host. Unreachable host or failed setup is *could not run*. |
 | **Reports** | `ready | blocked | failed | waiting` in `REPORT.md`; harvest folds the newest line into the record and commits the work. |
 | **Watchdog** | PID + process-start identity, process-group kill, per-consumer limit, `failed / watchdog_kill` exactly once. Orca workers are surfaced `stale`, never signalled. |
+| **Capacity** | `loom capacity` reads Orca's connected hosts and suggests a worker count; `workers` caps open assignments and `dispatch` refuses past it. |
 | **Attention** | `status` prints only what a person must act on. `ack` settles a handled result and keeps history. |
 | **Orca map** | `show read abandon keep-open list request peek inbox send ask reply gate task run reference worktree repo base-ref automation`. Harvest asks `worker-show` first; `check` only with `--peek`. |
 
@@ -148,6 +149,7 @@ checks    = "make check"                  # the command you already trust
 worktrees = "~/work/your-repo-workdirs"
 limit_min = 45                            # generous enough for one honest turn
 executor  = "auto"                        # Orca if ready, else local
+workers   = 3                             # max open assignments; omit = unlimited
 laws = [
   "Workers never push; only the conductor pushes, reviews and merges.",
   "Captured exit codes only; a check that was not run is reported as not run.",
@@ -193,6 +195,7 @@ loom ack add-json.1 "merged as #43"
   only thing that can end a silent worker.
 - **Declare `compute` when checks are slow.** Checks are the expensive part;
   moving them to a build host is the single biggest quality-of-life change.
+- **Set `workers` to what your hosts can carry.** `loom capacity` suggests one per connected Orca host; dispatch refuses past the cap instead of piling up.
 - **Use Orca when you want supervision and placement.** Orca is MIT
   (<https://github.com/stablyai/orca>), supported from **1.4.246**; its app must
   be running. Use the local executor when you want the smallest setup. The call
@@ -242,6 +245,7 @@ executor  = "auto"                  # auto | local | orca
 compute   = ["build1", "build2"]    # optional SSH hosts, first reachable wins
 compute_setup = ". ~/.venvs/checks/bin/activate"   # optional, runs on the host
 compute_selector = "--host ssh:<id>"               # optional exact Orca selector
+workers   = 3                       # optional: max open assignments; omit = unlimited
 model     = "…"                     # optional: worker-start --model
 effort    = "high"                  # optional: requires model
 start_timeout_ms = 300000           # optional: worker-start --timeout-ms

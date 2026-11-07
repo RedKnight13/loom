@@ -73,10 +73,21 @@ laws      = [                        # copied verbatim into every WORK.md
 ]
 limit_min = 45                       # optional; default 30
 executor  = "auto"                   # auto | local | orca
+workers   = 3                        # optional: max open assignments; omit = unlimited
 ```
 
 The config must be committed if its directory is a git work tree; the record
 pins the exact commit the assignment ran under.
+
+### Worker cap
+
+`workers` is the maximum number of open assignments for this consumer. `dispatch`
+counts records that are live or dispatched-but-unsettled and refuses past the
+cap with the ids that hold the slots. Omit the key for no cap.
+
+`loom capacity` reports what Orca can carry right now — runtime ready, connected
+hosts — and suggests a number (one per connected host, minimum one). The
+bootstrap prompt asks for this number and writes it into the config.
 
 ## 5. Local executor
 

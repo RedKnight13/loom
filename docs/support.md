@@ -15,6 +15,7 @@ What works today, what does not, and what it was tested on. Version **0.6.0**.
 | Checks over SSH | ✅ | bundle over stdin, fresh tree, log back |
 | `--on HOST` for one verify run | ✅ | for assignments dispatched before a host was declared |
 | Watchdog (PID + start time, group kill) | ✅ | per-consumer `limit_min` |
+| Worker cap | ✅ | `workers`; `dispatch` refuses past it, `loom capacity` suggests one per connected host |
 | Stale Orca worker surfaced, never killed | ✅ | owner decides |
 | `ack` settling a handled result | ✅ | history kept; a kept-open workspace still shows |
 | Release after collect | ✅ | confirmed by Orca; never deletes worktrees |

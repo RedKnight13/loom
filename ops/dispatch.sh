@@ -68,16 +68,25 @@ loom_lock
 # One ticket, one live worker. Attempts are numbered per short name across
 # all tickets: a corrected ticket (mandates are immutable) may reuse a name.
 attempt=1
+open_ids=()
 shopt -s nullglob
 for file in "$LOOM_STATE"/*.json; do
     loom_validate "$file"
     if jq -e --arg repo "$repo" --argjson ticket "$2" '.repo == $repo and .ticket == $ticket' "$file" >/dev/null; then
         ! loom_alive "$file" || loom_error "ticket already has a live assignment: $(basename "$file" .json)"
     fi
+    # Global cap for this consumer, when `workers` is declared.
+    if jq -e --arg repo "$repo" '.repo == $repo' "$file" >/dev/null && loom_open "$file"; then
+        open_ids+=("$(basename "$file" .json)")
+    fi
     jq -e --arg short "$short" '.short_name == $short' "$file" >/dev/null || continue
     n=$(jq -r '.attempt' "$file")
     (( n < attempt )) || attempt=$((n + 1))
 done
+workers=$(jq '.workers // null' <<< "$config")
+if [[ $workers != null ]]; then
+    (( ${#open_ids[@]} < workers )) || loom_error "worker limit reached (workers=$workers): ${open_ids[*]}"
+fi
 mkdir -p "$worktrees"
 workdir="$worktrees/$short.$attempt"
 if [[ $executor == orca ]]; then workdir=""; else
@@ -120,12 +129,13 @@ jq -n --argjson ticket "$2" --arg repo "$repo" --arg short "$short" \
       --argjson compute_selector "$(jq '.compute_selector // null' <<< "$config")" \
       --argjson model "$(jq '.model // null' <<< "$config")" \
       --argjson effort "$(jq '.effort // null' <<< "$config")" \
-      --argjson timeout "$(jq '.start_timeout_ms // null' <<< "$config")" '
+      --argjson timeout "$(jq '.start_timeout_ms // null' <<< "$config")" \
+      --argjson workers "$(jq '.workers // null' <<< "$config")" '
   {ticket: $ticket, repo: $repo, short_name: $short, attempt: $attempt,
    workdir: $workdir, checkout: $checkout, base_sha: $base,
    checks: $checks, compute: $compute, compute_setup: $compute_setup,
    compute_selector: $compute_selector, model: $model, effort: $effort,
-   start_timeout_ms: $timeout, config_commit: $config_commit, limit_min: $limit, worker_pid: null, worker_start: null,
+   start_timeout_ms: $timeout, workers: $workers, config_commit: $config_commit, limit_min: $limit, worker_pid: null, worker_start: null,
    executor: (if $executor == "orca" then {kind: "orca", state: "pending", runtime: $runtime} else {kind: "local"} end),
    started_at: (now | todateiso8601), reports: []}
 ' > "$LOOM_STATE/.pending"

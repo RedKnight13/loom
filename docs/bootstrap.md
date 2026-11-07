@@ -14,8 +14,9 @@ Codex, or any agent that can run shell commands.
 2. Clones Loom to `~/loom` (never overwriting a dirty checkout).
 3. Runs the offline selftest, `shellcheck`, and the mutant suite; stops on any
    non-zero exit.
-4. Asks for the consumer repo, its checks command, the worktrees directory, and
-   the executor. It never guesses.
+4. Asks for the consumer repo, its checks command, the worktrees directory,
+   the executor, and how many workers may run at once — offering the number
+   `loom capacity` suggests from Orca's connected hosts. It never guesses.
 5. Verifies `gh` and, if you choose Orca, that its runtime is ready and its
    version is at least **1.4.246**.
 6. Renders a ticket with `--dry-run` and stops before opening it.

@@ -76,6 +76,7 @@ loom_validate() {
       ((has("model") | not) or .model == null or (.model | type == "string")) and
       ((has("effort") | not) or .effort == null or (.effort | type == "string")) and
       ((has("start_timeout_ms") | not) or .start_timeout_ms == null or (.start_timeout_ms | type == "number" and . > 0)) and
+      ((has("workers") | not) or .workers == null or (.workers | type == "number" and . > 0)) and
       ((has("config_commit") | not) or .config_commit == null or (.config_commit | type == "string" and test("^[0-9a-f]{40}$"))) and
       ((has("checks") | not) or .checks == null or (.checks | type == "string")) and
       ((has("checks_runs") | not) or (.checks_runs | type == "array" and
@@ -257,7 +258,8 @@ loom_config() {
      ((has("model") | not) or (.model | type == "string" and (test("[\\s]") | not))) and
      ((has("effort") | not) or (.effort | type == "string" and (test("[\\s]") | not))) and
      ((has("start_timeout_ms") | not) or (.start_timeout_ms | type == "number" and . > 0 and . == floor)) and
-     ((keys - ["repo", "checks", "worktrees", "laws", "limit_min", "executor", "compute", "compute_setup", "compute_selector", "model", "effort", "start_timeout_ms"]) | length == 0)
+     ((has("workers") | not) or (.workers | type == "number" and . > 0 and . == floor)) and
+     ((keys - ["repo", "checks", "worktrees", "laws", "limit_min", "executor", "compute", "compute_setup", "compute_selector", "model", "effort", "start_timeout_ms", "workers"]) | length == 0)
   then . else error("invalid consumer config") end
 ' "$1" || loom_error 'unsupported or invalid consumer TOML; see ops/README.md'
 }
@@ -313,6 +315,16 @@ loom_compute_pick() {  # loom_compute_pick <host>...: first reachable host
         fi
     done
     return 1
+}
+
+# An assignment still occupying a worker slot: live, or dispatched and not yet
+# settled (an Orca pending record).
+loom_open() {  # loom_open <file>
+    if jq -e '.executor.kind == "orca"' "$1" >/dev/null; then
+        jq -e '.executor.state | IN("pending", "starting", "running")' "$1" >/dev/null
+    else
+        loom_alive "$1" || [[ $(jq -r '.reports | length' "$1") == 0 ]]
+    fi
 }
 
 # Resolve a host name/id in Orca's host list. Prints "<name>\t<selector>" when

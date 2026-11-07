@@ -6,6 +6,7 @@ repo      = "you/your-repo"              # where Tickets (issues) live
 checks    = "make check"                 # verify.sh runs this in a fresh clone
 worktrees = "~/work/your-repo-workdirs"  # local executor workspace root
 limit_min = 45                           # optional watchdog limit (default 30)
+workers   = 3                            # optional: max open assignments; omit = unlimited
 
 # auto = Orca when its runtime is ready, else the local launcher.
 # orca = required; never a silent local fallback.  local = never Orca.

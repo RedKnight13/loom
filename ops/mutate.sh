@@ -115,6 +115,7 @@ run orca.sh 's/\[\[ -n \$rpath \]\] || loom_error/[[ -n $rpath ]] || :/' "start 
 run orca.sh 's/\.executor\.dispatch = (if \$d == "" then null else \$d end)/.executor.dispatch = null/' "failed start drops its dispatch (#50)" m48
 run orca.sh 's/\[\[ \$xstate == running || ( \$xstate == failed_start \&\& -n \$dispatch ) \]\]/[[ $xstate == running ]]/' "abandon refuses a failed start (#50)" m49
 run orca.sh "s/grep -q 'dispatch_not_found' \"\$show\" || loom_error/false || loom_error/" "a dispatch Orca forgot blocks the abandon (#50)" m50
+run dispatch.sh 's/if \[\[ \$workers != null \]\]; then/if false; then/' "worker limit ignored" m53
 wait
 survived=0
 for n in "${order[@]}"; do
