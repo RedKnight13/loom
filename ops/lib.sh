@@ -66,6 +66,10 @@ loom_validate() {
       (.worker_pid == null or (.worker_start | type == "string" and length > 0)) and
       (.started_at | iso) and
       ((has("launched_at") | not) or (.launched_at | iso)) and
+      ((has("executor") | not) or (.executor | type == "object" and
+          (.kind == "local" or .kind == "orca") and
+          (.kind == "local" or (.state | IN("pending", "starting", "running", "settled", "failed_start"))))) and
+      ((has("branch") | not) or .branch == null or (.branch | type == "string")) and
       ((has("config_commit") | not) or .config_commit == null or (.config_commit | type == "string" and test("^[0-9a-f]{40}$"))) and
       ((has("checks") | not) or .checks == null or (.checks | type == "string")) and
       ((has("checks_runs") | not) or (.checks_runs | type == "array" and
@@ -106,8 +110,12 @@ loom_pstart() {
     printf '%s' "$s"
 }
 
-loom_alive() {  # loom_alive <file>: the recorded worker is this exact live process
+loom_alive() {  # loom_alive <file>: the recorded worker is live (local process or Orca worker)
     local pid start now
+    if jq -e '.executor.kind == "orca"' "$1" >/dev/null; then
+        loom_orca_running "$1"
+        return
+    fi
     pid=$(jq -r '.worker_pid // empty' "$1")
     [[ -n $pid ]] || return 1
     start=$(jq -r '.worker_start // empty' "$1")
@@ -177,7 +185,8 @@ loom_config() {
      (.worktrees | type == "string" and length > 0) and
      (.laws | type == "array" and all(.[]; type == "string")) and
      ((has("limit_min") | not) or (.limit_min | type == "number" and . > 0 and . == floor)) and
-     ((keys - ["repo", "checks", "worktrees", "laws", "limit_min"]) | length == 0)
+     ((has("executor") | not) or (.executor | IN("auto", "local", "orca"))) and
+     ((keys - ["repo", "checks", "worktrees", "laws", "limit_min", "executor"]) | length == 0)
   then . else error("invalid consumer config") end
 ' "$1" || loom_error 'unsupported or invalid consumer TOML; see ops/README.md'
 }
@@ -190,4 +199,30 @@ loom_mandate() {
 
 loom_short() {  # loom_short <mandate>
     jq -ner --arg mandate "$1" '$mandate | capture("(?m)^\\*\\*Ticket short name:\\*\\*[ \\t]*(?<name>[a-z0-9]+(?:-[a-z0-9]+)*)[ \\t]*(?:<!--[^\\n]*-->)?\\r?$").name' || loom_error 'missing or invalid ticket short name'
+}
+
+# --- executors (gaps #25, #26) ------------------------------------------------
+# Owner, 2026-11-07: workers "only start or stop through orcacli". Loom detects
+# the Orca CLI rather than assuming it. LOOM_ORCA names the binary (tests stub it).
+loom_orca() { "${LOOM_ORCA:-orca}" "$@"; }
+
+# Ready = the CLI exists and its runtime is reachable and ready. Prints the
+# runtime id on success.
+loom_orca_ready() {
+    local out
+    command -v "${LOOM_ORCA:-orca}" >/dev/null 2>&1 || return 1
+    out=$(loom_orca status 2>/dev/null) || return 1
+    grep -q '^runtimeReachable: true$' <<< "$out" || return 1
+    grep -q '^runtimeState: ready$' <<< "$out" || return 1
+    sed -n 's/^runtimeId: //p' <<< "$out" | head -n 1
+}
+
+loom_executor() {  # loom_executor <record>: local | orca
+    jq -r '.executor.kind // "local"' "$1"
+}
+
+# An Orca worker is live while loom has recorded it running; Orca, not loom,
+# supervises the process.
+loom_orca_running() {
+    jq -e '.executor.kind == "orca" and (.executor.state == "running" or .executor.state == "starting")' "$1" >/dev/null
 }

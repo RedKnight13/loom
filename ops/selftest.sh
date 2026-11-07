@@ -17,6 +17,9 @@ pass() { printf 'ok  %s\n' "$*"; }
 mkdir -p "$scratch/bin" "$scratch/repo"
 export LOOM_STATE="$scratch/state" LOOM_REPO="$scratch/repo" LOOM_LOCK_WAIT=2
 export GH_STATE="$scratch/gh"
+# Every test below runs without Orca unless it says otherwise (the real CLI may
+# be installed on the conductor's machine).
+export LOOM_ORCA="$scratch/no-orca-cli"
 mkdir -p "$GH_STATE"
 export GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null
 repo=$LOOM_REPO
@@ -339,6 +342,113 @@ EOF
     grep -q "hook: rejected bad.txt" "$LOOM_STATE/$idr.commit.log" || fail 'hook output not logged'
 )
 pass "consumer commit hooks: fixers retried, rejections logged"
+
+# --- the Orca executor: detect, start, harvest, stop, stale (gaps #25, #26) ---
+(
+    cat > "$scratch/bin/orca" <<'EOF'
+#!/usr/bin/env bash
+# Stub of the Orca CLI: real git worktrees, a background "agent", guarded stops.
+set -eu
+case "$1" in
+    status)
+        if [[ ${ORCA_STUB_MODE:-ready} == ready ]]; then
+            printf 'appRunning: true\nruntimeState: ready\nruntimeReachable: true\nruntimeId: stub-runtime-1\n'
+        else
+            printf 'appRunning: false\nruntimeState: stopped\nruntimeReachable: false\n'
+        fi ;;
+    orchestration)
+        case "$2" in
+            worker-start)
+                [[ ${ORCA_STUB_FAIL:-0} == 0 ]] || { echo '{"ok":false,"failedStage":"spawn"}'; exit 1; }
+                shift 2; name='' repo='' base='' spec=''
+                while [[ $# -gt 0 ]]; do
+                    case $1 in
+                        --name) name=$2; shift 2 ;; --repo) repo=${2#path:}; shift 2 ;;
+                        --base-branch) base=$2; shift 2 ;; --spec-file) spec=$2; shift 2 ;; *) shift ;;
+                    esac
+                done
+                ws="$GH_STATE/orca-ws/$name"
+                mkdir -p "$GH_STATE/orca-ws"
+                git -C "$repo" worktree add -q -b "orca/$name" "$ws" "$base" >/dev/null 2>&1
+                cp "$spec" "$GH_STATE/spec-$name.md"
+                ( cd "$ws" && exec bash "$ORCA_STUB_WORKER" ) </dev/null >/dev/null 2>&1 &
+                printf '%s\n' "$!" > "$GH_STATE/disp-$name.pid"
+                jq -n --arg d "disp-$name" --arg w "$ws" '{ok: true, result: {dispatch: {dispatchId: $d, taskId: "task-1", runId: "run-1"}, worktree: {path: $w}, specFile: "/elsewhere/spec.md"}}' ;;
+            worker-stop)
+                if [[ ${ORCA_STUB_STOP:-ok} == unknown ]]; then echo '{"ok":false,"error":{"code":"stop_unknown"}}'; exit 1; fi
+                kill -KILL "$(cat "$GH_STATE/$4.pid")" 2>/dev/null || :
+                echo '{"ok":true,"result":{"status":"stopped"}}' ;;
+            *) exit 98 ;;
+        esac ;;
+    *) exit 99 ;;
+esac
+EOF
+    chmod +x "$scratch/bin/orca"
+    export LOOM_ORCA="$scratch/bin/orca"
+    cat > "$scratch/bin/w-slow" <<'EOF'
+sleep 1
+printf 'notes\n' > notes.txt
+printf 'state: ready — wrote notes.txt\n' >> REPORT.md
+EOF
+
+    # detection
+    ORCA_STUB_MODE=down bash "$ops/orca.sh" detect >/dev/null && fail 'detect: down runtime reported ready'
+    [[ $(bash "$ops/orca.sh" detect) == 'orca ready: runtime stub-runtime-1' ]] || fail 'detect: ready runtime not reported'
+    sed 's/^checks = "true"$/checks = "true"\nexecutor = "orca"/' "$scratch/consumer.toml" > "$scratch/orca.toml"
+    ORCA_STUB_MODE=down bash "$ops/dispatch.sh" "$scratch/orca.toml" 7 >/dev/null 2>&1 && fail 'required orca not ready: dispatch accepted'
+    bash "$ops/dispatch.sh" "$scratch/orca.toml" 7 --executor local >/dev/null 2>&1 && fail 'consumer requires orca: --executor local accepted'
+
+    # auto picks Orca when it is ready; no clone, WORK.md kept in state
+    out=$(dispatch); ido=${out##*$'\n'}
+    [[ $out == orca:* ]] || fail "auto with Orca ready must use the orca executor: $out"
+    jq -e '.executor == {kind: "orca", state: "pending", runtime: "stub-runtime-1"} and .workdir == ""' "$(rec "$ido")" >/dev/null || fail 'orca record shape'
+    [[ -f $LOOM_STATE/$ido.WORK.md ]] || fail 'orca WORK.md not kept in state'
+
+    # nothing starts outside Orca
+    bash "$ops/launch.sh" "$ido" -- bash "$scratch/bin/w-files" >/dev/null 2>&1 && fail 'launch.sh started an Orca assignment'
+    out=$(bash "$ops/dispatch.sh" "$scratch/consumer.toml" 7 --executor local); idl=${out##*$'\n'}
+    bash "$ops/launch.sh" "$idl" -- bash "$scratch/bin/w-files" >/dev/null 2>&1 && fail 'launch.sh started a local worker while Orca is available'
+    LOOM_ALLOW_LOCAL=1 bash "$ops/launch.sh" "$idl" -- bash "$scratch/bin/w-files" >/dev/null || fail 'explicit LOOM_ALLOW_LOCAL override refused'
+
+    # start: refused when Orca is down; otherwise Orca's worktree is adopted
+    ORCA_STUB_MODE=down bash "$ops/orca.sh" start "$ido" >/dev/null 2>&1 && fail 'start with Orca down'
+    jq -e '.executor.state == "pending"' "$(rec "$ido")" >/dev/null || fail 'a refused start changed state'
+    export ORCA_STUB_WORKER="$scratch/bin/w-slow"
+    bash "$ops/orca.sh" start "$ido" >/dev/null || fail 'orca start failed'
+    ws="$GH_STATE/orca-ws/$ido"
+    jq -e --arg w "$ws" --arg b "orca/$ido" '.workdir == $w and .branch == $b and .executor.state == "running" and .executor.dispatch == "disp-'"$ido"'" and .worker_pid == null' "$(rec "$ido")" >/dev/null || fail "orca start record: $(jq -c . "$(rec "$ido")")"
+    grep -q "loom worker for assignment $ido" "$GH_STATE/spec-$ido.md" || fail 'spec not handed to Orca'
+    bash "$ops/dispatch.sh" "$scratch/consumer.toml" 7 >/dev/null 2>&1 && fail 'twin dispatch while an Orca worker runs'
+    ! bash "$ops/status.sh" | grep -q "^$ido" || fail 'a running Orca worker must be silent'
+    bash "$ops/orca.sh" start "$ido" >/dev/null 2>&1 && fail 'double start accepted'
+    pid=$(cat "$GH_STATE/disp-$ido.pid"); for _ in $(seq 1 50); do kill -0 "$pid" 2>/dev/null || break; sleep 0.1; done
+    [[ $(bash "$ops/orca.sh" harvest "$ido") == "$ido ready (harvested from orca dispatch disp-$ido)" ]] || fail 'harvest outcome'
+    [[ $(git -C "$ws" log -1 --format=%s) == "loom($ido): ready — wrote notes.txt" ]] || fail 'orca worker files not committed'
+    ! git -C "$ws" ls-files | grep -qE '^(WORK|REPORT)\.md$' || fail 'loom files committed from an Orca worktree'
+    [[ $(bash "$ops/collect.sh" "$ido") == *'1 commit(s) over base'* ]] || fail 'collect of an Orca branch'
+    bash "$ops/verify.sh" "$ido" >/dev/null || fail 'verify of an Orca branch'
+
+    # stop: only on a stop Orca confirmed; stale is surfaced, never acted on
+    out=$(dispatch); ids=${out##*$'\n'}
+    export ORCA_STUB_WORKER="$scratch/bin/w-hang" GRANDCHILD="$scratch/orca-grandchild"
+    bash "$ops/orca.sh" start "$ids" >/dev/null || fail 'orca start (hang) failed'
+    spid=$(cat "$GH_STATE/disp-$ids.pid"); pids+=("$spid")
+    ORCA_STUB_STOP=unknown bash "$ops/orca.sh" stop "$ids" >/dev/null 2>&1 && fail 'stop_unknown claimed as a stop'
+    jq -e '.executor.state == "running" and .reports == []' "$(rec "$ids")" >/dev/null || fail 'an unconfirmed stop changed the record'
+    jq '.launched_at = "2000-01-01T00:00:00Z" | .started_at = .launched_at' "$(rec "$ids")" > "$scratch/t"; mv "$scratch/t" "$(rec "$ids")"
+    st=$(bash "$ops/status.sh" 2>&1) || fail "status failed: $st"
+    grep -q "^$ids"$'\t'"stale"$'\t'".*ops/orca.sh stop $ids" <<< "$st" || fail "stale Orca worker not surfaced: $st"
+    [[ -z $(bash "$ops/watchdog.sh" --limit-min 0) ]] || fail 'watchdog acted on an Orca worker'
+    kill -0 "$spid" || fail 'loom signalled an Orca worker'
+    bash "$ops/orca.sh" stop "$ids" >/dev/null || fail 'confirmed stop failed'
+    jq -e '.executor.state == "settled" and .reports[-1].state == "failed" and .reports[-1].fact == "stopped via orca by the conductor"' "$(rec "$ids")" >/dev/null || fail 'stop record'
+
+    # a failed start is recorded, never retried
+    out=$(dispatch); idf=${out##*$'\n'}
+    ORCA_STUB_FAIL=1 bash "$ops/orca.sh" start "$idf" >/dev/null 2>&1 && fail 'failed worker-start reported success'
+    jq -e '.executor.state == "failed_start" and (.reports[-1].fact | contains("orca-start.receipt"))' "$(rec "$idf")" >/dev/null || fail 'failed start record'
+)
+pass 'orca executor: detect, route, start, harvest, stop only on confirmation, stale surfaced'
 
 # --- the lock: a live holder blocks, a dead holder is broken ---
 n=$(jq '.reports | length' "$(rec "$id1")")
