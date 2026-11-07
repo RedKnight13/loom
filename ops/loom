@@ -258,7 +258,7 @@ case $cmd in
             emit true complete "no compute host declared"
         fi
         for h in $hosts; do
-            if loom_ssh_ready "$h"; then emit true complete "compute host: $h"; fi
+            if loom_ssh "$h" true >/dev/null 2>&1; then emit true complete "compute host: $h"; fi
         done
         emit false failed "no declared compute host is reachable: $hosts"
         ;;
