@@ -2,7 +2,11 @@
 set -euo pipefail
 # shellcheck source=ops/lib.sh
 source "${BASH_SOURCE[0]%/*}/lib.sh"
-[[ $# == 2 ]] || loom_error 'usage: dispatch.sh <consumer.toml> <issue#>'
+usage='usage: dispatch.sh <consumer.toml> <issue#> [--executor auto|local|orca]'
+want=''
+if [[ $# == 4 && $3 == --executor ]]; then want=$4; set -- "$1" "$2"; fi
+[[ $# == 2 ]] || loom_error "$usage"
+[[ -z $want || $want =~ ^(auto|local|orca)$ ]] || loom_error "$usage"
 [[ $2 =~ ^[1-9][0-9]*$ ]] || loom_error 'issue must be a positive integer'
 [[ -f $1 ]] || loom_error 'consumer config not found'
 
@@ -17,6 +21,19 @@ if git -C "$config_dir" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     config_commit=$(jq -Rn --arg c "$(git -C "$config_dir" log -1 --format=%H -- "$config_name")" '$c')
 fi
 repo=$(jq -r '.repo' <<< "$config")
+# Executor (gaps #25, #26): the consumer may require Orca; otherwise --executor
+# or detection decides. Required-but-unreachable Orca refuses; never a silent
+# fallback to starting workers outside Orca.
+policy=$(jq -r '.executor // "auto"' <<< "$config")
+[[ $policy == auto || -z $want || $want == "$policy" ]] || loom_error "consumer requires executor '$policy'; --executor $want refused"
+[[ $policy != auto ]] || policy=${want:-auto}
+orca_runtime=''
+if [[ $policy != local ]]; then orca_runtime=$(loom_orca_ready) || orca_runtime=''; fi
+case $policy in
+    orca) [[ -n $orca_runtime ]] || loom_error 'executor orca required but the Orca CLI/runtime is not ready (orca status)'; executor=orca ;;
+    local) executor=local ;;
+    auto) if [[ -n $orca_runtime ]]; then executor=orca; else executor=local; fi ;;
+esac
 worktrees=$(jq -r '.worktrees' <<< "$config")
 case $worktrees in \~) worktrees=$HOME ;; \~/*) worktrees="$HOME/${worktrees:2}" ;; esac
 [[ $worktrees == /* ]] || loom_error 'worktrees must be an absolute path (or ~/...)'
@@ -52,21 +69,28 @@ for file in "$LOOM_STATE"/*.json; do
 done
 mkdir -p "$worktrees"
 workdir="$worktrees/$short.$attempt"
-[[ ! -e $workdir && ! -L $workdir ]] || loom_error "workdir already exists; conductor must resolve it: $workdir"
+if [[ $executor == orca ]]; then workdir=""; else
+    [[ ! -e $workdir && ! -L $workdir ]] || loom_error "workdir already exists; conductor must resolve it: $workdir"
+fi
 id="$short.$attempt"
 [[ ! -e $LOOM_STATE/$id.json ]] || loom_error "assignment id collision: $id"
 # A private clone, not a worktree: the worker owns its whole .git, so a
 # sandboxed executor can commit. The clone has no remote, so it cannot push.
-git clone -q --no-checkout "$checkout" "$workdir"
-git -C "$workdir" remote remove origin
-git -C "$workdir" fetch -q "$checkout" "$base_sha"
-git -C "$workdir" checkout -q -b "$short" "$base_sha"
-for key in user.name user.email; do
-    if value=$(git -C "$checkout" config --get "$key"); then
-        git -C "$workdir" config "$key" "$value"
-    fi
-done
-printf 'WORK.md\nREPORT.md\n' >> "$workdir/.git/info/exclude"
+if [[ $executor == local ]]; then
+    git clone -q --no-checkout "$checkout" "$workdir"
+    git -C "$workdir" remote remove origin
+    git -C "$workdir" fetch -q "$checkout" "$base_sha"
+    git -C "$workdir" checkout -q -b "$short" "$base_sha"
+    for key in user.name user.email; do
+        if value=$(git -C "$checkout" config --get "$key"); then
+            git -C "$workdir" config "$key" "$value"
+        fi
+    done
+    printf 'WORK.md\nREPORT.md\n' >> "$workdir/.git/info/exclude"
+    workfile="$workdir/WORK.md"
+else
+    workfile="$LOOM_STATE/$id.WORK.md"
+fi
 {
     printf '# %s\n\n%s\n\n## Consumer laws\n\n' "$(jq -r '.title' <<< "$issue")" "$mandate"
     jq -r '.laws[] | "- " + .' <<< "$config"
@@ -74,15 +98,21 @@ printf 'WORK.md\nREPORT.md\n' >> "$workdir/.git/info/exclude"
         printf '\n## Checks the conductor will run\n\nOn ready, the conductor runs exactly this in a fresh clone of your branch; run it yourself before reporting:\n\n    %s\n' "$(jq -r '.checks' <<< "$config")"
     fi
     printf '\n## How to report\n\nEnd every turn by appending one line to REPORT.md in this directory:\n\n    state: <ready|blocked|failed|waiting> — <one-line fact>\n\nready = a reviewable result is in this directory; blocked = one concrete question; failed = what failed and why; waiting = turn done, nothing owed.\n\nDo not run git add or git commit: leave your changes in the working tree. Loom commits them onto branch %s when you report.\n' "$short"
-} > "$workdir/WORK.md"
+} > "$workfile"
 jq -n --argjson ticket "$2" --arg repo "$repo" --arg short "$short" \
       --arg workdir "$workdir" --arg checkout "$checkout" --arg base "$base_sha" \
       --argjson attempt "$attempt" --argjson limit "$(jq '.limit_min // null' <<< "$config")" \
-      --argjson checks "$(jq '.checks // null' <<< "$config")" --argjson config_commit "$config_commit" '
+      --argjson checks "$(jq '.checks // null' <<< "$config")" --argjson config_commit "$config_commit" \
+      --arg executor "$executor" --arg runtime "$orca_runtime" '
   {ticket: $ticket, repo: $repo, short_name: $short, attempt: $attempt,
    workdir: $workdir, checkout: $checkout, base_sha: $base,
    checks: $checks, config_commit: $config_commit, limit_min: $limit, worker_pid: null, worker_start: null,
+   executor: (if $executor == "orca" then {kind: "orca", state: "pending", runtime: $runtime} else {kind: "local"} end),
    started_at: (now | todateiso8601), reports: []}
 ' > "$LOOM_STATE/.pending"
 mv "$LOOM_STATE/.pending" "$LOOM_STATE/$id.json"
-printf '%s\n%s\n' "$workdir" "$id"
+if [[ $executor == orca ]]; then
+    printf '%s\n%s\n' "orca: workspace is created at start (ops/orca.sh start $id)" "$id"
+else
+    printf '%s\n%s\n' "$workdir" "$id"
+fi

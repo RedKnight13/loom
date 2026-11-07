@@ -11,6 +11,8 @@ run() {
     cp -R ops "$m/"
     sed -i '' "$2" "$m/ops/$1"
     if cmp -s "ops/$1" "$m/ops/$1"; then echo "MUTATION DID NOT APPLY: $3"; survived=1; return; fi
+    # A mutant that breaks the syntax would be "caught" for the wrong reason.
+    if ! bash -n "$m/ops/$1" 2>/dev/null; then echo "MUTANT IS NOT VALID BASH: $3"; survived=1; return; fi
     if bash "$m/ops/selftest.sh" >/dev/null 2>"$m/err"; then
         echo "MUTANT SURVIVED: $3"; survived=1
     else
@@ -34,5 +36,11 @@ run launch.sh 's/ \&\& umask "$LOOM_CALLER_UMASK"//' "worker inherits loom's uma
 run verify.sh 's/ \&\& umask "$LOOM_CALLER_UMASK"//' "checks inherit loom's umask" m15
 run dispatch.sh '/consumer config has uncommitted changes/d' "dispatch accepts an uncommitted config" m16
 run lib.sh 's/for try in 1 2; do/for try in 2; do/' "no retry after a fixer hook" m17
+run launch.sh "s/^    loom_error 'the Orca CLI is available: workers start only through it.*/    :/" "launch.sh starts workers while Orca is available" m18
+run orca.sh "s/if \[\[ \$rc != 0 \]\] || grep -q 'stop_unknown' \"\$receipt\"; then/if false; then/" "stop claimed without Orca's confirmation" m19
+run status.sh 's/select($last <= (now - $limit \* 60))/select(false)/' "stale Orca worker never surfaced" m20
+run dispatch.sh "s#\[\[ -n \$orca_runtime \]\] || loom_error 'executor orca required[^;]*; ##" "required Orca not enforced" m21
+run lib.sh 's/        loom_orca_running "$1"/        false/' "a running Orca worker is not live" m22
+run collect.sh 's/^if \[\[ $(cd "$workdir" \&\& cd/if true || [[ $(cd "$workdir" \&\& cd/' "collect fetches into a shared-repo branch" m23
 echo "SURVIVED=$survived"
 exit "$survived"
