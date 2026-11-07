@@ -33,5 +33,6 @@ run ticket.sh '/does not survive dispatch.s parser/d' "ticket.sh skips the parse
 run launch.sh 's/ \&\& umask "$LOOM_CALLER_UMASK"//' "worker inherits loom's umask" m14
 run verify.sh 's/ \&\& umask "$LOOM_CALLER_UMASK"//' "checks inherit loom's umask" m15
 run dispatch.sh '/consumer config has uncommitted changes/d' "dispatch accepts an uncommitted config" m16
+run lib.sh 's/for try in 1 2; do/for try in 2; do/' "no retry after a fixer hook" m17
 echo "SURVIVED=$survived"
 exit "$survived"

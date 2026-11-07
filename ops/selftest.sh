@@ -312,6 +312,34 @@ if bash "$ops/dispatch.sh" "$scratch/cfg/consumer.toml" 7 >/dev/null 2>&1; then 
 jq -e '.config_commit == null' "$(rec "$id1")" >/dev/null || fail 'unversioned config must record null'
 pass 'versioned config: committed is pinned, uncommitted is refused'
 
+# --- consumer commit hooks: fixers get a retry, rejections get a log (gap #22) ---
+(
+    mkdir -p "$scratch/hooks"
+    cat > "$scratch/hooks/pre-commit" <<'EOF'
+#!/bin/sh
+# A fixer: rewrites TODO to DONE in staged files and fails, like ruff-format.
+# A gate: rejects any staged file containing REJECT.
+for f in $(git diff --cached --name-only); do
+    grep -q REJECT "$f" && { echo "hook: rejected $f"; exit 1; }
+    if grep -q TODO "$f"; then sed -i.bak 's/TODO/DONE/' "$f"; rm -f "$f.bak"; echo "hook: fixed $f"; exit 1; fi
+done
+exit 0
+EOF
+    chmod +x "$scratch/hooks/pre-commit"
+    printf '[core]\n\thooksPath = %s\n' "$scratch/hooks" > "$scratch/hooks.gitconfig"
+    export GIT_CONFIG_GLOBAL="$scratch/hooks.gitconfig"
+    out=$(dispatch); workf=${out%$'\n'*}; idf=${out##*$'\n'}
+    bash "$ops/launch.sh" "$idf" -- bash -c 'printf "TODO\n" > fixme.txt; printf "state: ready — wrote fixme\n" >> REPORT.md' >/dev/null
+    [[ $(git -C "$workf" show HEAD:fixme.txt) == DONE ]] || fail 'fixer hook output not sealed after retry'
+    [[ -z $(git -C "$workf" status --porcelain) ]] || fail 'workdir dirty after a fixer hook'
+    jq -e '.reports[-1].fact == "wrote fixme"' "$(rec "$idf")" >/dev/null || fail "fixer retry must be clean: $(jq -r '.reports[-1].fact' "$(rec "$idf")")"
+    out=$(dispatch); idr=${out##*$'\n'}
+    bash "$ops/launch.sh" "$idr" -- bash -c 'printf "REJECT\n" > bad.txt; printf "state: ready — wrote bad\n" >> REPORT.md' >/dev/null
+    jq -e '.reports[-1].fact | endswith("[loom commit rejected by the consumer'"'"'s hooks: '"$idr"'.commit.log]")' "$(rec "$idr")" >/dev/null || fail 'rejection not named'
+    grep -q "hook: rejected bad.txt" "$LOOM_STATE/$idr.commit.log" || fail 'hook output not logged'
+)
+pass "consumer commit hooks: fixers retried, rejections logged"
+
 # --- the lock: a live holder blocks, a dead holder is broken ---
 n=$(jq '.reports | length' "$(rec "$id1")")
 mkdir "$LOOM_STATE/.lock"; printf '%s\n' "$$" > "$LOOM_STATE/.lock/owner"
