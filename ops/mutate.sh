@@ -25,5 +25,6 @@ run dispatch.sh 's/git -C "$workdir" remote remove origin/true/' "clone keeps a 
 run watchdog.sh 's/($override \/\/ .limit_min \/\/ 30)/($override \/\/ 30)/' "watchdog ignores consumer limit" m6
 run lib.sh '/s="${s%"${s##\*\[!\[:space:\]\]}"}"/d' "start time not trimmed at the end" m7
 run lib.sh 's/git -C "$workdir" add -A \&\&/true \&\&/' "harvest does not stage worker files" m8
+run dispatch.sh 's/\.short_name == \$short/.short_name == "never"/' "attempts not numbered per short name" m9
 echo "SURVIVED=$survived"
 exit "$survived"
