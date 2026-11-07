@@ -7,6 +7,8 @@ repo      = "example/consumer"
 checks    = "rc=0; for t in tests/test_*.py; do echo \"== $t\"; python3 \"$t\" || { echo \"!! FAILED $t\"; rc=1; }; done; exit $rc"
 worktrees = "~/work/consumer-worktrees"
 limit_min = 45
+# Owner, 2026-11-07: workers "only start or stop throuhgh orcacli".
+executor  = "orca"
 laws = [
   "Workers never push; only the conductor pushes, reviews and merges, under the owner's GitHub name.",
   "Nothing identifying the owner enters any file, log, or commit.",
