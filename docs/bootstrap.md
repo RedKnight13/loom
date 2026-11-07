@@ -4,7 +4,7 @@ A single copy-paste block that sets Loom up on a machine, proves it, and stops
 before creating anything in your repository. It is written for Claude Code,
 Codex, or any agent that can run shell commands.
 
-**Copy it from the site:** <https://redknight13.github.io/loom/bootstrap.html>
+**Copy it from the site:** <https://redknight13.github.io/loom/copy.html>
 — the page has a one-click copy button. The raw text is
 [bootstrap.txt](bootstrap.txt) if you prefer to read or download it.
 
