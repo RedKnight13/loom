@@ -141,3 +141,23 @@ bash ops/verify.sh <id> && bash ops/collect.sh <id>
 - A failed `worker-start` is recorded (`failed_start`) and never retried.
 - Raw Orca receipts are kept as `$LOOM_STATE/<id>.orca-*.receipt`.
 - Do not poll Orca's mailbox from scripts: Orca wakes the conductor.
+
+## Compute hosts
+
+Owner (2026-11-07): compute runs on Agni, never the conductor's laptop.
+
+```toml
+compute       = ["agni1", "agni2"]                     # SSH hosts, first reachable wins
+compute_setup = ". ~/.venvs/smriti-checks/bin/activate" # run on the host before the checks
+```
+
+- `verify.sh` ships the exact commit to the first reachable host as a git
+  bundle, builds a fresh tree there, runs `compute_setup` then `checks` under
+  the caller's umask, streams the log back to `$LOOM_STATE/<id>.checks-<kind>.log`,
+  records the host in `checks_runs`, and removes its remote folder.
+- No host reachable: `verify.sh` **refuses**. It never falls back to the
+  conductor's machine.
+- A failing `compute_setup` (or ssh itself failing) is reported as
+  **could not run** (126/255), never as a test failure.
+- Without `compute`, checks run locally as before (generic consumers).
+- Worker placement on the compute host is #37.
