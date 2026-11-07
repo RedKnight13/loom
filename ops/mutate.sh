@@ -28,5 +28,7 @@ run lib.sh 's/git -C "$workdir" add -A \&\&/true \&\&/' "harvest does not stage 
 run dispatch.sh 's/\.short_name == \$short/.short_name == "never"/' "attempts not numbered per short name" m9
 run verify.sh 's/(cd "$scratch\/tree" \&\& exec bash/(cd "$workdir" \&\& exec bash/' "verify runs in the worker clone" m10
 run verify.sh '/126|127) verdict=/d' "could-not-run reported as a test failure" m11
+run heartbeat.sh 's/acted=$(bash "$ops\/watchdog.sh" .*/acted=/' "heartbeat never runs the watchdog" m12
+run ticket.sh '/does not survive dispatch.s parser/d' "ticket.sh skips the parser self-check" m13
 echo "SURVIVED=$survived"
 exit "$survived"

@@ -6,16 +6,19 @@ installer. ShellCheck only for linting.
 ## The lifecycle
 
 ```bash
-# 1. Eval happened: the Ticket is a GitHub issue with a "## Mandate" block.
+# 0. Eval happened: render the Ticket from the template.
+bash ops/ticket.sh consumers/<repo>.toml --short pyz --title "…" \
+    --scope "…" --out "…" --done "…"
+
+# 1. Dispatch it.
 LOOM_REPO=/path/to/consumer bash ops/dispatch.sh consumers/<repo>.toml 42
 #    → prints the workdir and the assignment id, e.g. pyz.1
 
 # 2. Run any worker in it (blocks until the worker exits; background it).
 bash ops/launch.sh pyz.1 -- codex exec -s workspace-write "Read WORK.md ..." &
 
-# 3. Every heartbeat:
-bash ops/watchdog.sh          # silent when healthy
-bash ops/status.sh            # only what waits for a person
+# 3. Keep the clock (prints only watchdog actions, then status):
+bash ops/heartbeat.sh --until pyz.1
 
 # 4. On ready: re-run the consumer's checks in a fresh clone, then bring the
 #    branch home and PR. (Run --baseline first to know what "no new
@@ -29,9 +32,11 @@ bash ops/collect.sh pyz.1
 
 | Script | Guarantee |
 | --- | --- |
+| `ticket.sh <consumer.toml> --short … --title … --scope … --out … --done …` | Renders the Mandate exactly from the template, proves dispatch's own parser accepts it, opens the issue. Ticket text is literal, never evaluated. `--dry-run` prints the body. |
 | `dispatch.sh <consumer.toml> <issue#>` | Reads the issue's Mandate via `gh`; refuses if the ticket already has a live worker. Creates `<worktrees>/<short>.<attempt>` as a **private clone** (own `.git`, **no remote**, so it can commit but cannot push), on branch `<short>` at the default branch, with the consumer's git identity. Writes `WORK.md` (mandate + laws + how to report), excluded from git. Records the assignment. |
 | `launch.sh <id> -- <cmd...>` | Runs the worker in its workdir with **no stdin** and its **own process group**; records PID + start time; logs to `$LOOM_STATE/<id>.log`. On exit, harvests the newest `state:` line the worker wrote **this launch** (older lines are skipped by offset). Exit with no line → `failed / worker_exit_no_report (exit N)`. |
 | `watchdog.sh [--limit-min N]` | Live worker silent past N minutes (default 30) → kills its **whole process group**, records `failed / watchdog_kill` once, keeps the workdir. Worker gone without its launcher (e.g. the conductor session died) → harvests its report or records `failed / worker_lost_no_report`. A recycled PID never matches the recorded start time and is never signalled. |
+| `heartbeat.sh --until <ID\|all> [--every SEC] [--limit-min N]` | The conductor's clock: runs the watchdog every SEC (default 60), prints only its actions, stops when the assignment (or all) has settled, then prints status. |
 | `status.sh` | One line per assignment whose latest report is `ready`, `blocked` or `failed` and has no live worker: `id<TAB>state<TAB>fact`. Silent when healthy. |
 | `verify.sh <id> [--baseline]` | Runs the consumer's `checks` in a **fresh clone** the worker never touched — at the base (`--baseline`) or at the ticket branch tip. Records every run; a branch run records a conductor report (`ready` = verified, `failed` = checks failed). Exit 126/127 is reported as **could not run**, never as a test failure. |
 | `collect.sh <id>` | Fetches the ticket branch from the worker clone into the consumer checkout and prints the commits over the recorded base. Never pushes. |

@@ -6,25 +6,7 @@ source "${BASH_SOURCE[0]%/*}/lib.sh"
 [[ $2 =~ ^[1-9][0-9]*$ ]] || loom_error 'issue must be a positive integer'
 [[ -f $1 ]] || loom_error 'consumer config not found'
 
-# Parse the registration format, never execute it. Strings use JSON-compatible
-# TOML escapes; comments are stripped only outside quoted strings.
-config=$(jq -Rse '
-  def fields:
-    if test("^\\s*$") then {}
-    else capture("^\\s*(?<key>[a-z_]+)\\s*=\\s*(?<value>\"(?:[^\"\\\\]|\\\\.)*\"|\\[(?:[^]\\\"\\\\]|\"(?:[^\"\\\\]|\\\\.)*\")*\\]|[0-9]+)(?<rest>[\\s\\S]*)$") as $m |
-      ($m.rest | fields) as $rest |
-      if $rest | has($m.key) then error("duplicate config key")
-      else $rest + {($m.key): ($m.value | sub(",\\s*]$"; "]") | fromjson)} end
-    end;
-  [scan("\"(?:[^\"\\\\]|\\\\.)*\"|#[^\n]*|[^\"#]+") |
-    select(startswith("#") | not)] | join("") | fields |
-  if (.repo | type == "string" and test("^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")) and
-     (.worktrees | type == "string" and length > 0) and
-     (.laws | type == "array" and all(.[]; type == "string")) and
-     ((has("limit_min") | not) or (.limit_min | type == "number" and . > 0 and . == floor)) and
-     ((keys - ["repo", "checks", "worktrees", "laws", "limit_min"]) | length == 0)
-  then . else error("invalid consumer config") end
-' "$1") || loom_error 'unsupported or invalid consumer TOML; see ops/README.md'
+config=$(loom_config "$1")
 repo=$(jq -r '.repo' <<< "$config")
 worktrees=$(jq -r '.worktrees' <<< "$config")
 case $worktrees in \~) worktrees=$HOME ;; \~/*) worktrees="$HOME/${worktrees:2}" ;; esac
@@ -32,8 +14,8 @@ case $worktrees in \~) worktrees=$HOME ;; \~/*) worktrees="$HOME/${worktrees:2}"
 checkout=$(git -C "${LOOM_REPO:-.}" rev-parse --show-toplevel) || loom_error 'run in the consumer checkout or set LOOM_REPO'
 issue=$(gh issue view "$2" --repo "$repo" --json number,title,body)
 jq -e --argjson number "$2" '.number == $number and (.title | type == "string") and (.body | type == "string")' <<< "$issue" >/dev/null || loom_error 'invalid issue response'
-mandate=$(jq -er '.body | capture("(?ms)^## Mandate[ \\t]*\\r?\\n(?<text>.*?)(?=^## |\\z)") | "## Mandate\n" + .text' <<< "$issue") || loom_error 'issue has no Mandate block'
-short=$(jq -ner --arg mandate "$mandate" '$mandate | capture("(?m)^\\*\\*Ticket short name:\\*\\*[ \\t]*(?<name>[a-z0-9]+(?:-[a-z0-9]+)*)[ \\t]*(?:<!--[^\\n]*-->)?\\r?$").name') || loom_error 'missing or invalid ticket short name'
+mandate=$(jq -r '.body' <<< "$issue" | loom_mandate)
+short=$(loom_short "$mandate")
 default_branch=$(gh repo view "$repo" --json defaultBranchRef --jq '.defaultBranchRef.name')
 git check-ref-format --branch "$default_branch" >/dev/null || loom_error 'invalid default branch'
 if git -C "$checkout" show-ref --verify --quiet "refs/remotes/origin/$default_branch"; then
