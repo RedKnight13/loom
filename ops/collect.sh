@@ -20,11 +20,15 @@ short=$(jq -r '.branch // .short_name' "$file")  # the branch (Orca names its ow
 base=$(jq -r '.base_sha' "$file")
 state=$(jq -r '.reports[-1].state // "none"' "$file")
 [[ $(git -C "$checkout" branch --show-current) != "$short" ]] || loom_error "branch $short is checked out in the consumer checkout"
-git -C "$workdir" show-ref --verify --quiet "refs/heads/$short" || loom_error "worker clone has no branch $short"
-[[ -z $(git -C "$workdir" status --porcelain) ]] || printf 'loom: warning: worker clone has uncommitted changes (not collected)\n' >&2
+wh=$(loom_ws_host "$file")
+loom_ws "$wh" "$workdir" git show-ref --verify --quiet "refs/heads/$short" || loom_error "worker clone has no branch $short"
+[[ -z $(loom_ws "$wh" "$workdir" git status --porcelain) ]] || printf 'loom: warning: worker clone has uncommitted changes (not collected)\n' >&2
 # An Orca worktree shares the checkout's repository: its branch is already
 # home (and checked out there, so it cannot be fetched into).
-if [[ $(cd "$workdir" && cd "$(git rev-parse --git-common-dir)" && pwd -P) != "$(cd "$checkout" && cd "$(git rev-parse --git-common-dir)" && pwd -P)" ]]; then
+if [[ -n $wh ]]; then
+    # A workspace on another host never shares this repository (#47).
+    loom_git_ssh -C "$checkout" fetch -q "$wh:$workdir" "+refs/heads/$short:refs/heads/$short"
+elif [[ $(cd "$workdir" && cd "$(git rev-parse --git-common-dir)" && pwd -P) != "$(cd "$checkout" && cd "$(git rev-parse --git-common-dir)" && pwd -P)" ]]; then
     git -C "$checkout" fetch -q "$workdir" "+refs/heads/$short:refs/heads/$short"
 fi
 count=$(git -C "$checkout" rev-list --count "$base..$short")
