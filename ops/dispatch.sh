@@ -11,7 +11,7 @@ source "${BASH_SOURCE[0]%/*}/lib.sh"
 config=$(jq -Rse '
   def fields:
     if test("^\\s*$") then {}
-    else capture("^\\s*(?<key>[a-z_]+)\\s*=\\s*(?<value>\"(?:[^\"\\\\]|\\\\.)*\"|\\[(?:[^]\\\"\\\\]|\"(?:[^\"\\\\]|\\\\.)*\")*\\])(?<rest>[\\s\\S]*)$") as $m |
+    else capture("^\\s*(?<key>[a-z_]+)\\s*=\\s*(?<value>\"(?:[^\"\\\\]|\\\\.)*\"|\\[(?:[^]\\\"\\\\]|\"(?:[^\"\\\\]|\\\\.)*\")*\\]|[0-9]+)(?<rest>[\\s\\S]*)$") as $m |
       ($m.rest | fields) as $rest |
       if $rest | has($m.key) then error("duplicate config key")
       else $rest + {($m.key): ($m.value | sub(",\\s*]$"; "]") | fromjson)} end
@@ -21,7 +21,8 @@ config=$(jq -Rse '
   if (.repo | type == "string" and test("^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")) and
      (.worktrees | type == "string" and length > 0) and
      (.laws | type == "array" and all(.[]; type == "string")) and
-     ((keys - ["repo", "checks", "worktrees", "laws"]) | length == 0)
+     ((has("limit_min") | not) or (.limit_min | type == "number" and . > 0 and . == floor)) and
+     ((keys - ["repo", "checks", "worktrees", "laws", "limit_min"]) | length == 0)
   then . else error("invalid consumer config") end
 ' "$1") || loom_error 'unsupported or invalid consumer TOML; see ops/README.md'
 repo=$(jq -r '.repo' <<< "$config")
@@ -75,14 +76,14 @@ printf 'WORK.md\nREPORT.md\n' >> "$workdir/.git/info/exclude"
 {
     printf '# %s\n\n%s\n\n## Consumer laws\n\n' "$(jq -r '.title' <<< "$issue")" "$mandate"
     jq -r '.laws[] | "- " + .' <<< "$config"
-    printf '\n## How to report\n\nEnd every turn by appending one line to REPORT.md in this directory:\n\n    state: <ready|blocked|failed|waiting> — <one-line fact>\n\nready = a reviewable result is committed on branch %s; blocked = one concrete question; failed = what failed and why; waiting = turn done, nothing owed.\n' "$short"
+    printf '\n## How to report\n\nEnd every turn by appending one line to REPORT.md in this directory:\n\n    state: <ready|blocked|failed|waiting> — <one-line fact>\n\nready = a reviewable result is in this directory; blocked = one concrete question; failed = what failed and why; waiting = turn done, nothing owed.\n\nDo not run git add or git commit: leave your changes in the working tree. Loom commits them onto branch %s when you report.\n' "$short"
 } > "$workdir/WORK.md"
 jq -n --argjson ticket "$2" --arg repo "$repo" --arg short "$short" \
       --arg workdir "$workdir" --arg checkout "$checkout" --arg base "$base_sha" \
-      --argjson attempt "$attempt" '
+      --argjson attempt "$attempt" --argjson limit "$(jq '.limit_min // null' <<< "$config")" '
   {ticket: $ticket, repo: $repo, short_name: $short, attempt: $attempt,
    workdir: $workdir, checkout: $checkout, base_sha: $base,
-   worker_pid: null, worker_start: null,
+   limit_min: $limit, worker_pid: null, worker_start: null,
    started_at: (now | todateiso8601), reports: []}
 ' > "$LOOM_STATE/.pending"
 mv "$LOOM_STATE/.pending" "$LOOM_STATE/$id.json"
