@@ -110,6 +110,9 @@ run lib.sh 's/^    host=\$(loom_ws_host "\$file")$/    host=""/' "harvest reads 
 run loom "s/items:\$items, actions:\$actions}' >\&3/items:\$items, actions:\$actions}'/" "failure JSON swallowed by the capture (#48)" m45
 run collect.sh 's/^    loom_git_ssh -C "\$checkout" fetch/    : fetch/' "collect skips the remote fetch (#47)" m46
 run orca.sh 's/\[\[ -n \$rpath \]\] || loom_error/[[ -n $rpath ]] || :/' "start without the project on the host (#47)" m47
+run orca.sh 's/\.executor\.dispatch = (if \$d == "" then null else \$d end)/.executor.dispatch = null/' "failed start drops its dispatch (#50)" m48
+run orca.sh 's/\[\[ \$xstate == running || ( \$xstate == failed_start \&\& -n \$dispatch ) \]\]/[[ $xstate == running ]]/' "abandon refuses a failed start (#50)" m49
+run orca.sh "s/grep -q 'dispatch_not_found' \"\$show\" || loom_error/false || loom_error/" "a dispatch Orca forgot blocks the abandon (#50)" m50
 wait
 survived=0
 for n in "${order[@]}"; do
