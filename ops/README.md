@@ -1,4 +1,4 @@
-# Loom operations (v1)
+# Loom operations (0.6.0)
 
 Bash 3.2+, git, `gh`, `jq` 1.6+, and `ps`. No service, no runtime, no
 installer. ShellCheck only for linting.
@@ -13,21 +13,21 @@ bash ops/loom accept --consumer consumers/<repo>.toml --short NAME --title "…"
 
 # 1. Dispatch it.
 LOOM_REPO=/path/to/consumer bash ops/loom dispatch --consumer consumers/<repo>.toml --issue 42
-#    → {"id":"smriti-pyz.1","fact":"<workdir>", …}
+#    → {"id":"add-flag.1","fact":"<workdir>", …}
 
 # 2. Run the worker (local executor; Orca configs use `loom start`).
-bash ops/loom launch smriti-pyz.1 -- codex exec -s workspace-write "Read WORK.md ..."
+bash ops/loom launch add-flag.1 -- codex exec -s workspace-write "Read WORK.md ..."
 
 # 3. Keep the clock.
-bash ops/loom watch --until smriti-pyz.1
+bash ops/loom watch --until add-flag.1
 
 # 4. On ready: re-check in a fresh clone, collect, then PR.
-bash ops/loom verify smriti-pyz.1 --baseline
-bash ops/loom verify smriti-pyz.1
-bash ops/loom collect smriti-pyz.1
+bash ops/loom verify add-flag.1 --baseline
+bash ops/loom verify add-flag.1
+bash ops/loom collect add-flag.1
 
 # 5. When a person has dealt with a result, settle it out of status.
-bash ops/loom ack smriti-pyz.1 "reviewed, PR merged"
+bash ops/loom ack add-flag.1 "reviewed, PR merged"
 ```
 
 Every call prints one JSON object and exits 0 only when `ok` is true. The
@@ -145,11 +145,11 @@ bash ops/verify.sh <id> && bash ops/collect.sh <id>
 
 ## Compute hosts and placement
 
-Owner (2026-11-07): compute runs on Agni, never the conductor's laptop.
+Owner (2026-11-07): compute runs on the declared host, never the conductor's laptop.
 
 ```toml
-compute       = ["agni1", "agni2"]                     # SSH hosts, first reachable wins
-compute_setup = ". ~/.venvs/smriti-checks/bin/activate" # run on the host before the checks
+compute       = ["build1", "build2"]                     # SSH hosts, first reachable wins
+compute_setup = ". ~/.venvs/checks/bin/activate" # run on the host before the checks
 ```
 
 - `verify.sh` ships the exact commit to the first reachable host as a git

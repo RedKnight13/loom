@@ -12,7 +12,7 @@ scripts a conductor runs. The principle it inherits whole:
 | Role | Who | What it may do |
 | --- | --- | --- |
 | Owner | The person | Asks for work, answers `blocked` questions, approves anything irreversible. The only authority above the Mandate. |
-| Conductor | One trusted agent session (Margin, or any session the owner runs) | Evaluates requests into Tickets, writes Mandates, dispatches, reviews, and is the **only role that pushes, opens PRs, or merges** — always under the owner's GitHub name. |
+| Conductor | One trusted agent session (the owner's session, or any session the owner authorises) | Evaluates requests into Tickets, writes Mandates, dispatches, reviews, and is the **only role that pushes, opens PRs, or merges** — always under the owner's GitHub name. |
 | Worker | A headless executor (codex, a Claude subagent, anything scriptable) | Works inside its Assignment's worktree. Never pushes, never leaves the worktree, never touches another Ticket. Ends every turn with a structured report. |
 
 ## Domain
@@ -50,19 +50,19 @@ a check that can be talked out of checking is not a check.
 A consumer repo registers with one file in `consumers/<repo>.toml`:
 
 ```toml
-repo       = "RedKnight13/smriti"     # where Tickets (issues) live
+repo       = "you/your-repo"         # where Tickets (issues) live
 checks     = "python3 -m pytest -q"   # what the conductor re-runs on ready
-worktrees  = "~/Work/claude-code/smriti-worktrees"
+worktrees  = "~/work/your-repo-dirs"
 laws       = [                        # copied into every Mandate, verbatim
   "Workers never push; only the conductor pushes, under the owner's name.",
   "Nothing identifying the owner enters any file.",
-  "GPU compute on agni2 only; no credits spent without a quote.",
+  "GPU compute on the designated host only; no credits spent without a quote.",
 ]
 ```
 
-ARGOS integration is a consumer plus, later, a Source: argos events becoming
-Triggers. The domain already has the seam; nothing in loom assumes GitHub is
-the only Source kind.
+A governance system can register as a consumer and, later, as a Source: its
+events becoming Triggers. The domain already has the seam; nothing in loom
+assumes GitHub is the only Source kind.
 
 ## What loom refuses to grow
 

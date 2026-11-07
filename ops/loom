@@ -14,7 +14,7 @@ exec 3>&1
 cmd=${1:-}
 shift || true
 
-usage='usage: loom version | accept --consumer FILE --short NAME --title T --scope S --out O --done D | ignore --consumer FILE --short NAME --reason TEXT | dispatch --consumer FILE --issue N [--executor auto|local|orca] | launch ID -- CMD... | start ID [--agent NAME] | harvest ID | stop ID | release ID | watch --until ID|all [--every SEC] [--limit-min N] | status | verify ID [--baseline] | collect ID | report ID STATE FACT | ack ID FACT | detect'
+usage='usage: loom version | accept --consumer FILE --short NAME --title T --scope S --out O --done D [--label L]… | ignore --consumer FILE --short NAME --reason TEXT | dispatch --consumer FILE --issue N [--executor auto|local|orca] | launch ID -- CMD... | start ID [--agent NAME] | harvest ID | stop ID | abandon ID | keep-open ID | release ID | show ID | read ID | list [--run R] | request ID | peek | inbox | send ID --subject S [--body B] | ask ID --question Q | reply --id M --body B | gate create|resolve|list | task create|update | run create|use|current|show|list | reference add|find|list | worktree rm|ps|list | repo --path P | base-ref REF | automation create|list|run|remove | watch --until ID|all [--every SEC] [--limit-min N] | status | verify ID [--baseline] [--on HOST] | collect ID | report ID STATE FACT | ack ID FACT | detect | compute --consumer FILE | hosts'
 
 emit() {  # emit <ok:true|false> <state> <fact> [id] [ticket] [items-json] [actions-json] [exit]
     local ok=$1 state=$2 fact=$3 id=${4:-} ticket=${5:-} items=${6:-[]} actions=${7:-[]} code=${8:-}
