@@ -14,7 +14,8 @@ worker is dispatched; wider scope means a new Ticket.
 **Stop by impact:** a reviewable result ends the turn `ready`; a design
 decision ends it `blocked` with one concrete question. Effort is not a
 stopping reason.
-**Report:** end every turn with ops/report.sh <ready|blocked|failed|waiting> "<fact>"
+**Report:** end the turn with one state line in REPORT.md as WORK.md describes.
+**Evidence:** put logs under `.loom/`; never at the workspace root.
 ```
 
 ## Rules of use

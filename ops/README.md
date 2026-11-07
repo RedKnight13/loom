@@ -6,32 +6,39 @@ installer. ShellCheck only for linting.
 ## The lifecycle
 
 ```bash
-# 0. Eval happened: render the Ticket from the template.
-bash ops/ticket.sh consumers/<repo>.toml --short smriti-pyz --title "…" \
+# 0. Eval happened. Record the decision, then render the Ticket.
+bash ops/loom ignore --consumer consumers/<repo>.toml --short NAME --reason "…"
+bash ops/loom accept --consumer consumers/<repo>.toml --short NAME --title "…" \
     --scope "…" --out "…" --done "…"
 
 # 1. Dispatch it.
-LOOM_REPO=/path/to/consumer bash ops/dispatch.sh consumers/<repo>.toml 42
-#    → prints the workdir and the assignment id, e.g. smriti-pyz.1
+LOOM_REPO=/path/to/consumer bash ops/loom dispatch --consumer consumers/<repo>.toml --issue 42
+#    → {"id":"smriti-pyz.1","fact":"<workdir>", …}
 
-# 2. Run any worker in it (blocks until the worker exits; background it).
-bash ops/launch.sh smriti-pyz.1 -- codex exec -s workspace-write "Read WORK.md ..." &
+# 2. Run the worker (local executor; Orca configs use `loom start`).
+bash ops/loom launch smriti-pyz.1 -- codex exec -s workspace-write "Read WORK.md ..."
 
-# 3. Keep the clock (prints only watchdog actions, then status):
-bash ops/heartbeat.sh --until smriti-pyz.1
+# 3. Keep the clock.
+bash ops/loom watch --until smriti-pyz.1
 
-# 4. On ready: re-run the consumer's checks in a fresh clone, then bring the
-#    branch home and PR. (Run --baseline first to know what "no new
-#    failures" means for this consumer.)
-bash ops/verify.sh smriti-pyz.1 --baseline
-bash ops/verify.sh smriti-pyz.1
-bash ops/collect.sh smriti-pyz.1
+# 4. On ready: re-check in a fresh clone, collect, then PR.
+bash ops/loom verify smriti-pyz.1 --baseline
+bash ops/loom verify smriti-pyz.1
+bash ops/loom collect smriti-pyz.1
+
+# 5. When a person has dealt with a result, settle it out of status.
+bash ops/loom ack smriti-pyz.1 "reviewed, PR merged"
 ```
+
+Every call prints one JSON object and exits 0 only when `ok` is true. The
+scripts under `ops/` remain the mechanism; `ops/loom` is the contract.
 
 ## What each script guarantees
 
 | Script | Guarantee |
 | --- | --- |
+| `loom <verb> …` | The call. One JSON object on stdout, exit 0 iff `ok`. `loom version`, `accept`, `ignore`, `dispatch`, `launch`, `start`, `harvest`, `stop`, `release`, `watch`, `status`, `verify`, `collect`, `report`, `ack`, `detect`. See the 0.5.0 spec. |
+| `ack.sh <id> "<why>"` | A person has dealt with this assignment: sets `.acked` once, refuses a live worker. Status drops the report row; history stays. |
 | `ticket.sh <consumer.toml> --short … --title … --scope … --out … --done …` | Renders the Mandate exactly from the template, proves dispatch's own parser accepts it, opens the issue. Ticket text is literal, never evaluated. `--dry-run` prints the body. |
 | `dispatch.sh <consumer.toml> <issue#>` | Reads the issue's Mandate via `gh`; refuses if the ticket already has a live worker. Creates `<worktrees>/<short>.<attempt>` as a **private clone** (own `.git`, **no remote**, so it can commit but cannot push), on branch `<short>` at the default branch, with the consumer's git identity. Writes `WORK.md` (mandate + laws + how to report), excluded from git. Records the assignment. |
 | `launch.sh <id> -- <cmd...>` | Runs the worker in its workdir with **no stdin** and its **own process group**; records PID + start time; logs to `$LOOM_STATE/<id>.log`. On exit, harvests the newest `state:` line the worker wrote **this launch** (older lines are skipped by offset). Exit with no line → `failed / worker_exit_no_report (exit N)`. |
@@ -39,7 +46,7 @@ bash ops/collect.sh smriti-pyz.1
 | `heartbeat.sh --until <ID\|all> [--every SEC] [--limit-min N]` | The conductor's clock: runs the watchdog every SEC (default 60), prints only its actions, stops when the assignment (or all) has settled, then prints status. |
 | `status.sh` | One line per assignment whose latest report is `ready`, `blocked` or `failed` and has no live worker: `id<TAB>state<TAB>fact`. Silent when healthy. |
 | `verify.sh <id> [--baseline]` | Runs the consumer's `checks` in a **fresh clone** the worker never touched — at the base (`--baseline`) or at the ticket branch tip. Records every run; a branch run records a conductor report (`ready` = verified, `failed` = checks failed). Exit 126/127 is reported as **could not run**, never as a test failure. |
-| `collect.sh <id>` | Fetches the ticket branch from the worker clone into the consumer checkout and prints the commits over the recorded base. Never pushes. |
+| `collect.sh <id>` | Fetches the ticket branch from the worker clone into the consumer checkout, prints the commits over the recorded base, and records `.collected_sha`. Never pushes. |
 | `report.sh <id> <state> "<fact>"` | Conductor-side manual report (e.g. recording a review verdict). |
 
 ## The worker contract
@@ -55,8 +62,10 @@ A worker only ever:
 state: <ready|blocked|failed|waiting> — <one-line fact>
 ```
 
-It never writes `$LOOM_STATE`, never pushes (the clone has no remote), and
-never leaves its workdir. Everything else is the conductor's.
+It puts logs and other evidence under `.loom/` in its workdir: loom copies that
+directory into `$LOOM_STATE/<id>.evidence/` and never commits it. It never
+writes `$LOOM_STATE`, never pushes (the clone has no remote), and never leaves
+its workdir. Everything else is the conductor's.
 
 ## State
 
@@ -84,14 +93,16 @@ only by `verify.sh`, in a fresh clone, as the conductor's explicit act.
 ## Proof
 
 `bash ops/selftest.sh` runs the whole lifecycle offline against a throwaway
-repo with a stubbed `gh` and fake workers: ready, blocked, silent exit, hung
-worker with a child process, lost launcher, recycled PID, git-free worker,
-per-consumer limits, reused short names, verify (fresh clone, baseline,
-could-not-run), stale and live locks, corrupt state.
+repo with a stubbed `gh`, a stubbed `orca`, and fake workers: ready, blocked,
+silent exit, hung worker with a child process, lost launcher, recycled PID,
+git-free worker, per-consumer limits, reused short names, verify (fresh clone,
+baseline, could-not-run), the Orca executor (workspace receipt, release only
+after collect, stop only on confirmation), evidence handling, ack, the `loom`
+call, stale and live locks, corrupt state.
 
 `bash ops/mutate.sh` proves the selftest has teeth: each mutant re-introduces
 a fixed defect and the selftest must fail on every one. A gap fix lands with
-its selftest case **and** its mutant.
+its selftest case **and** its mutant. 0.5.0 adds m25–m29 for #29, #30, #31, #33.
 
 ## Executors: Orca first
 

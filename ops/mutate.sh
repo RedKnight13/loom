@@ -43,5 +43,10 @@ run dispatch.sh "s#\[\[ -n \$orca_runtime \]\] || loom_error 'executor orca requ
 run lib.sh 's/        loom_orca_running "$1"/        false/' "a running Orca worker is not live" m22
 run collect.sh 's/^if \[\[ $(cd "$workdir" \&\& cd/if true || [[ $(cd "$workdir" \&\& cd/' "collect fetches into a shared-repo branch" m23
 run verify.sh 's/^\[\[ $kind == baseline \]\] || ! loom_alive/! loom_alive/' "baseline refused while the worker runs" m24
+run orca.sh 's/workdir=\${workspace##\*::}/workdir=/' "workspace split removed" m25
+run orca.sh '/branch is not collected/d' "release allowed before collect" m26
+run status.sh 's/select(has("acked") | not) //' "acked assignment still listed" m27
+run lib.sh '/loom_take_evidence "\$workdir" "\$id"/d' "evidence not copied" m28
+run lib.sh 's/for f in WORK.md REPORT.md .loom\/;/for f in WORK.md REPORT.md;/' "evidence directory not excluded at harvest" m29
 echo "SURVIVED=$survived"
 exit "$survived"

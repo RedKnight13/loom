@@ -11,6 +11,10 @@ work may be done and how far it may go, an **Assignment** binds the Ticket to
 one worker in its own worktree, and the worker ends every turn with a
 **structured report** — never free text a conductor has to interpret.
 
+**One call.** 0.5.0 adds `ops/loom`: one command, one JSON object, the same for
+Claude, Codex, or any later harness. The caller cannot tell which executor ran
+the work. Contract: [docs/superpowers/specs/2026-11-07-loom-0.5.0-design.md](docs/superpowers/specs/2026-11-07-loom-0.5.0-design.md).
+
 Loom is repo-agnostic. A consumer repo (smriti, argos, anything) adds a small
 config and uses loom's scripts against its own issues.
 
