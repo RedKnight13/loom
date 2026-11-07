@@ -46,13 +46,16 @@ fi
 base_sha=$(git -C "$checkout" rev-parse --verify "$base^{commit}")
 loom_init
 loom_lock
-# One ticket, one live worker. Ended assignments only raise the attempt number.
+# One ticket, one live worker. Attempts are numbered per short name across
+# all tickets: a corrected ticket (mandates are immutable) may reuse a name.
 attempt=1
 shopt -s nullglob
 for file in "$LOOM_STATE"/*.json; do
     loom_validate "$file"
-    jq -e --arg repo "$repo" --argjson ticket "$2" '.repo == $repo and .ticket == $ticket' "$file" >/dev/null || continue
-    ! loom_alive "$file" || loom_error "ticket already has a live assignment: $(basename "$file" .json)"
+    if jq -e --arg repo "$repo" --argjson ticket "$2" '.repo == $repo and .ticket == $ticket' "$file" >/dev/null; then
+        ! loom_alive "$file" || loom_error "ticket already has a live assignment: $(basename "$file" .json)"
+    fi
+    jq -e --arg short "$short" '.short_name == $short' "$file" >/dev/null || continue
     n=$(jq -r '.attempt' "$file")
     (( n < attempt )) || attempt=$((n + 1))
 done
