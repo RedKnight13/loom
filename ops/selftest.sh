@@ -128,7 +128,9 @@ if dispatch >/dev/null 2>&1; then fail 'second live assignment accepted (D4)'; f
 [[ -z $(bash "$ops/watchdog.sh") ]] || fail 'fresh worker must not trip the watchdog'
 kill -0 "$worker" || fail 'watchdog killed a fresh worker'
 age "$id2"
-[[ $(bash "$ops/watchdog.sh" --limit-min 1) == "$id2 failed watchdog_kill" ]] || fail 'watchdog action missing'
+[[ -z $(bash "$ops/watchdog.sh" --limit-min 1 --id "$id1") ]] || fail 'scoped watchdog touched another assignment'
+kill -0 "$worker" || fail 'scoped watchdog killed an out-of-scope worker'
+[[ $(bash "$ops/watchdog.sh" --limit-min 1 --id "$id2") == "$id2 failed watchdog_kill" ]] || fail 'watchdog action missing'
 wait "$launcher" 2>/dev/null || :
 sleep 0.3
 ! kill -0 "$worker" 2>/dev/null || fail 'worker survived'
@@ -138,6 +140,7 @@ jq -e '[.reports[].state] == ["failed"] and .reports[0].fact == "watchdog_kill" 
 [[ -d $(jq -r '.workdir' "$(rec "$id2")") ]] || fail 'watchdog must keep the workdir'
 [[ -z $(bash "$ops/watchdog.sh" --limit-min 1) ]] || fail 'watchdog repeated an action'
 if bash "$ops/watchdog.sh" --limit-min nope 2>/dev/null; then fail 'invalid limit accepted'; fi
+if bash "$ops/watchdog.sh" --id ../x 2>/dev/null; then fail 'unsafe watchdog id accepted'; fi
 pass 'hung worker: twin refused, group killed, recorded once, workdir kept'
 
 # --- silent exit, then a blocked turn, then report_offset ignores old lines ---
