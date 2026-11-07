@@ -15,6 +15,9 @@ compute   = ["agni1", "agni2"]
 # The optional fast Ed25519 backend (smriti's `fast` extra) lives in this venv
 # on each compute host; a host without it fails loudly as "could not run".
 compute_setup = ". ~/.venvs/smriti-checks/bin/activate"
+# Codex on a remote Orca host needs longer than Orca's ~60s default to become
+# ready (ci-all-suites.5 timed out at 61s with codex still starting).
+start_timeout_ms = 300000
 laws = [
   "Workers never push; only the conductor pushes, reviews and merges, under the owner's GitHub name.",
   "Nothing identifying the owner enters any file, log, or commit.",
