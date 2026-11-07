@@ -12,11 +12,13 @@ if [[ $# == 4 && $3 == --executor ]]; then want=$4; set -- "$1" "$2"; fi
 
 config=$(loom_config "$1")
 # A config under version control must be committed: the record pins the exact
-# config the assignment ran under (gap #20).
+# config the assignment ran under (gap #20). Ignored and untracked configs
+# have no commit to pin, even inside a work tree (gap #68).
 config_dir=$(cd "$(dirname "$1")" && pwd)
 config_name=$(basename "$1")
 config_commit=null
-if git -C "$config_dir" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+if git -C "$config_dir" rev-parse --is-inside-work-tree >/dev/null 2>&1 &&
+    git -C "$config_dir" ls-files --error-unmatch -- "$config_name" >/dev/null 2>&1; then
     [[ -z $(git -C "$config_dir" status --porcelain -- "$config_name") ]] || loom_error "consumer config has uncommitted changes; commit it first: $1"
     config_commit=$(jq -Rn --arg c "$(git -C "$config_dir" log -1 --format=%H -- "$config_name")" '$c')
 fi

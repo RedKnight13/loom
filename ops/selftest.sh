@@ -551,6 +551,22 @@ EOF
     ! grep -q "^$ido"$'\t'"release"$'\t' <<< "$(bash "$ops/status.sh")" || fail 'released workspace still in status'
     bash "$ops/orca.sh" release "$ido" >/dev/null 2>&1 && fail 'double release accepted'
 
+    # Unversioned configs inside a repo must produce usable records (gap #68).
+    mkdir -p "$scratch/cfg/local"
+    printf 'ignored.toml\n' > "$scratch/cfg/local/.gitignore"
+    for config_name in ignored.toml untracked.toml; do
+        cp "$scratch/consumer.toml" "$scratch/cfg/local/$config_name"
+        out=$(bash "$ops/dispatch.sh" "$scratch/cfg/local/$config_name" 7) || fail "$config_name config refused"
+        idc=${out##*$'\n'}
+        jq -e 'has("config_commit") and .config_commit == null' "$(rec "$idc")" >/dev/null || fail "$config_name config must record null"
+        ORCA_STUB_WORKER="$scratch/bin/w-files" bash "$ops/loom" start "$idc" >/dev/null || fail "start rejected $config_name config record"
+        obj=$(bash "$ops/loom" show "$idc") || fail "show rejected $config_name config record"
+        jq -e '.ok == true' <<< "$obj" >/dev/null || fail "show failed for $config_name config record"
+        pid=$(cat "$GH_STATE/disp-$idc.pid"); for _ in $(seq 1 50); do kill -0 "$pid" 2>/dev/null || break; sleep 0.1; done
+        bash "$ops/orca.sh" harvest "$idc" >/dev/null || fail "harvest failed for $config_name config record"
+    done
+    pass 'ignored and untracked configs inside a repo record null and start/show accept them'
+
     # stop: only on a stop Orca confirmed; stale is surfaced, never acted on
     out=$(dispatch); ids=${out##*$'\n'}
     export ORCA_STUB_WORKER="$scratch/bin/w-hang" GRANDCHILD="$scratch/orca-grandchild"

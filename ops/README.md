@@ -90,6 +90,10 @@ trailing comma), `#` comments outside strings. Unknown or duplicate keys are
 rejected; nothing in the config is evaluated at parse time. `checks` is run
 only by `verify.sh`, in a fresh clone, as the conductor's explicit act.
 
+Dispatch pins tracked configs to their last commit and refuses uncommitted
+changes. Ignored and untracked configs record `config_commit: null`, including
+when they live inside a git repository (#68).
+
 ## Proof
 
 `bash ops/selftest.sh` runs the whole lifecycle offline against a throwaway
