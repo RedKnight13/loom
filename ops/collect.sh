@@ -15,13 +15,17 @@ file=$(loom_record "$1")
 ! loom_alive "$file" || loom_error 'worker is still running; collect after it reports'
 workdir=$(jq -r '.workdir' "$file")
 checkout=$(jq -r '.checkout' "$file")
-short=$(jq -r '.short_name' "$file")
+short=$(jq -r '.branch // .short_name' "$file")  # the branch (Orca names its own)
 base=$(jq -r '.base_sha' "$file")
 state=$(jq -r '.reports[-1].state // "none"' "$file")
 [[ $(git -C "$checkout" branch --show-current) != "$short" ]] || loom_error "branch $short is checked out in the consumer checkout"
 git -C "$workdir" show-ref --verify --quiet "refs/heads/$short" || loom_error "worker clone has no branch $short"
 [[ -z $(git -C "$workdir" status --porcelain) ]] || printf 'loom: warning: worker clone has uncommitted changes (not collected)\n' >&2
-git -C "$checkout" fetch -q "$workdir" "+refs/heads/$short:refs/heads/$short"
+# An Orca worktree shares the checkout's repository: its branch is already
+# home (and checked out there, so it cannot be fetched into).
+if [[ $(cd "$workdir" && cd "$(git rev-parse --git-common-dir)" && pwd -P) != "$(cd "$checkout" && cd "$(git rev-parse --git-common-dir)" && pwd -P)" ]]; then
+    git -C "$checkout" fetch -q "$workdir" "+refs/heads/$short:refs/heads/$short"
+fi
 count=$(git -C "$checkout" rev-list --count "$base..$short")
 printf '%s: branch %s collected, %s commit(s) over base, latest report: %s\n' "$1" "$short" "$count" "$state"
 git -C "$checkout" log --oneline "$base..$short"

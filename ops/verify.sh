@@ -24,7 +24,7 @@ checks=$(jq -r '.checks // empty' "$file")
 [[ -n $checks ]] || loom_error 'consumer declares no checks; nothing to verify'
 checkout=$(jq -r '.checkout' "$file")
 workdir=$(jq -r '.workdir' "$file")
-short=$(jq -r '.short_name' "$file")
+short=$(jq -r '.branch // .short_name' "$file")  # the branch (Orca names its own)
 base=$(jq -r '.base_sha' "$file")
 
 scratch=$(mktemp -d "${TMPDIR:-/tmp}/loom-verify.XXXXXX")
