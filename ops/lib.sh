@@ -70,6 +70,8 @@ loom_validate() {
           (.kind == "local" or .kind == "orca") and
           (.kind == "local" or (.state | IN("pending", "starting", "running", "settled", "failed_start"))))) and
       ((has("branch") | not) or .branch == null or (.branch | type == "string")) and
+      ((has("compute") | not) or .compute == null or (.compute | type == "array" and all(.[]; type == "string"))) and
+      ((has("compute_setup") | not) or .compute_setup == null or (.compute_setup | type == "string")) and
       ((has("config_commit") | not) or .config_commit == null or (.config_commit | type == "string" and test("^[0-9a-f]{40}$"))) and
       ((has("checks") | not) or .checks == null or (.checks | type == "string")) and
       ((has("checks_runs") | not) or (.checks_runs | type == "array" and
@@ -213,7 +215,9 @@ loom_config() {
      (.laws | type == "array" and all(.[]; type == "string")) and
      ((has("limit_min") | not) or (.limit_min | type == "number" and . > 0 and . == floor)) and
      ((has("executor") | not) or (.executor | IN("auto", "local", "orca"))) and
-     ((keys - ["repo", "checks", "worktrees", "laws", "limit_min", "executor"]) | length == 0)
+     ((has("compute") | not) or (.compute | (type == "string" and length > 0) or (type == "array" and length > 0 and all(.[]; type == "string" and length > 0)))) and
+     ((has("compute_setup") | not) or (.compute_setup | type == "string")) and
+     ((keys - ["repo", "checks", "worktrees", "laws", "limit_min", "executor", "compute", "compute_setup"]) | length == 0)
   then . else error("invalid consumer config") end
 ' "$1" || loom_error 'unsupported or invalid consumer TOML; see ops/README.md'
 }
@@ -252,4 +256,21 @@ loom_executor() {  # loom_executor <record>: local | orca
 # supervises the process.
 loom_orca_running() {
     jq -e '.executor.kind == "orca" and (.executor.state == "running" or .executor.state == "starting")' "$1" >/dev/null
+}
+
+# --- compute hosts (gap #36) --------------------------------------------------
+# Owner, 2026-11-07: "why are you doing it here instead of build1 ??". Checks
+# run on the consumer's compute host, never silently on the conductor's
+# machine. LOOM_SSH names the ssh binary (tests stub it).
+loom_ssh() { "${LOOM_SSH:-ssh}" -o BatchMode=yes -o ConnectTimeout=5 "$@"; }
+
+loom_compute_pick() {  # loom_compute_pick <host>...: first reachable host
+    local h
+    for h in "$@"; do
+        if loom_ssh "$h" true >/dev/null 2>&1; then
+            printf '%s' "$h"
+            return 0
+        fi
+    done
+    return 1
 }
