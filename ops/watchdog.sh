@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
-# watchdog.sh [--limit-min N]   (default 30)
+# watchdog.sh [--limit-min N] [--id ASSIGNMENT]
+#
+# Limit: --limit-min N if given; else the assignment's own limit_min (from its
+# consumer config at dispatch); else 30 minutes.
 #
 # For every assignment with a recorded worker:
 #   - alive and silent past the limit → kill its process group, record
@@ -12,7 +15,7 @@ set -euo pipefail
 # shellcheck source=ops/lib.sh
 source "${BASH_SOURCE[0]%/*}/lib.sh"
 usage='usage: watchdog.sh [--limit-min N] [--id ASSIGNMENT]'
-limit=30
+limit=
 only=
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -42,7 +45,8 @@ for file in "$LOOM_STATE"/*.json; do
         printf '%s %s worker_gone\n' "$id" "$state"
         continue
     fi
-    if jq -e --argjson limit "$limit" '
+    if jq -e --argjson override "${limit:-null}" '
+      ($override // .limit_min // 30) as $limit |
       ([.started_at, .launched_at] + [.reports[].at] | map(select(. != null) | fromdateiso8601) | max)
         <= (now - $limit * 60)
     ' "$file" >/dev/null; then

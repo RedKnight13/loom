@@ -50,6 +50,10 @@ cat > "$scratch/bin/w-blocked" <<'EOF'
 printf 'state: blocked — Which license should the new file carry?\n' >> REPORT.md
 EOF
 printf 'exit 3\n' > "$scratch/bin/w-silent"
+cat > "$scratch/bin/w-files" <<'EOF'
+printf 'notes\n' > notes.txt
+printf 'state: ready — wrote notes.txt\n' >> REPORT.md
+EOF
 cat > "$scratch/bin/w-hang" <<'EOF'
 sleep 1000 &
 printf '%s\n' "$!" > "$GRANDCHILD"
@@ -167,6 +171,38 @@ mv "$scratch/lost" "$(rec "$id4")"
 kill -0 "$stranger" || fail 'watchdog signalled a recycled PID'
 jq -e '.worker_pid == null and .reports[-1].fact == "finished before its launcher died"' "$(rec "$id4")" >/dev/null || fail 'lost harvest record'
 pass 'lost launcher harvested; recycled PID left alone'
+
+# --- per-consumer watchdog limit (gap #7) and exact process start (gap #10) ---
+sed 's/^checks = "true"$/checks = "true"\nlimit_min = 60/' "$scratch/consumer.toml" > "$scratch/slow.toml"
+grep -q '^limit_min = 60$' "$scratch/slow.toml" || fail 'fixture: slow consumer not written'
+sed 's/^limit_min = 60$/limit_min = "60"/' "$scratch/slow.toml" > "$scratch/bad.toml"
+if bash "$ops/dispatch.sh" "$scratch/bad.toml" 7 >/dev/null 2>&1; then fail 'non-integer limit_min accepted'; fi
+out=$(bash "$ops/dispatch.sh" "$scratch/slow.toml" 7); id5=${out##*$'\n'}
+jq -e '.limit_min == 60' "$(rec "$id5")" >/dev/null || fail 'limit_min not copied into the record'
+jq -e '.limit_min == null' "$(rec "$id4")" >/dev/null || fail 'default consumer must record no limit'
+bash "$ops/launch.sh" "$id5" -- bash "$scratch/bin/w-hang" > /dev/null 2>&1 &
+pids+=("$!"); slow_launcher=$!
+await_pid "$id5"
+slow=$(jq -r '.worker_pid' "$(rec "$id5")"); pids+=("$slow")
+[[ $(jq -r '.worker_start' "$(rec "$id5")") == "$(ps -o lstart= -p "$slow" | sed 's/^ *//; s/ *$//')" ]] || fail 'worker_start must be trimmed both ends'
+jq '.started_at = ((now - 2400) | todateiso8601) | .launched_at = .started_at' "$(rec "$id5")" > "$scratch/t"; mv "$scratch/t" "$(rec "$id5")"
+[[ -z $(bash "$ops/watchdog.sh") ]] || fail '40 min silent under a 60-min consumer limit must survive the default run'
+kill -0 "$slow" || fail 'consumer limit ignored: worker killed at the default 30'
+jq '.limit_min = 1' "$(rec "$id5")" > "$scratch/t"; mv "$scratch/t" "$(rec "$id5")"
+[[ $(bash "$ops/watchdog.sh") == "$id5 failed watchdog_kill" ]] || fail 'record limit below default not honoured'
+wait "$slow_launcher" 2>/dev/null || :
+pass 'consumer limit_min is parsed, recorded, and honoured; start time trimmed'
+
+# --- workers never touch git; loom seals their work (gap #11) ---
+out=$(dispatch); work6=${out%$'\n'*}; id6=${out##*$'\n'}
+[[ $(< "$work6/WORK.md") == *'Do not run git add or git commit'* ]] || fail 'WORK.md must tell workers not to commit'
+bash "$ops/launch.sh" "$id6" -- bash "$scratch/bin/w-files" >/dev/null
+[[ $(git -C "$work6" log -1 --format=%s) == "loom($id6): ready — wrote notes.txt" ]] || fail 'loom did not commit the worker files'
+[[ -z $(git -C "$work6" status --porcelain) ]] || fail 'workdir left dirty after harvest'
+! git -C "$work6" ls-files | grep -qE '^(WORK|REPORT)\.md$' || fail 'WORK.md/REPORT.md must never be committed'
+[[ $(git -C "$work6" log -1 --format=%an) == 'Loom Fixture' ]] || fail 'loom commit must use the consumer identity'
+[[ $(bash "$ops/collect.sh" "$id6") == *'1 commit(s) over base'* ]] || fail 'sealed commit not collectable'
+pass 'git-free worker: loom commits its files under the consumer identity'
 
 # --- the lock: a live holder blocks, a dead holder is broken ---
 n=$(jq '.reports | length' "$(rec "$id1")")
