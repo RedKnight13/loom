@@ -1,0 +1,89 @@
+---
+layout: default
+title: Bootstrap Loom
+---
+
+<style>
+  .main-content { max-width: 900px; }
+  .copy { display:inline-block; margin:.4rem 0 1rem; padding:.5rem 1rem; border:1px solid #1f6feb;
+          border-radius:6px; background:#fff; color:#1f6feb; font:inherit; cursor:pointer; }
+  .copy:hover { background:#1f6feb; color:#fff; }
+  .copy.copied { border-color:#1a7f37; background:#1a7f37; color:#fff; }
+  .copy.failed { border-color:#cf222e; background:#cf222e; color:#fff; }
+  pre { background:#f6f8fa; border:1px solid #d0d7de; border-radius:6px; padding:1rem;
+        overflow:auto; font-size:.85rem; line-height:1.45; max-height:70vh; }
+</style>
+
+<p><strong>One prompt, one setup.</strong> Paste it into Claude Code, Codex, or any agent that can
+run shell commands. It installs Loom, proves the checkout, asks for your repository, and stops
+before creating an issue.</p>
+
+<button class="copy" data-copy-file="bootstrap.txt">Copy the bootstrap prompt</button>
+<p><a href="bootstrap.txt">Open the raw prompt</a> · <a href="index.html">back to Loom</a></p>
+
+<pre id="bootstrap-prompt">Loading the prompt…</pre>
+
+<h2>What it will do</h2>
+<ol>
+  <li>Check prerequisites and report versions.</li>
+  <li>Clone Loom to <code>~/loom</code>, refusing a dirty checkout.</li>
+  <li>Run selftest, <code>shellcheck</code>, and the mutant suite; stop on any non-zero exit.</li>
+  <li>Ask for the consumer repo, its checks command, the worktrees directory, and the executor.</li>
+  <li>Verify <code>gh</code> and, for Orca, the runtime and the 1.4.246 floor.</li>
+  <li>Render a ticket with <code>--dry-run</code> and stop before opening it.</li>
+</ol>
+<p>It never pushes, merges, or writes credentials to a file, and it does not claim success without
+a captured exit code.</p>
+
+<h2>After it finishes</h2>
+<pre id="after">loom accept --consumer consumers/myrepo.toml --short first-check \
+  --title "First check" --scope "one file or area" --out "everything else" \
+  --done "make check exits 0"
+
+LOOM_REPO=/path/to/repo loom dispatch --consumer consumers/myrepo.toml --issue 42</pre>
+<button class="copy" data-copy="#after">Copy these commands</button>
+
+<p>Next: <a href="setup.html">setup</a> for the daily loop, Orca, and the compute host.</p>
+
+<script>
+(function () {
+  function flash(el, cls, text) {
+    var old = el.dataset.label || el.textContent;
+    el.dataset.label = old; el.textContent = text; el.classList.add(cls);
+    setTimeout(function () { el.textContent = old; el.classList.remove(cls); }, 1800);
+  }
+  async function write(text) {
+    try { await navigator.clipboard.writeText(text); return true; }
+    catch (e) {
+      var ta = document.createElement('textarea'); ta.value = text;
+      ta.style.position = 'fixed'; ta.style.opacity = '0'; document.body.appendChild(ta);
+      ta.select(); var ok = false; try { ok = document.execCommand('copy'); } catch (e2) {}
+      document.body.removeChild(ta); return ok;
+    }
+  }
+  async function load() {
+    try {
+      var r = await fetch('bootstrap.txt', { cache: 'no-store' });
+      document.getElementById('bootstrap-prompt').textContent = await r.text();
+    } catch (e) {
+      document.getElementById('bootstrap-prompt').textContent =
+        'Could not load bootstrap.txt — open it directly.';
+    }
+  }
+  document.querySelectorAll('button.copy').forEach(function (btn) {
+    btn.addEventListener('click', async function () {
+      var text = '';
+      if (btn.dataset.copyFile) {
+        try { var r = await fetch(btn.dataset.copyFile, { cache: 'no-store' });
+              text = await r.text(); } catch (e) { text = ''; }
+      } else if (btn.dataset.copy) {
+        var node = document.querySelector(btn.dataset.copy); text = node ? node.innerText : '';
+      }
+      if (!text) { flash(btn, 'failed', 'Could not copy — open the raw file'); return; }
+      if (await write(text)) flash(btn, 'copied', 'Copied');
+      else flash(btn, 'failed', 'Copy failed — select the text');
+    });
+  });
+  load();
+})();
+</script>

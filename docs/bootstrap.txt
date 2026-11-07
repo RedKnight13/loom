@@ -1,0 +1,70 @@
+Set up Loom on this machine. Loom is a work-coordination layer for coding
+agents: https://github.com/RedKnight13/loom (MIT).
+
+Rules for this task:
+- Do not modify, commit to, or push any repository other than the Loom checkout.
+- Do not install anything without asking first.
+- Do not write credentials, tokens, or personal names into any file.
+- Report the captured exit code of every command you run. Never say "done"
+  without one. If a step fails, stop and show the last 20 lines of output.
+
+1. Check prerequisites and report versions:
+     bash --version | head -1
+     git --version
+     jq --version
+     gh --version | head -1
+     shellcheck --version | head -2
+     orca --version 2>/dev/null || echo "orca: not installed (optional)"
+   If jq, git, gh, or shellcheck is missing, say which and stop.
+
+2. Ensure the checkout exists:
+     test -d ~/loom || git clone https://github.com/RedKnight13/loom.git ~/loom
+     git -C ~/loom status --short
+   If the checkout already exists and is dirty, show the diff and stop.
+
+3. Prove the checkout:
+     cd ~/loom && bash ops/selftest.sh
+     echo "SELFTEST=$?"
+     shellcheck -x ops/*.sh ops/loom
+     echo "LINT=$?"
+     bash ops/mutate.sh
+     echo "MUTATE=$?"
+   All three must be 0. If any is not, stop.
+
+4. Ask me for these, and do not guess:
+   - the consumer repo that owns the tickets, as owner/name
+   - the checks command you already trust for that repo (it must exit 0 on main)
+   - the worktrees directory (default: ~/work/<repo>-workdirs)
+   - executor: auto, local, or orca
+   Then create consumers/<name>.toml from consumers/example.toml with those
+   values, and show me the file. If the consumer repo is under git, commit only
+   that config file, with the message "consumers: register <name>".
+
+5. Verify connectivity:
+     gh auth status
+     gh repo view <owner/name> --json defaultBranchRef,name
+   If executor is orca:
+     orca status
+     orca --version       # must be 1.4.246 or newer
+     orca host list --json
+   If a compute host is declared in the config, it must appear connected in that
+   host list. If executor is local while Orca is installed and ready, note that
+   `launch` needs LOOM_ALLOW_LOCAL=1; prefer setting executor = "local".
+
+6. Render a ticket without opening it:
+     cd ~/loom && bash ops/ticket.sh consumers/<name>.toml \
+       --short first-check --title "First check" \
+       --scope "<one file or area>" \
+       --out "everything else" \
+       --done "<the checks command> exits 0" \
+       --dry-run
+   Show me the Mandate. Stop here. Do not open an issue until I say go.
+
+7. When I approve, report exactly:
+     cd ~/loom && bash ops/loom version
+     the single command to open the first ticket with `loom accept`
+     the single command to dispatch it after that
+   Do not run either command yet.
+
+Finally, summarise: what you installed or changed, the three gate exit codes,
+the executor chosen, and anything that will need my decision later.

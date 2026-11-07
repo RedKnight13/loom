@@ -1,0 +1,198 @@
+---
+layout: default
+title: loom
+---
+
+<style>
+  .main-content { max-width: 980px; }
+  .lead { font-size: 1.12rem; color: #2f3b46; }
+  .copy {
+    display: inline-block; margin: .35rem 0 1rem; padding: .45rem .9rem;
+    border: 1px solid #1f6feb; border-radius: 6px; background: #fff;
+    color: #1f6feb; font: inherit; font-size: .9rem; cursor: pointer;
+  }
+  .copy:hover { background: #1f6feb; color: #fff; }
+  .copy.copied { border-color: #1a7f37; background: #1a7f37; color: #fff; }
+  .copy.failed { border-color: #cf222e; background: #cf222e; color: #fff; }
+  pre { background: #f6f8fa; border: 1px solid #d0d7de; border-radius: 6px;
+        padding: .9rem 1rem; overflow-x: auto; font-size: .86rem; line-height: 1.45; }
+  code { font-size: .88em; }
+  table { font-size: .95rem; }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1.2rem; }
+  @media (max-width: 700px) { .cols { grid-template-columns: 1fr; } }
+  .card { border: 1px solid #d0d7de; border-radius: 8px; padding: 1rem 1.1rem; background: #fff; }
+  .muted { color: #57606a; }
+  .tag { display: inline-block; padding: .1rem .45rem; border-radius: 999px;
+         background: #ddf4ff; color: #0969da; font-size: .78rem; font-weight: 600; }
+</style>
+
+<p class="lead"><strong>Loom</strong> is the thin layer between you and a coding agent that makes
+delegation safe and boring: one ticket, one isolated workspace, one structured report per turn,
+and a watchdog that ends silence. The agent never pushes. You are the only one who merges.</p>
+
+<p>No server, no database, no model of its own. About 2,700 lines of bash and rules.</p>
+
+<h2>Why it exists</h2>
+<p>Handing a real repository to an agent fails in the same ways every time:</p>
+<ul>
+  <li>a worker hangs for ninety minutes looking alive;</li>
+  <li>liveness is inferred from a PID, or from prose;</li>
+  <li>a dead worker's spec is re-dispatched from memory;</li>
+  <li>the rules the work ran under live in nobody's file.</li>
+</ul>
+<p>Loom turns each of those into a mechanism: an immutable <strong>Mandate</strong>, a
+<strong>private workspace</strong>, four report states, and a <strong>watchdog</strong> keyed to the
+process identity rather than a number.</p>
+
+<h2>One ticket, concretely</h2>
+<pre id="ticket-example">Issue #42: "Add --json to the CLI"
+
+Mandate, written before any code:
+  scope:      cmd/main.go, cmd/main_test.go
+  out:        everything else
+  done means: make check exits 0
+
+Loom:      dispatch → private clone, branch add-json, no remote
+Agent:     edits two files, appends REPORT.md:
+             state: ready — added --json and a golden test
+Loom:      commits that work as one commit on add-json
+Watchdog:  fires only if the turn goes past limit_min
+You:       loom verify add-json.1 → fresh clone, make check, exit 0
+           loom collect add-json.1 → branch in your checkout
+           git push, open PR, merge            ← the only manual step</pre>
+
+<h2>Install</h2>
+<p>macOS or Linux, bash 3.2+, <code>git</code>, <code>jq</code>, <code>gh</code>,
+<code>shellcheck</code>. No runtime, no daemon.</p>
+<pre id="install-cmds">brew install jq gh shellcheck
+gh auth login
+git clone https://github.com/RedKnight13/loom.git ~/loom
+echo 'export PATH="$HOME/loom/ops:$PATH"' &gt;&gt; ~/.zshrc
+exec $SHELL -l
+cd ~/loom
+bash ops/selftest.sh          # exit 0
+shellcheck -x ops/*.sh ops/loom
+bash ops/mutate.sh            # exit 0, SURVIVED=0</pre>
+<button class="copy" data-copy="#install-cmds">Copy install commands</button>
+
+<h2>Or let an agent set it up</h2>
+<p>Paste one prompt into Claude Code or Codex. It checks prerequisites, clones and proves the
+checkout, asks for your repo and checks command, and stops before creating an issue.
+<span class="tag">one click to copy</span></p>
+
+<button class="copy" data-copy-file="bootstrap.txt">Copy the bootstrap prompt</button>
+<p class="muted">It runs the selftest, <code>shellcheck</code>, and the mutant suite; it never pushes,
+merges, or writes credentials, and it does not claim success without a captured exit code.
+Read it first: <a href="bootstrap.txt">bootstrap.txt</a> · <a href="bootstrap.html">the full page</a></p>
+
+<h2>Your first ticket</h2>
+<pre id="first-ticket"># 1. Register a consumer
+cp consumers/example.toml consumers/myrepo.toml   # set repo, checks, worktrees
+
+# 2. Write the ticket (opens a GitHub issue)
+loom accept --consumer consumers/myrepo.toml --short add-json \
+  --title "Add --json" --scope "cmd/main.go, cmd/main_test.go" \
+  --out "everything else" --done "make check exits 0"
+
+# 3. Dispatch, start, hold the clock
+LOOM_REPO=~/src/your-repo loom dispatch --consumer consumers/myrepo.toml --issue 42
+loom verify add-json.1 --baseline &amp;
+loom start add-json.1
+
+# 4. On ready: re-check, collect, then you push and merge
+loom verify add-json.1
+loom collect add-json.1
+loom ack add-json.1 "merged as #43"</pre>
+<button class="copy" data-copy="#first-ticket">Copy the first-ticket commands</button>
+
+<h2>What works today</h2>
+<table>
+  <tr><th>Area</th><th>Supported</th></tr>
+  <tr><td>One call</td><td><code>ops/loom</code> — one command, one JSON object, exit 0 iff <code>ok</code></td></tr>
+  <tr><td>Tickets</td><td>rendered Mandate, parser self-check, repeatable labels</td></tr>
+  <tr><td>Executors</td><td><code>local</code> (private clone, no remote) and <code>orca</code> (supervised)</td></tr>
+  <tr><td>Placement</td><td>first connected compute host; refuses when none, never local fallback</td></tr>
+  <tr><td>Checks</td><td>fresh clone, local or over SSH; unreachable is “could not run”, not a failure</td></tr>
+  <tr><td>Reports</td><td><code>ready | blocked | failed | waiting</code>, one line per turn</td></tr>
+  <tr><td>Watchdog</td><td>PID + start time, process-group kill, per-consumer limit</td></tr>
+  <tr><td>Attention</td><td><code>status</code> shows only what needs a person; <code>ack</code> settles it</td></tr>
+  <tr><td>Limits</td><td class="muted">no push/PR/merge, no scheduler, no daemon, GitHub issues only</td></tr>
+</table>
+
+<h2>Local or supervised</h2>
+<div class="cols">
+  <div class="card">
+    <h3>Local executor</h3>
+    <p class="muted">Zero extra dependencies. The worker gets a private clone with its own
+    <code>.git</code> and no remote, so it can commit but cannot push.</p>
+  </div>
+  <div class="card">
+    <h3>Orca executor</h3>
+    <p class="muted"><a href="https://github.com/stablyai/orca">Orca</a> (MIT, 1.4.246+) supervises
+    workers, places them on a compute host, and keeps their terminals and mail. Its app must be
+    running. Loom refuses an unconnected host rather than using your laptop.</p>
+  </div>
+</div>
+
+<h2>Guarantees</h2>
+<ul>
+  <li>One live assignment per ticket; a second dispatch refuses.</li>
+  <li>A worker that exits without a state line is <code>failed</code>, not a mystery.</li>
+  <li>A recycled PID is never signalled: identity is PID plus process start time.</li>
+  <li>Corrupt state stops the scripts; it never reads as healthy.</li>
+  <li>The conductor re-runs your checks in a clone the worker never touched.</li>
+  <li>Every mechanism has a mutant: a fix without a test and a mutant is not landed.</li>
+</ul>
+
+<h2>Read more</h2>
+<ul>
+  <li><a href="https://github.com/RedKnight13/loom#readme">README</a> — the full picture</li>
+  <li><a href="setup.html">Setup</a> — consumer config, Orca, compute host, troubleshooting</li>
+  <li><a href="support.html">Support</a> — matrix, platforms, known gaps</li>
+  <li><a href="https://github.com/RedKnight13/loom/blob/main/PROTOCOL.md">Protocol</a> — the law</li>
+  <li><a href="https://github.com/RedKnight13/loom/blob/main/ops/README.md">Operations</a> — every script and its guarantee</li>
+</ul>
+
+<p class="muted">MIT · <a href="https://github.com/RedKnight13/loom">github.com/RedKnight13/loom</a></p>
+
+<script>
+(function () {
+  function flash(el, cls, text) {
+    var old = el.dataset.label || el.textContent;
+    el.dataset.label = old;
+    el.textContent = text;
+    el.classList.add(cls);
+    setTimeout(function () {
+      el.textContent = old;
+      el.classList.remove(cls);
+    }, 1800);
+  }
+  async function write(text) {
+    try { await navigator.clipboard.writeText(text); return true; }
+    catch (e) {
+      var ta = document.createElement('textarea');
+      ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      var ok = false; try { ok = document.execCommand('copy'); } catch (e2) {}
+      document.body.removeChild(ta); return ok;
+    }
+  }
+  document.querySelectorAll('button.copy').forEach(function (btn) {
+    btn.addEventListener('click', async function () {
+      var text = '';
+      if (btn.dataset.copyFile) {
+        try {
+          var r = await fetch(btn.dataset.copyFile, { cache: 'no-store' });
+          text = await r.text();
+        } catch (e) { text = ''; }
+      } else if (btn.dataset.copy) {
+        var node = document.querySelector(btn.dataset.copy);
+        text = node ? node.innerText : '';
+      }
+      if (!text) { flash(btn, 'failed', 'Could not copy — open the raw file'); return; }
+      if (await write(text)) flash(btn, 'copied', 'Copied');
+      else flash(btn, 'failed', 'Copy failed — select the text');
+    });
+  });
+})();
+</script>
