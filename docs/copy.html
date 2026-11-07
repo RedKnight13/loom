@@ -27,14 +27,17 @@ before creating an issue.</p>
 <ol>
   <li>Check prerequisites and report versions.</li>
   <li>Clone Loom to <code>~/loom</code>, refusing a dirty checkout.</li>
-  <li>Run selftest, <code>shellcheck</code>, and the mutant suite; stop on any non-zero exit.</li>
+  <li>Run selftest and <code>shellcheck</code>; stop on either non-zero exit.
+      The long, macOS-only <code>ops/mutate.sh</code> is the contributor and CI gate, not a setup requirement.</li>
   <li>Ask for the consumer repo, its checks command, the worktrees directory, the executor, and the
-      default number of workers — suggesting what <code>loom capacity</code> detects from Orca.</li>
+      default number of workers — suggesting what <code>loom capacity</code> detects from Orca.
+      Create a local, untracked config inside the Loom checkout; do not commit it.
+      Commit a config only when it lives in the consumer repo, as a separate task outside this bootstrap.</li>
   <li>Verify <code>gh</code> and, for Orca, the runtime and the 1.4.246 floor.</li>
   <li>Render a ticket with <code>--dry-run</code> and stop before opening it.</li>
 </ol>
 <p>It never pushes, merges, or writes credentials to a file, and it does not claim success without
-a captured exit code.</p>
+a captured exit code. The final summary reports the two setup gate exit codes: selftest and shellcheck.</p>
 
 <h2>After it finishes</h2>
 <pre id="after">loom accept --consumer consumers/myrepo.toml --short first-check \

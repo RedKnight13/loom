@@ -27,9 +27,9 @@ Rules for this task:
      echo "SELFTEST=$?"
      shellcheck -x ops/*.sh ops/loom
      echo "LINT=$?"
-     bash ops/mutate.sh
-     echo "MUTATE=$?"
-   All three must be 0. If any is not, stop.
+   Both must be 0. If either is not, stop.
+   ops/mutate.sh is the long, macOS-only contributor and CI gate; do not run
+   it during setup.
 
 4. Ask me for these, and do not guess:
    - the consumer repo that owns the tickets, as owner/name
@@ -41,8 +41,9 @@ Rules for this task:
      (Orca ready? how many connected hosts?). Write it as `workers = N` and
      say that omitting the line means no cap.
    Then create consumers/<name>.toml from consumers/example.toml with those
-   values, and show me the file. If the consumer repo is under git, commit only
-   that config file, with the message "consumers: register <name>".
+   values, and show me the file. Inside the Loom checkout, this config is local
+   and untracked; do not commit it. Commit a consumer config only when it lives
+   in the consumer repo, as a separate task outside this bootstrap.
 
 5. Verify connectivity:
      gh auth status
@@ -70,5 +71,5 @@ Rules for this task:
      the single command to dispatch it after that
    Do not run either command yet.
 
-Finally, summarise: what you installed or changed, the three gate exit codes,
+Finally, summarise: what you installed or changed, the two gate exit codes (SELFTEST and LINT),
 the executor chosen, and anything that will need my decision later.

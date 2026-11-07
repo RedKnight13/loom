@@ -12,17 +12,22 @@ Codex, or any agent that can run shell commands.
 
 1. Checks prerequisites and reports versions.
 2. Clones Loom to `~/loom` (never overwriting a dirty checkout).
-3. Runs the offline selftest, `shellcheck`, and the mutant suite; stops on any
-   non-zero exit.
+3. Runs the offline selftest and `shellcheck`; stops on either non-zero exit.
+   The long, macOS-only `ops/mutate.sh` is the contributor and CI gate, not a
+   setup requirement.
 4. Asks for the consumer repo, its checks command, the worktrees directory,
    the executor, and how many workers may run at once — offering the number
    `loom capacity` suggests from Orca's connected hosts. It never guesses.
+   Creates a local, untracked config inside the Loom checkout; it does not
+   commit it. Commit a config only when it lives in the consumer repo, as a
+   separate task outside this bootstrap.
 5. Verifies `gh` and, if you choose Orca, that its runtime is ready and its
    version is at least **1.4.246**.
 6. Renders a ticket with `--dry-run` and stops before opening it.
 
 It never pushes, merges, or writes credentials to a file, and it does not claim
-success without a captured exit code.
+success without a captured exit code. Its final summary reports the two setup
+gate exit codes: selftest and shellcheck.
 
 ## After the prompt
 
