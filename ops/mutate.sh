@@ -29,7 +29,7 @@ run lib.sh '/s="${s%"${s##\*\[!\[:space:\]\]}"}"/d' "start time not trimmed at t
 run lib.sh 's/git -C "$workdir" add -A \&\&/true \&\&/' "harvest does not stage worker files" m8
 run dispatch.sh 's/\.short_name == \$short/.short_name == "never"/' "attempts not numbered per short name" m9
 run verify.sh 's/(cd "$scratch\/tree" \&\& umask/(cd "$workdir" \&\& umask/' "verify runs in the worker clone" m10
-run verify.sh '/126|127) verdict=/d' "could-not-run reported as a test failure" m11
+run verify.sh 's/^    126|127|255) verdict=.*/    126|127|255) verdict="checks exit $rc" ;;/' "could-not-run reported as a test failure" m11
 run heartbeat.sh 's/acted=$(bash "$ops\/watchdog.sh" .*/acted=/' "heartbeat never runs the watchdog" m12
 run ticket.sh '/does not survive dispatch.s parser/d' "ticket.sh skips the parser self-check" m13
 run launch.sh 's/ \&\& umask "$LOOM_CALLER_UMASK"//' "worker inherits loom's umask" m14
@@ -48,5 +48,9 @@ run orca.sh '/branch is not collected/d' "release allowed before collect" m26
 run status.sh 's/select(has("acked") | not) //' "acked assignment still listed" m27
 run lib.sh '/loom_take_evidence "\$workdir" "\$id"/d' "evidence not copied" m28
 run lib.sh 's/for f in WORK.md REPORT.md .loom\/;/for f in WORK.md REPORT.md;/' "evidence directory not excluded at harvest" m29
+run verify.sh 's/^    host=$(loom_compute_pick $hosts) || loom_error .*/    host=$(loom_compute_pick $hosts) || host=""/' "unreachable compute host falls back to this machine" m30
+run verify.sh "s/^hosts=\$(jq -r '(.compute \/\/ \[\])\[\]' \"\$file\")/hosts=''/" "compute host ignored" m31
+run verify.sh 's/if ! eval %q; then/if ! true %q; then/' "compute_setup never applied" m32
+run verify.sh 's/^\[\[ -z $on \]\] || hosts=$on/:/' "--on host ignored" m33
 echo "SURVIVED=$survived"
 exit "$survived"

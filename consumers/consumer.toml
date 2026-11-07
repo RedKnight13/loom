@@ -9,6 +9,12 @@ worktrees = "~/work/consumer-worktrees"
 limit_min = 45
 # Owner, 2026-11-07: workers "only start or stop throuhgh orcacli".
 executor  = "orca"
+# Owner, 2026-11-07: compute runs on build, never the conductor's laptop.
+# First reachable host wins; none reachable = refuse (never run here).
+compute   = ["build1", "build2"]
+# The optional fast Ed25519 backend (the consumer's `fast` extra) lives in this venv
+# on each compute host; a host without it fails loudly as "could not run".
+compute_setup = ". ~/.venvs/checks/bin/activate"
 laws = [
   "Workers never push; only the conductor pushes, reviews and merges, under the owner's GitHub name.",
   "Nothing identifying the owner enters any file, log, or commit.",
