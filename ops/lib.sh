@@ -141,3 +141,36 @@ loom_harvest() {  # loom_harvest <file> <why-if-silent>
     loom_append "$file" "$state" "$fact" true
     printf '%s\n' "$state"
 }
+
+# Parse a consumer registration; never execute it. Strings use JSON-compatible
+# TOML escapes; comments are stripped only outside quoted strings. Prints JSON.
+loom_config() {
+    [[ -f $1 ]] || loom_error 'consumer config not found'
+    jq -Rse '
+  def fields:
+    if test("^\\s*$") then {}
+    else capture("^\\s*(?<key>[a-z_]+)\\s*=\\s*(?<value>\"(?:[^\"\\\\]|\\\\.)*\"|\\[(?:[^]\\\"\\\\]|\"(?:[^\"\\\\]|\\\\.)*\")*\\]|[0-9]+)(?<rest>[\\s\\S]*)$") as $m |
+      ($m.rest | fields) as $rest |
+      if $rest | has($m.key) then error("duplicate config key")
+      else $rest + {($m.key): ($m.value | sub(",\\s*]$"; "]") | fromjson)} end
+    end;
+  [scan("\"(?:[^\"\\\\]|\\\\.)*\"|#[^\n]*|[^\"#]+") |
+    select(startswith("#") | not)] | join("") | fields |
+  if (.repo | type == "string" and test("^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")) and
+     (.worktrees | type == "string" and length > 0) and
+     (.laws | type == "array" and all(.[]; type == "string")) and
+     ((has("limit_min") | not) or (.limit_min | type == "number" and . > 0 and . == floor)) and
+     ((keys - ["repo", "checks", "worktrees", "laws", "limit_min"]) | length == 0)
+  then . else error("invalid consumer config") end
+' "$1" || loom_error 'unsupported or invalid consumer TOML; see ops/README.md'
+}
+
+# The Mandate block of an issue body (stdin -> stdout). One parser for dispatch
+# and ticket.sh, so a rendered ticket is exactly what dispatch accepts.
+loom_mandate() {
+    jq -Rser 'capture("(?ms)^## Mandate[ \\t]*\\r?\\n(?<text>.*?)(?=^## |\\z)") | "## Mandate\n" + .text' || loom_error 'issue has no Mandate block'
+}
+
+loom_short() {  # loom_short <mandate>
+    jq -ner --arg mandate "$1" '$mandate | capture("(?m)^\\*\\*Ticket short name:\\*\\*[ \\t]*(?<name>[a-z0-9]+(?:-[a-z0-9]+)*)[ \\t]*(?:<!--[^\\n]*-->)?\\r?$").name' || loom_error 'missing or invalid ticket short name'
+}

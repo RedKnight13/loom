@@ -16,6 +16,8 @@ pass() { printf 'ok  %s\n' "$*"; }
 
 mkdir -p "$scratch/bin" "$scratch/repo"
 export LOOM_STATE="$scratch/state" LOOM_REPO="$scratch/repo" LOOM_LOCK_WAIT=2
+export GH_STATE="$scratch/gh"
+mkdir -p "$GH_STATE"
 export GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null
 repo=$LOOM_REPO
 git -C "$repo" init -q -b main
@@ -32,8 +34,16 @@ cat > "$scratch/bin/gh" <<'EOF'
 set -eu
 case "$1 $2" in
     'issue view')
+        if [[ $* == 'issue view 9 --repo example/fixture --json number,title,body' ]]; then
+            jq -n --rawfile b "$GH_STATE/issue9.body" '{number: 9, title: "Rendered", body: $b}'
+            exit 0
+        fi
         [[ $* == 'issue view '[78]' --repo example/fixture --json number,title,body' ]] || exit 98
         jq -n --argjson n "$3" '{number: $n, title: "Fixture ticket", body: "## Mandate\n\n**Ticket short name:** fixture-task\n**Scope:** fixture\n**Out of scope:** everything else\n**Laws:** fixture\n**Done means:** selftest\n**Stop by impact:** ready\n**Report:** structured"}' ;;
+    'issue create')
+        [[ $3 == --repo && $4 == example/fixture && $5 == --title && $7 == --body ]] || exit 97
+        printf '%s' "$8" > "$GH_STATE/issue9.body"
+        printf 'https://github.com/example/fixture/issues/9\n' ;;
     'repo view')
         [[ $* == 'repo view example/fixture --json defaultBranchRef --jq .defaultBranchRef.name' ]] || exit 98
         printf 'main\n' ;;
@@ -72,6 +82,18 @@ laws = [
 EOF
 
 dispatch() { bash "$ops/dispatch.sh" "$scratch/consumer.toml" 7; }
+dispatch_n() { bash "$ops/dispatch.sh" "$scratch/consumer.toml" "$1"; }
+within() {  # within <secs> <cmd...>: fail instead of hanging
+    local secs=$1 p
+    shift
+    "$@" & p=$!
+    for _ in $(seq 1 $((secs * 10))); do
+        kill -0 "$p" 2>/dev/null || { wait "$p"; return $?; }
+        sleep 0.1
+    done
+    kill -KILL "$p" 2>/dev/null || :
+    fail "timed out after ${secs}s: $*"
+}
 rec() { printf '%s/%s.json' "$LOOM_STATE" "$1"; }
 age() {  # make an assignment look silent since 2000
     jq '.started_at = "2000-01-01T00:00:00Z" | if has("launched_at") then .launched_at = "2000-01-01T00:00:00Z" else . end | .reports |= map(.at = "2000-01-01T00:00:00Z")' "$(rec "$1")" > "$scratch/aged"
@@ -237,6 +259,32 @@ bash "$ops/launch.sh" "$id10" -- bash "$scratch/bin/w-files" >/dev/null
 bash "$ops/verify.sh" "$id10" >/dev/null 2>&1 || :
 jq -e '.reports[-1].fact | startswith("conductor check: checks could not run (exit 127)")' "$(rec "$id10")" >/dev/null || fail 'could-not-run not distinguished'
 pass 'verify: fresh clone, baseline recorded, could-not-run distinguished'
+
+# --- rendered tickets cannot drift (gap #8) ---
+if bash "$ops/ticket.sh" "$scratch/consumer.toml" --short Bad_Name --title t --scope s --out o --done d --dry-run >/dev/null 2>&1; then fail 'unparseable short name rendered'; fi
+if bash "$ops/ticket.sh" "$scratch/consumer.toml" --short ok-name --title t --scope $'two\nlines' --out o --done d --dry-run >/dev/null 2>&1; then fail 'multi-line field accepted'; fi
+body=$(bash "$ops/ticket.sh" "$scratch/consumer.toml" --short rendered-task --title 'Render me' --scope 'write `x`; and $(not this)' --out 'everything else' --done 'checks exit 0' --dry-run)
+# shellcheck disable=SC2016  # the literal text is the point
+[[ $body == *'**Scope:** write `x`; and $(not this)'* ]] || fail 'ticket text must be literal, never evaluated'
+url=$(bash "$ops/ticket.sh" "$scratch/consumer.toml" --short rendered-task --title 'Render me' --scope s --out o --done d)
+[[ $url == */issues/9 ]] || fail "ticket.sh did not open the issue: $url"
+out=$(dispatch_n 9) || fail 'dispatch refused a rendered ticket'
+[[ ${out##*$'\n'} == rendered-task.1 ]] || fail 'rendered ticket dispatched under the wrong name'
+pass 'ticket.sh renders the template; dispatch accepts it; text stays literal'
+
+# --- the heartbeat (gap #6) ---
+out=$(dispatch); idh=${out##*$'\n'}
+bash "$ops/launch.sh" "$idh" -- bash -c 'sleep 2; printf "state: ready — slow but fine\n" >> REPORT.md' >/dev/null &
+pids+=("$!")
+within 30 bash "$ops/heartbeat.sh" --until "$idh" --every 1 > "$scratch/hb1" || fail 'heartbeat failed'
+grep -q "^$idh"$'\t'"ready"$'\t'"slow but fine$" "$scratch/hb1" || fail 'heartbeat must end with status'
+out=$(dispatch); idk=${out##*$'\n'}
+bash "$ops/launch.sh" "$idk" -- bash "$scratch/bin/w-hang" >/dev/null 2>&1 &
+pids+=("$!")
+within 30 bash "$ops/heartbeat.sh" --until "$idk" --every 1 --limit-min 0 > "$scratch/hb2" || fail 'heartbeat failed'
+grep -q "$idk failed watchdog_kill" "$scratch/hb2" || fail 'heartbeat must surface the watchdog action'
+if bash "$ops/heartbeat.sh" --until nobody.1 --every 1 >/dev/null 2>&1; then fail 'heartbeat on a missing assignment'; fi
+pass 'heartbeat ends on settle, surfaces kills, ends with status'
 
 # --- the lock: a live holder blocks, a dead holder is broken ---
 n=$(jq '.reports | length' "$(rec "$id1")")
