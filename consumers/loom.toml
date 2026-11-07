@@ -7,6 +7,7 @@ worktrees = "~/work/loom-workdirs"
 limit_min = 45                           # generous enough for one honest turn
 workers   = 2                            # max open assignments; loom capacity suggested 2
 executor  = "auto"                       # Orca when ready, else the local launcher
+start_timeout_ms = 300000                # codex on a remote Orca host is slow to be ready (#52)
 
 laws = [
   "Workers never push; only the conductor pushes, reviews and merges, under the owner's GitHub name.",
