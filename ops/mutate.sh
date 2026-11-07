@@ -2,22 +2,66 @@
 # shellcheck disable=SC2016  # the sed patterns below are literal on purpose
 # Proves the selftest has teeth: each mutant re-introduces a fixed defect, and
 # the selftest must fail on every one. A gap fix adds its mutant here.
+#
+#   bash ops/mutate.sh               run here, mutants in parallel
+#   bash ops/mutate.sh --on HOST     run the whole check on a compute host (#42)
+#
+# LOOM_MUTATE_JOBS caps parallel mutants (default: CPU count). Exit 0 = every
+# mutant caught; 1 = a mutant survived, did not apply, or was not valid bash;
+# 2 = the harness itself is broken (the unmutated copy fails its selftest).
+set -u
 cd "$(dirname "${BASH_SOURCE[0]}")/.." || exit 1
+
+if [[ ${1:-} == --on ]]; then
+    [[ $# == 2 && $2 =~ ^[A-Za-z0-9][A-Za-z0-9._@-]*$ ]] || { echo 'usage: mutate.sh [--on HOST]' >&2; exit 2; }
+    # Ship the tracked tree; run there; clean up; the remote exit is ours.
+    # shellcheck disable=SC2029  # expands on the host on purpose
+    # COPYFILE_DISABLE / --no-xattrs: no macOS metadata in the shipped tree.
+    git ls-files -z | COPYFILE_DISABLE=1 xargs -0 tar --no-xattrs -czf - | "${LOOM_SSH:-ssh}" -o BatchMode=yes -o ConnectTimeout=5 "$2" \
+        'd=$(mktemp -d); trap "rm -rf \"$d\"" EXIT; cd "$d" && tar xzf - && echo "== mutants on $(hostname)" && bash ops/mutate.sh'
+    exit $?
+fi
+
 base=$(mktemp -d "${TMPDIR:-/tmp}/loom-mutants.XXXXXX")
-survived=0
-run() {
-    local m="$base/$4"
-    mkdir -p "$m"
-    cp -R ops "$m/"
-    sed -i '' "$2" "$m/ops/$1"
-    if cmp -s "ops/$1" "$m/ops/$1"; then echo "MUTATION DID NOT APPLY: $3"; survived=1; return; fi
+trap 'rm -rf "$base"' EXIT
+jobs_max=${LOOM_MUTATE_JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)}
+order=()
+
+# Each mutant gets the whole tracked tree (ops/loom reads ../VERSION), not just ops/.
+# A shipped tree (--on HOST) has no .git: then every file present is the tree.
+tree_files() {
+    if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then git ls-files -z; else find . -type f ! -path './.git/*' -print0; fi
+}
+copy_tree() { mkdir -p "$1" && tree_files | xargs -0 tar cf - | (cd "$1" && tar xf -); }
+
+# Control: the unmutated copy must pass, or every "caught" below proves nothing.
+copy_tree "$base/control"
+if ! bash "$base/control/ops/selftest.sh" >/dev/null 2>"$base/control/err"; then
+    echo "HARNESS BROKEN: the unmutated copy fails its selftest -> $(grep FAIL "$base/control/err" | tail -1)"
+    exit 2
+fi
+
+one() {  # one <file> <sed> <description> <name>: writes $base/<name>/result
+    local m="$base/$4" r
+    copy_tree "$m"
+    # Portable in-place edit (GNU and BSD sed).
+    sed -i.orig "$2" "$m/ops/$1" && rm -f "$m/ops/$1.orig"
+    if cmp -s "ops/$1" "$m/ops/$1"; then
+        r="MUTATION DID NOT APPLY: $3"
     # A mutant that breaks the syntax would be "caught" for the wrong reason.
-    if ! bash -n "$m/ops/$1" 2>/dev/null; then echo "MUTANT IS NOT VALID BASH: $3"; survived=1; return; fi
-    if bash "$m/ops/selftest.sh" >/dev/null 2>"$m/err"; then
-        echo "MUTANT SURVIVED: $3"; survived=1
+    elif ! bash -n "$m/ops/$1" 2>/dev/null; then
+        r="MUTANT IS NOT VALID BASH: $3"
+    elif LOOM_STATE="$m/state" bash "$m/ops/selftest.sh" >/dev/null 2>"$m/err"; then
+        r="MUTANT SURVIVED: $3"
     else
-        echo "caught: $3 -> $(tail -1 "$m/err")"
+        r="caught: $3 -> $(tail -1 "$m/err")"
     fi
+    printf '%s\n' "$r" > "$m/result"
+}
+run() {
+    while [[ $(jobs -rp | wc -l) -ge $jobs_max ]]; do sleep 0.2; done
+    order+=("$4")
+    one "$@" &
 }
 run watchdog.sh 's/kill -KILL -- "-$pid" 2>\/dev\/null || //' "no process-group kill" m1
 run lib.sh 's/\[\[ $now == "$start" \]\]/true/' "no PID start-time check" m2
@@ -53,5 +97,12 @@ run verify.sh "s/^hosts=\$(jq -r '(.compute \/\/ \[\])\[\]' \"\$file\")/hosts=''
 run verify.sh 's/if ! eval %q; then/if ! true %q; then/' "compute_setup never applied" m32
 run verify.sh 's/^\[\[ -z $on \]\] || hosts=$on/:/' "--on host ignored" m33
 run loom 's/base_args+=(--on "$2"); shift 2 ;;/shift 2 ;;/' "loom verify drops --on" m34
+wait
+survived=0
+for n in "${order[@]}"; do
+    r=$(cat "$base/$n/result" 2>/dev/null || echo "NO RESULT: $n")
+    printf '%s\n' "$r"
+    [[ $r == caught:* ]] || survived=1
+done
 echo "SURVIVED=$survived"
 exit "$survived"
