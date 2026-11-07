@@ -1,49 +1,58 @@
-# Loom — handover (2026-11-07)
+# Loom — handover
 
 Read this first if you are picking loom up: a new conductor session, another
-machine, or the governance layer integration. Then PROTOCOL.md (the law), ops/README.md (the
-tools), ROADMAP.md (the bar), drills/EVIDENCE-2026-11-07.md (the proof).
+machine, or an integration. Then [PROTOCOL.md](PROTOCOL.md) (the law),
+[ops/README.md](ops/README.md) (the tools), [ROADMAP.md](ROADMAP.md) (the bar),
+[docs/setup.md](docs/setup.md) (install and configuration), and
+[drills/EVIDENCE-2026-11-07.md](drills/EVIDENCE-2026-11-07.md) (the proof).
 
 ## What loom is, in one paragraph
 
 A generic, repo-agnostic protocol plus a dozen small bash scripts for running
-agent workers (codex today, anything scriptable tomorrow) on repository work
-with as little human attention as possible. A request becomes a **Ticket** (a
-GitHub issue with an immutable **Mandate**); dispatch makes the worker a
-**private clone with no remote**; the worker writes files and one structured
-line in `REPORT.md` and never touches git; loom commits for it, watches it with
-a **watchdog** keyed to PID + start time and process group, re-runs the
-consumer's checks itself in a **fresh clone**, and surfaces only what needs a
-person. The conductor is the only role that pushes, opens PRs and merges,
-under the owner's GitHub name.
+agent workers on repository work with as little human attention as possible. A
+request becomes a **Ticket** (a GitHub issue with an immutable **Mandate**);
+**dispatch** gives the worker an isolated workspace (a private clone with no
+remote, or an Orca worktree); the worker writes files and one structured line in
+`REPORT.md` and never touches git; loom commits for it, watches it with a
+**watchdog** keyed to PID + start time and process group, re-runs the consumer's
+checks itself in a **fresh clone** (on the consumer's compute host when one is
+declared), and surfaces only what needs a person. The conductor is the only role
+that pushes, opens PRs and merges, under the owner's GitHub name.
 
-## State at handover
+**The call.** Any harness uses `ops/loom`: one command, one JSON object, exit 0
+iff `ok`. It cannot tell which executor ran the work. Specs in
+`docs/superpowers/specs/`.
+
+## State at handover (0.6.0)
 
 | | |
 | --- | --- |
-| Code | `main` (PRs #2, #3, #15, #16, #17, #18, #21, #23 merged) |
-| Version | **0.6.0** — `ops/loom` is the one call; compute host for checks and placement; ticket labels; the Orca map. Specs: `docs/superpowers/specs/2026-11-07-loom-0.5.0-design.md`, `…-0.6.0-design.md`. |
-| Scripts | `ticket` → `dispatch` → `launch` → `heartbeat` (watchdog + status) → `verify` → `collect`; plus `report`, `selftest`, `mutate` |
+| Version | `VERSION` = `0.6.0` |
+| Code | `main` after PRs #39–#55; the conductor's hotfix and lint commits included |
+| Scripts | `ticket` → `dispatch` → `launch` / `orca start` → `harvest` → `watch` → `verify` → `collect` → `ack`; plus `release`, `report`, `selftest`, `mutate` |
 | Proof | `bash ops/selftest.sh` exit 0 · `shellcheck -x ops/*.sh ops/loom` exit 0 · `bash ops/mutate.sh`: 50 mutants, all caught |
-| Drills | **D1, D2, D3, D4 PASS** on real repos — D1 = the consumer#43, merged as the consumer#44 (first real work through loom) |
-| Gaps | 16 found by running real workers, 16 fixed (issues labelled `gap`, all closed) |
-| Consumers | `consumers/consumer.toml` (first real consumer), `consumers/loom.toml` (drills only) |
-| State dir | `~/.loom` on the conductor's machine: one JSON record + log per assignment |
+| Drills | D1–D4 passed at 0.5.0 on real repos. **Not yet re-run at 0.6.0.** |
+| Gaps | Found by running real workers; tracked as issues. Open: #35 (task-DAG start) and #54 (checkout origin check). |
+| Consumers | `consumers/consumer.toml` (first real consumer), `consumers/loom.toml` (drills) |
+| State dir | `~/.loom`: one JSON record + logs per assignment, plus `<id>.evidence/` and receipts |
 
 ## How to run one ticket end to end
 
 ```bash
-cd ~/work/loom
-bash ops/ticket.sh consumers/consumer.toml --short NAME --title "…" \
-    --scope "…" --out "…" --done "…"                     # prints the issue URL
-LOOM_REPO=~/work/the consumer bash ops/dispatch.sh consumers/consumer.toml <issue#>
-bash ops/verify.sh NAME.<n> --baseline &                  # what was already true
-bash ops/launch.sh NAME.<n> -- codex exec -s workspace-write \
-    "You are a loom worker. Read WORK.md ... (see ops/README.md)" &
-bash ops/heartbeat.sh --until NAME.<n>                    # silent until it settles
-bash ops/verify.sh NAME.<n>                               # fresh-clone re-check
-bash ops/collect.sh NAME.<n>                              # branch into the checkout
+cd path/to/loom
+bash ops/loom accept --consumer consumers/NAME.toml --short NAME --title "…" \
+    --scope "…" --out "…" --done "…"                     # prints ticket, in the object
+LOOM_REPO=/path/to/consumer bash ops/loom dispatch --consumer consumers/NAME.toml --issue N
+bash ops/loom verify NAME.1 --baseline &                  # what was already true
+bash ops/loom start NAME.1                                # Orca executor
+# or: bash ops/loom launch NAME.1 -- codex exec -s workspace-write "Read WORK.md"
+bash ops/loom watch --until NAME.1                        # silent until it settles
+bash ops/loom harvest NAME.1                              # Orca executor only
+bash ops/loom verify NAME.1                               # fresh-clone re-check
+bash ops/loom collect NAME.1                              # branch into the checkout
 # then: push the branch, open the PR, merge — conductor only.
+bash ops/loom release NAME.1                              # Orca, after collect
+bash ops/loom ack NAME.1 "merged as #N"
 ```
 
 ## The gap law (owner, 2026-11-07)
@@ -52,52 +61,34 @@ bash ops/collect.sh NAME.<n>                              # branch into the chec
 > makesure it is zdded in loomnos lets use for smorti work"
 
 Every gap found while running workers becomes an issue labelled `gap`, is fixed
-in loom, and lands with a selftest case **and** a mutant in `ops/mutate.sh`
-that makes the selftest fail without the fix. Never work around a gap by hand
-without filing it. the consumer work goes through loom.
+in loom, and lands with a selftest case **and** a mutant in `ops/mutate.sh` that
+makes the selftest fail without the fix. Never work around a gap by hand without
+filing it.
 
-The other standing law: the conductor (the conductor) hand-writes code only in loom;
-every other repo's code is built by workers under tickets.
+The other standing law: the conductor hand-writes code only in loom; every other
+repo's code is built by workers under tickets.
 
-## The 16 gaps real runs found (all fixed)
+## Current open work
 
-| # | Gap | Fix |
-| --- | --- | --- |
-| 11 | codex sandbox makes `.git` read-only even in a private clone | workers never touch git; harvest commits for them |
-| — (v1) | worktrees share `.git`; no PID recorded; workers can't write state | private clones; `launch.sh`; `REPORT.md` contract |
-| 6 | heartbeat hand-written | `heartbeat.sh` |
-| 7 | one watchdog limit for all consumers | `limit_min` per consumer |
-| 8 | hand-typed tickets drift from the template | `ticket.sh` + shared parser |
-| 9 | conductor's re-check not mechanized | `verify.sh` (fresh clone) |
-| 10 | `ps` padding in `worker_start` | trimmed |
-| 12 | no baseline → impossible Done-means | `verify.sh --baseline` |
-| 13 | checks may be unrunnable | 126/127 reported as *could not run* |
-| 14 | reused short names collide | attempts numbered per short name |
-| 19 | loom's umask 077 leaked into workers/checks | children get the caller's umask |
-| 20 | uncommitted consumer config accepted | refused; config commit pinned |
-| 22 | consumer commit hooks rewrite worker files; loom swallowed the failure | re-stage and retry once; rejections logged |
-| (drills) | global watchdog would kill other live workers | `watchdog.sh --id` |
+- **#35** — every Orca row is a verb except starting from an Orca task
+  (`--task --deps`). The real two-worker run is still the acceptance gate.
+- **#54** — `dispatch` accepts a checkout whose `origin` is not the ticket's
+  repo; a mistyped `LOOM_REPO` produces a base from the wrong project.
+- **First real run at 0.6.0** — `ci-all-suites` (a consumer ticket) had several
+  attempts: wrong checkout, then `agent_readiness` timeouts, then abandons. The
+  readiness wait is now raised via the consumer's `start_timeout_ms`.
+- **Drill refresh** — D1–D4 evidence is from 0.5.0; placement and compute
+  changed, so re-run and commit a new evidence file before calling 0.6.0
+  certified.
+- **License** — no `LICENSE` file. Open-sourcing needs one; D3 is the question.
 
-## Open items, honestly
+## Standing risks, named
 
-- **the governance layer** is not wired yet. The seam exists: the governance layer registers as a consumer
-  (`consumers/the governance layer.toml`), and later an the governance layer Source turns its events into
-  Triggers. the consumer's `docs/the governance layer.md` (D1's deliverable) is the call contract.
 - **The conductor is a single point of failure.** State is plain JSON on disk,
-  so any session can resume it, but Eval and merges need a session awake.
-  Loom state lives on one machine (`~/.loom`); moving conductors means moving
-  that directory.
-- **the consumer test hygiene** (not loom's): the consumer's suites cannot share one
-  process (CONSUMER_HOME fixtures; a module named `run`), and `test_isolation`
-  silently assumes umask 022. Both deserve the consumer tickets, through loom.
-- **Push permission** on this machine covers exactly the the consumer and loom
-  clones (`.claude/settings.local.json` in workspace). A new consumer needs
-  its own allow line, granted by the owner.
-- **Commit identity:** dispatch copies `user.name`/`user.email` as git
-  resolves them in the consumer checkout. the consumer's checkout has no local
-  identity, so loom commits there carry the global one (the owner's second
-  GitHub noreply address, as several existing the consumer commits already do). If
-  every consumer commit must carry the RedKnight13 noreply address, set it in
-  the consumer checkout's local git config; loom will copy it.
-- **Drill branches** (`drill-d2`, `drill-d3`) live only in
-  `~/work/loom-workdirs/` and are never merged; delete freely.
+  so any session can resume it; Eval and merges still need a session awake.
+- **Executor sandboxes differ.** Loom assumes a worker can read/write its own
+  workspace. Anything stricter is the consumer's problem to declare.
+- **`gh` is a dependency** for tickets. A non-GitHub Source is a later seam.
+- **Private names in-tree.** `consumers/consumer.toml`, this file, the drills and
+  the specs name private projects and hosts. Review them before making the
+  repository public; the public README/docs are already scrubbed.
