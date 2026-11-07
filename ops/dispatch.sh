@@ -7,6 +7,15 @@ source "${BASH_SOURCE[0]%/*}/lib.sh"
 [[ -f $1 ]] || loom_error 'consumer config not found'
 
 config=$(loom_config "$1")
+# A config under version control must be committed: the record pins the exact
+# config the assignment ran under (gap #20).
+config_dir=$(cd "$(dirname "$1")" && pwd)
+config_name=$(basename "$1")
+config_commit=null
+if git -C "$config_dir" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    [[ -z $(git -C "$config_dir" status --porcelain -- "$config_name") ]] || loom_error "consumer config has uncommitted changes; commit it first: $1"
+    config_commit=$(jq -Rn --arg c "$(git -C "$config_dir" log -1 --format=%H -- "$config_name")" '$c')
+fi
 repo=$(jq -r '.repo' <<< "$config")
 worktrees=$(jq -r '.worktrees' <<< "$config")
 case $worktrees in \~) worktrees=$HOME ;; \~/*) worktrees="$HOME/${worktrees:2}" ;; esac
@@ -69,10 +78,10 @@ printf 'WORK.md\nREPORT.md\n' >> "$workdir/.git/info/exclude"
 jq -n --argjson ticket "$2" --arg repo "$repo" --arg short "$short" \
       --arg workdir "$workdir" --arg checkout "$checkout" --arg base "$base_sha" \
       --argjson attempt "$attempt" --argjson limit "$(jq '.limit_min // null' <<< "$config")" \
-      --argjson checks "$(jq '.checks // null' <<< "$config")" '
+      --argjson checks "$(jq '.checks // null' <<< "$config")" --argjson config_commit "$config_commit" '
   {ticket: $ticket, repo: $repo, short_name: $short, attempt: $attempt,
    workdir: $workdir, checkout: $checkout, base_sha: $base,
-   checks: $checks, limit_min: $limit, worker_pid: null, worker_start: null,
+   checks: $checks, config_commit: $config_commit, limit_min: $limit, worker_pid: null, worker_start: null,
    started_at: (now | todateiso8601), reports: []}
 ' > "$LOOM_STATE/.pending"
 mv "$LOOM_STATE/.pending" "$LOOM_STATE/$id.json"

@@ -28,7 +28,7 @@ if [[ -f $workdir/REPORT.md ]]; then
 fi
 log="$LOOM_STATE/$id.log"
 set -m
-(cd "$workdir" && exec "$@") < /dev/null >> "$log" 2>&1 &
+(cd "$workdir" && umask "$LOOM_CALLER_UMASK" && exec "$@") < /dev/null >> "$log" 2>&1 &
 child=$!
 set +m
 start=$(loom_pstart "$child") || start=gone

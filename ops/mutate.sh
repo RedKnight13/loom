@@ -26,9 +26,12 @@ run watchdog.sh 's/($override \/\/ .limit_min \/\/ 30)/($override \/\/ 30)/' "wa
 run lib.sh '/s="${s%"${s##\*\[!\[:space:\]\]}"}"/d' "start time not trimmed at the end" m7
 run lib.sh 's/git -C "$workdir" add -A \&\&/true \&\&/' "harvest does not stage worker files" m8
 run dispatch.sh 's/\.short_name == \$short/.short_name == "never"/' "attempts not numbered per short name" m9
-run verify.sh 's/(cd "$scratch\/tree" \&\& exec bash/(cd "$workdir" \&\& exec bash/' "verify runs in the worker clone" m10
+run verify.sh 's/(cd "$scratch\/tree" \&\& umask/(cd "$workdir" \&\& umask/' "verify runs in the worker clone" m10
 run verify.sh '/126|127) verdict=/d' "could-not-run reported as a test failure" m11
 run heartbeat.sh 's/acted=$(bash "$ops\/watchdog.sh" .*/acted=/' "heartbeat never runs the watchdog" m12
 run ticket.sh '/does not survive dispatch.s parser/d' "ticket.sh skips the parser self-check" m13
+run launch.sh 's/ \&\& umask "$LOOM_CALLER_UMASK"//' "worker inherits loom's umask" m14
+run verify.sh 's/ \&\& umask "$LOOM_CALLER_UMASK"//' "checks inherit loom's umask" m15
+run dispatch.sh '/consumer config has uncommitted changes/d' "dispatch accepts an uncommitted config" m16
 echo "SURVIVED=$survived"
 exit "$survived"
