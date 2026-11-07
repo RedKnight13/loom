@@ -373,11 +373,15 @@ case "$1" in
                 cp "$spec" "$GH_STATE/spec-$name.md"
                 ( cd "$ws" && exec bash "$ORCA_STUB_WORKER" ) </dev/null >/dev/null 2>&1 &
                 printf '%s\n' "$!" > "$GH_STATE/disp-$name.pid"
-                jq -n --arg d "disp-$name" --arg w "$ws" '{ok: true, result: {dispatch: {dispatchId: $d, taskId: "task-1", runId: "run-1"}, worktree: {path: $w}, specFile: "/elsewhere/spec.md"}}' ;;
+                # Real receipt shape (gap #29): workspace is "<repo-id>::<path>", no worktree.path.
+                jq -n --arg d "disp-$name" --arg w "$ws" '{ok: true, result: {dispatchId: $d, taskId: "task-1", runId: "run-1", workspace: ("repo-stub::" + $w), terminal: {id: "term-1"}, keptOpen: true}}' ;;
             worker-stop)
                 if [[ ${ORCA_STUB_STOP:-ok} == unknown ]]; then echo '{"ok":false,"error":{"code":"stop_unknown"}}'; exit 1; fi
                 kill -KILL "$(cat "$GH_STATE/$4.pid")" 2>/dev/null || :
                 echo '{"ok":true,"result":{"status":"stopped"}}' ;;
+            worker-release)
+                if [[ ${ORCA_STUB_RELEASE:-ok} == fail ]]; then echo '{"ok":false}'; exit 1; fi
+                echo '{"ok":true,"result":{"released":true}}' ;;
             *) exit 98 ;;
         esac ;;
     *) exit 99 ;;
@@ -387,6 +391,8 @@ EOF
     export LOOM_ORCA="$scratch/bin/orca"
     cat > "$scratch/bin/w-slow" <<'EOF'
 sleep 1
+mkdir -p .loom
+printf 'log\n' > .loom/discovery.log
 printf 'notes\n' > notes.txt
 printf 'state: ready — wrote notes.txt\n' >> REPORT.md
 EOF
@@ -424,11 +430,23 @@ EOF
     ! bash "$ops/status.sh" | grep -q "^$ido" || fail 'a running Orca worker must be silent'
     bash "$ops/orca.sh" start "$ido" >/dev/null 2>&1 && fail 'double start accepted'
     pid=$(cat "$GH_STATE/disp-$ido.pid"); for _ in $(seq 1 50); do kill -0 "$pid" 2>/dev/null || break; sleep 0.1; done
+    # Start already excluded .loom/. Strip it so harvest's own exclude is what is under test.
+    sed -i '' '/^\.loom\/$/d' "$(git -C "$ws" rev-parse --git-common-dir)/info/exclude"
     [[ $(bash "$ops/orca.sh" harvest "$ido") == "$ido ready (harvested from orca dispatch disp-$ido)" ]] || fail 'harvest outcome'
     [[ $(git -C "$ws" log -1 --format=%s) == "loom($ido): ready — wrote notes.txt" ]] || fail 'orca worker files not committed'
     ! git -C "$ws" ls-files | grep -qE '^(WORK|REPORT)\.md$' || fail 'loom files committed from an Orca worktree'
+    [[ -f $LOOM_STATE/$ido.evidence/discovery.log ]] || fail 'evidence not copied out of the workspace'
+    ! git -C "$ws" ls-files | grep -q '^\.loom/' || fail '.loom evidence was committed'
+    bash "$ops/orca.sh" release "$ido" >/dev/null 2>&1 && fail 'release before collect'
+    jq -e '.executor.released != true and .collected_sha == null' "$(rec "$ido")" >/dev/null || fail 'a refused release changed the record'
     [[ $(bash "$ops/collect.sh" "$ido") == *'1 commit(s) over base'* ]] || fail 'collect of an Orca branch'
+    jq -e '.collected_sha | test("^[0-9a-f]{40}$")' "$(rec "$ido")" >/dev/null || fail 'collect did not record the sha'
+    grep -q "^$ido"$'\t'"release"$'\t' <<< "$(bash "$ops/status.sh")" || fail 'kept-open workspace not surfaced'
     bash "$ops/verify.sh" "$ido" >/dev/null || fail 'verify of an Orca branch'
+    bash "$ops/orca.sh" release "$ido" >/dev/null || fail 'release after collect failed'
+    jq -e '.executor.released == true' "$(rec "$ido")" >/dev/null || fail 'release not recorded'
+    ! grep -q "^$ido"$'\t'"release"$'\t' <<< "$(bash "$ops/status.sh")" || fail 'released workspace still in status'
+    bash "$ops/orca.sh" release "$ido" >/dev/null 2>&1 && fail 'double release accepted'
 
     # stop: only on a stop Orca confirmed; stale is surfaced, never acted on
     out=$(dispatch); ids=${out##*$'\n'}
@@ -444,6 +462,10 @@ EOF
     kill -0 "$spid" || fail 'loom signalled an Orca worker'
     bash "$ops/orca.sh" stop "$ids" >/dev/null || fail 'confirmed stop failed'
     jq -e '.executor.state == "settled" and .reports[-1].state == "failed" and .reports[-1].fact == "stopped via orca by the conductor"' "$(rec "$ids")" >/dev/null || fail 'stop record'
+    grep -q "^$ids"$'\t'"failed"$'\t' <<< "$(bash "$ops/status.sh")" || fail 'handled failure missing from status before ack'
+    bash "$ops/ack.sh" "$ids" 'owner retired this drill' >/dev/null || fail 'ack failed'
+    ! grep -q "^$ids"$'\t'"failed"$'\t' <<< "$(bash "$ops/status.sh")" || fail 'acked failure still in status'
+    bash "$ops/ack.sh" "$ids" 'again' >/dev/null 2>&1 && fail 'second ack accepted'
 
     # a failed start is recorded, never retried
     out=$(dispatch); idf=${out##*$'\n'}
@@ -468,5 +490,20 @@ printf '{' > "$LOOM_STATE/broken.json"
 if bash "$ops/status.sh" >/dev/null 2>&1; then fail 'corrupt state ignored'; fi
 rm "$LOOM_STATE/broken.json"
 pass 'corrupt record refused'
+
+# --- the call: one JSON object, same for every harness (0.5.0) ---
+ver=$(tr -d '[:space:]' < "$ops/../VERSION")
+obj=$(bash "$ops/loom" version)
+[[ $(jq -r '.v' <<< "$obj") == "$ver" && $(jq -r '.ok' <<< "$obj") == true ]] || fail "version object: $obj"
+[[ $(printf '%s\n' "$obj" | wc -l | tr -d ' ') == 1 ]] || fail 'version must be one line'
+rc=0; bad=$(bash "$ops/loom" 2>/dev/null) || rc=$?
+[[ $rc == 2 && $(jq -r '.ok' <<< "$bad") == false ]] || fail "usage must exit 2 with ok false (rc=$rc): $bad"
+obj=$(bash "$ops/loom" ignore --consumer "$scratch/consumer.toml" --short not-this --reason 'out of scope')
+[[ $(jq -r '.state' <<< "$obj") == ignored && $(jq -r '.ok' <<< "$obj") == true ]] || fail "ignore: $obj"
+[[ $(jq -r '.decision' "$LOOM_STATE/decisions.jsonl") == ignore ]] || fail 'ignore not recorded'
+if bash "$ops/loom" ignore --consumer "$scratch/consumer.toml" --short 'Bad Name' --reason 'no' >/dev/null 2>&1; then fail 'bad short name ignored'; fi
+obj=$(bash "$ops/loom" status)
+[[ $(jq -r '.cmd' <<< "$obj") == status && $(jq -r '.items | type' <<< "$obj") == array ]] || fail "status object: $obj"
+pass 'loom call: version, usage, ignore, status'
 
 printf 'PASS: dispatch → launch → report/harvest → watchdog → status → collect\n'

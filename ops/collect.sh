@@ -4,7 +4,8 @@
 # Conductor step after a `ready` report: fetch the ticket branch from the
 # worker's private clone into the consumer checkout, and print what it adds
 # over the base the worker started from. Never pushes; pushing, the PR and the
-# merge stay the conductor's explicit acts.
+# merge stay the conductor's explicit acts. Records collected_sha so release
+# can require a collected branch (gap #30).
 set -euo pipefail
 # shellcheck source=ops/lib.sh
 source "${BASH_SOURCE[0]%/*}/lib.sh"
@@ -27,5 +28,11 @@ if [[ $(cd "$workdir" && cd "$(git rev-parse --git-common-dir)" && pwd -P) != "$
     git -C "$checkout" fetch -q "$workdir" "+refs/heads/$short:refs/heads/$short"
 fi
 count=$(git -C "$checkout" rev-list --count "$base..$short")
+sha=$(git -C "$checkout" rev-parse --verify "$short^{commit}")
+loom_lock
+file=$(loom_record "$1")
+# shellcheck disable=SC2016
+loom_write "$file" '.collected_sha = $s' --arg s "$sha"
+loom_unlock
 printf '%s: branch %s collected, %s commit(s) over base, latest report: %s\n' "$1" "$short" "$count" "$state"
 git -C "$checkout" log --oneline "$base..$short"

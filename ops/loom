@@ -1,0 +1,248 @@
+#!/usr/bin/env bash
+# loom — the only call. One JSON object on stdout. Exit 0 iff ok is true.
+# Claude and Codex (and any later harness) call this. They do not parse the
+# other scripts. See docs/superpowers/specs/2026-11-07-loom-0.5.0-design.md.
+set -euo pipefail
+ops=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
+root=$(cd "$ops/.." && pwd)
+# shellcheck source=ops/lib.sh
+source "$ops/lib.sh"
+v=$(tr -d '[:space:]' < "$root/VERSION")
+cmd=${1:-}
+shift || true
+
+usage='usage: loom version | accept --consumer FILE --short NAME --title T --scope S --out O --done D | ignore --consumer FILE --short NAME --reason TEXT | dispatch --consumer FILE --issue N [--executor auto|local|orca] | launch ID -- CMD... | start ID [--agent NAME] | harvest ID | stop ID | release ID | watch --until ID|all [--every SEC] [--limit-min N] | status | verify ID [--baseline] | collect ID | report ID STATE FACT | ack ID FACT | detect'
+
+emit() {  # emit <ok:true|false> <state> <fact> [id] [ticket] [items-json] [actions-json] [exit]
+    local ok=$1 state=$2 fact=$3 id=${4:-} ticket=${5:-} items=${6:-[]} actions=${7:-[]} code=${8:-}
+    fact=${fact//$'\t'/ }
+    fact=${fact//$'\n'/ }
+    [[ -n $fact ]] || fact='no fact given'
+    jq -nc \
+        --arg v "$v" --arg cmd "${cmd:-usage}" --argjson ok "$ok" \
+        --arg state "$state" --arg fact "$fact" --arg id "$id" --arg ticket "$ticket" \
+        --argjson items "$items" --argjson actions "$actions" \
+        '{v:$v, cmd:$cmd, ok:$ok, state:$state, fact:$fact,
+          id:(if $id == "" then null else $id end),
+          ticket:(if $ticket == "" then null else ($ticket | tonumber) end),
+          items:$items, actions:$actions}'
+    if [[ -n $code ]]; then exit "$code"; fi
+    [[ $ok == true ]] && exit 0 || exit 1
+}
+loom_error() { emit false failed "$*"; }
+
+fail_from() {  # fail_from <rc> <stderr-file> <stdout>
+    local rc=$1 err=$2 out=$3 fact
+    fact=$(tail -n 1 "$err" 2>/dev/null || true)
+    rm -f "$err"
+    [[ -n $fact ]] || fact=$(printf '%s\n' "$out" | tail -n 1)
+    [[ -n $fact ]] || fact="exit $rc"
+    emit false failed "$fact"
+}
+
+run_out() {  # run_out <cmd...>  — prints stdout, or emits failure and exits
+    local err out rc=0
+    err=$(mktemp "${TMPDIR:-/tmp}/loom-call.XXXXXX")
+    out=$("$@" 2>"$err") || rc=$?
+    if [[ $rc != 0 ]]; then
+        fail_from "$rc" "$err" "$out"
+    fi
+    rm -f "$err"
+    printf '%s' "$out"
+}
+
+need_id() {
+    [[ $# -ge 1 && -n $1 ]] || emit false failed "$usage" "" "" "[]" "[]" 2
+    loom_id "$1" 2>/dev/null || emit false failed "invalid assignment id" "" "" "[]" "[]" 2
+}
+
+status_object() {
+    local raw items state fact
+    raw=$(bash "$ops/status.sh")
+    if [[ -z $raw ]]; then
+        emit true waiting "nothing waits for a person"
+    fi
+    items=$(printf '%s\n' "$raw" | jq -Rsc '
+      [split("\n")[] | select(length > 0) | split("\t") |
+       {id: .[0], state: .[1], fact: (.[2] // "")}]')
+    state=$(jq -r '
+      if any(.[]; .state == "blocked") then "blocked"
+      elif any(.[]; .state == "failed") then "failed"
+      elif any(.[]; .state == "stale") then "stale"
+      elif any(.[]; .state == "release") then "release"
+      elif any(.[]; .state == "ready") then "ready"
+      else "waiting" end' <<< "$items")
+    fact=$(jq -r '.[0].fact // "nothing waits for a person"' <<< "$items")
+    emit true "$state" "$fact" "" "" "$items"
+}
+
+case $cmd in
+    version)
+        [[ $# == 0 ]] || emit false failed "$usage" "" "" "[]" "[]" 2
+        emit true waiting "loom $v"
+        ;;
+    detect)
+        [[ $# == 0 ]] || emit false failed "$usage" "" "" "[]" "[]" 2
+        out=$(run_out bash "$ops/orca.sh" detect)
+        emit true waiting "$out"
+        ;;
+    status)
+        [[ $# == 0 ]] || emit false failed "$usage" "" "" "[]" "[]" 2
+        status_object
+        ;;
+    accept)
+        consumer='' short='' title='' scope='' outf='' done=''
+        while [[ $# -gt 0 ]]; do
+            case $1 in
+                --consumer|--short|--title|--scope|--out|--done)
+                    [[ $# -ge 2 ]] || emit false failed "$usage" "" "" "[]" "[]" 2
+                    case $1 in
+                        --consumer) consumer=$2 ;; --short) short=$2 ;; --title) title=$2 ;;
+                        --scope) scope=$2 ;; --out) outf=$2 ;; --done) done=$2 ;;
+                    esac
+                    shift 2 ;;
+                *) emit false failed "$usage" "" "" "[]" "[]" 2 ;;
+            esac
+        done
+        [[ -n $consumer && -n $short && -n $title && -n $scope && -n $outf && -n $done ]] || emit false failed "$usage" "" "" "[]" "[]" 2
+        url=$(run_out bash "$ops/ticket.sh" "$consumer" --short "$short" --title "$title" --scope "$scope" --out "$outf" --done "$done")
+        ticket=${url##*/}
+        [[ $ticket =~ ^[1-9][0-9]*$ ]] || emit false failed "ticket URL did not end in an issue number: $url"
+        emit true accepted "ticket opened" "" "$ticket"
+        ;;
+    ignore)
+        consumer='' short='' reason=''
+        while [[ $# -gt 0 ]]; do
+            case $1 in
+                --consumer|--short|--reason)
+                    [[ $# -ge 2 && -n $2 ]] || emit false failed "$usage" "" "" "[]" "[]" 2
+                    case $1 in
+                        --consumer) consumer=$2 ;; --short) short=$2 ;; --reason) reason=$2 ;;
+                    esac
+                    shift 2 ;;
+                *) emit false failed "$usage" "" "" "[]" "[]" 2 ;;
+            esac
+        done
+        [[ -n $consumer && -n $short && -n $reason ]] || emit false failed "$usage" "" "" "[]" "[]" 2
+        [[ $reason != *$'\n'* ]] || emit false failed "reason is one line"
+        config=$(loom_config "$consumer")
+        repo=$(jq -r '.repo' <<< "$config")
+        printf '## Mandate\n\n**Ticket short name:** %s\n' "$short" | loom_mandate >/dev/null
+        loom_short "$(printf '## Mandate\n\n**Ticket short name:** %s\n' "$short" | loom_mandate)" >/dev/null
+        loom_init
+        jq -nc --arg repo "$repo" --arg short "$short" --arg reason "$reason" \
+            '{at: (now | todateiso8601), decision: "ignore", repo: $repo, short: $short, reason: $reason}' \
+            >> "$LOOM_STATE/decisions.jsonl"
+        emit true ignored "$reason"
+        ;;
+    dispatch)
+        consumer='' issue='' extra=()
+        while [[ $# -gt 0 ]]; do
+            case $1 in
+                --consumer) [[ $# -ge 2 ]] || emit false failed "$usage" "" "" "[]" "[]" 2; consumer=$2; shift 2 ;;
+                --issue) [[ $# -ge 2 ]] || emit false failed "$usage" "" "" "[]" "[]" 2; issue=$2; shift 2 ;;
+                --executor) [[ $# -ge 2 ]] || emit false failed "$usage" "" "" "[]" "[]" 2; extra=(--executor "$2"); shift 2 ;;
+                *) emit false failed "$usage" "" "" "[]" "[]" 2 ;;
+            esac
+        done
+        [[ -n $consumer && $issue =~ ^[1-9][0-9]*$ ]] || emit false failed "$usage" "" "" "[]" "[]" 2
+        out=$(run_out bash "$ops/dispatch.sh" "$consumer" "$issue" ${extra[@]+"${extra[@]}"})
+        id=${out##*$'\n'}
+        fact=${out%$'\n'*}
+        [[ $fact == "$out" ]] && fact=$id
+        emit true dispatched "$fact" "$id" "$issue"
+        ;;
+    launch)
+        need_id "$@"
+        id=$1
+        shift
+        [[ $# -ge 2 && $1 == -- ]] || emit false failed "$usage" "$id" "" "[]" "[]" 2
+        out=$(run_out bash "$ops/launch.sh" "$id" "$@")
+        emit true launched "$out" "$id"
+        ;;
+    start)
+        need_id "$@"
+        id=$1
+        shift
+        agent_args=()
+        if [[ $# -gt 0 ]]; then
+            [[ $# == 2 && $1 == --agent ]] || emit false failed "$usage" "$id" "" "[]" "[]" 2
+            agent_args=(--agent "$2")
+        fi
+        out=$(run_out bash "$ops/orca.sh" start "$id" ${agent_args[@]+"${agent_args[@]}"})
+        emit true started "$out" "$id"
+        ;;
+    harvest|stop|release|collect|ack)
+        need_id "$@"
+        id=$1
+        shift
+        case $cmd in
+            harvest) out=$(run_out bash "$ops/orca.sh" harvest "$id"); emit true harvested "$out" "$id" ;;
+            stop) out=$(run_out bash "$ops/orca.sh" stop "$id"); emit true stopped "$out" "$id" ;;
+            release) out=$(run_out bash "$ops/orca.sh" release "$id"); emit true released "$out" "$id" ;;
+            collect) out=$(run_out bash "$ops/collect.sh" "$id"); emit true collected "$out" "$id" ;;
+            ack)
+                [[ $# == 1 && -n $1 ]] || emit false failed "$usage" "$id" "" "[]" "[]" 2
+                out=$(run_out bash "$ops/ack.sh" "$id" "$1")
+                emit true acked "$out" "$id"
+                ;;
+        esac
+        ;;
+    verify)
+        need_id "$@"
+        id=$1
+        shift
+        base_args=()
+        if [[ $# -gt 0 ]]; then
+            [[ $# == 1 && $1 == --baseline ]] || emit false failed "$usage" "$id" "" "[]" "[]" 2
+            base_args=(--baseline)
+        fi
+        out=$(run_out bash "$ops/verify.sh" "$id" ${base_args[@]+"${base_args[@]}"})
+        emit true verified "$out" "$id"
+        ;;
+    report)
+        need_id "$@"
+        id=$1
+        shift
+        [[ $# == 2 ]] || emit false failed "$usage" "$id" "" "[]" "[]" 2
+        out=$(run_out bash "$ops/report.sh" "$id" "$1" "$2")
+        emit true "$1" "$2" "$id"
+        ;;
+    watch)
+        until_id='' every='' limit=''
+        wargs=()
+        while [[ $# -gt 0 ]]; do
+            case $1 in
+                --until) [[ $# -ge 2 ]] || emit false failed "$usage" "" "" "[]" "[]" 2; until_id=$2; shift 2 ;;
+                --every) [[ $# -ge 2 ]] || emit false failed "$usage" "" "" "[]" "[]" 2; every=$2; wargs+=(--every "$2"); shift 2 ;;
+                --limit-min) [[ $# -ge 2 ]] || emit false failed "$usage" "" "" "[]" "[]" 2; limit=$2; wargs+=(--limit-min "$2"); shift 2 ;;
+                *) emit false failed "$usage" "" "" "[]" "[]" 2 ;;
+            esac
+        done
+        [[ -n $until_id ]] || emit false failed "$usage" "" "" "[]" "[]" 2
+        raw=$(run_out bash "$ops/heartbeat.sh" --until "$until_id" ${wargs[@]+"${wargs[@]}"})
+        actions=$(printf '%s\n' "$raw" | jq -Rsc '[split("\n")[] | select(length > 0 and (test("\t") | not))]')
+        id_out=$until_id
+        [[ $until_id == all ]] && id_out=''
+        # Heartbeat already ended in status lines. Re-read status so the object matches `loom status`.
+        items=$(bash "$ops/status.sh" | jq -Rsc '
+          [split("\n")[] | select(length > 0) | split("\t") | {id: .[0], state: .[1], fact: (.[2] // "")}]' || true)
+        [[ -n $items ]] || items='[]'
+        state=$(jq -r '
+          if length == 0 then "waiting"
+          elif any(.[]; .state == "blocked") then "blocked"
+          elif any(.[]; .state == "failed") then "failed"
+          elif any(.[]; .state == "stale") then "stale"
+          elif any(.[]; .state == "release") then "release"
+          elif any(.[]; .state == "ready") then "ready"
+          else "waiting" end' <<< "$items")
+        fact=$(jq -r 'if length == 0 then "nothing waits for a person" else .[0].fact end' <<< "$items")
+        emit true "$state" "$fact" "$id_out" "" "$items" "$actions"
+        ;;
+    '')
+        emit false failed "$usage" "" "" "[]" "[]" 2
+        ;;
+    *)
+        emit false failed "$usage" "" "" "[]" "[]" 2
+        ;;
+esac
