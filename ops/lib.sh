@@ -139,11 +139,21 @@ loom_harvest() {  # loom_harvest <file> <why-if-silent>
     # branch. WORK.md and REPORT.md are excluded at dispatch.
     local id=${file##*/}
     id=${id%.json}
+    # The consumer's commit hooks run (they are its quality gate). Auto-fixers
+    # rewrite files and fail the first commit by design, so loom re-stages and
+    # retries once, as a person would; a second failure is logged (gap #22).
     if [[ -n $(git -C "$workdir" status --porcelain 2>/dev/null) ]]; then
-        if ! { git -C "$workdir" add -A &&
-               git -C "$workdir" -c commit.gpgsign=false commit -q -m "loom($id): $state — $fact"; } >/dev/null 2>&1; then
-            fact="$fact [loom could not commit the workdir]"
-        fi
+        local clog="$LOOM_STATE/$id.commit.log" try
+        : > "$clog"
+        for try in 1 2; do
+            if { git -C "$workdir" add -A &&
+                 git -C "$workdir" -c commit.gpgsign=false commit -q -m "loom($id): $state — $fact"; } >> "$clog" 2>&1; then
+                break
+            fi
+            if [[ $try == 2 ]]; then
+                fact="$fact [loom commit rejected by the consumer's hooks: ${clog##*/}]"
+            fi
+        done
     fi
     loom_append "$file" "$state" "$fact" true
     printf '%s\n' "$state"
