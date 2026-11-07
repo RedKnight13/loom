@@ -131,23 +131,51 @@ loom_alive() {  # loom_alive <file>: the recorded worker is live (local process 
     [[ $now == "$start" ]]
 }
 
+# Workspace host (#47): an Orca worker placed with --on runs on that host, and
+# so does its workspace. Empty = this machine.
+loom_ws_host() { jq -r '.ws_host // empty' "$1"; }
+
+# Run argv inside a workspace, here or on its host.
+loom_ws() {  # loom_ws <host> <workdir> <argv...>
+    local h=$1 w=$2
+    shift 2
+    if [[ -z $h ]]; then
+        (cd "$w" && "$@")
+    else
+        loom_ssh "$h" "cd $(printf '%q' "$w") && $(printf '%q ' "$@")"
+    fi
+}
+
+# git over loom's ssh (fetching a branch from a workspace on its host).
+loom_git_ssh() { GIT_SSH_COMMAND="${LOOM_SSH:-ssh} -o BatchMode=yes -o ConnectTimeout=5" git "$@"; }
+
 # Keep loom's own files out of the consumer commit. .loom/ is the worker's
 # evidence directory (gap #33): copied into state, never committed.
-loom_exclude() {  # loom_exclude <workdir>
-    local workdir=$1 common f
-    [[ -d $workdir ]] || return 0
-    common=$(git -C "$workdir" rev-parse --git-common-dir 2>/dev/null) || return 0
-    [[ $common == /* ]] || common="$workdir/$common"
-    mkdir -p "$common/info"
-    for f in WORK.md REPORT.md .loom/; do
-        grep -qxF "$f" "$common/info/exclude" 2>/dev/null || printf '%s\n' "$f" >> "$common/info/exclude"
-    done
+loom_exclude() {  # loom_exclude <workdir> [host]
+    local workdir=$1 host=${2:-}
+    loom_ws "$host" "$workdir" true 2>/dev/null || return 0
+    # shellcheck disable=SC2016  # expands in the workspace's shell
+    loom_ws "$host" "$workdir" bash -c 'common=$(git rev-parse --git-common-dir 2>/dev/null) || exit 0
+mkdir -p "$common/info"
+for f in WORK.md REPORT.md .loom/; do
+    grep -qxF "$f" "$common/info/exclude" 2>/dev/null || printf "%s\n" "$f" >> "$common/info/exclude"
+done'
 }
 
 # Copy .loom/ to $LOOM_STATE/<id>.evidence before the commit. A symlink is
 # refused: evidence must not walk out of the workdir.
-loom_take_evidence() {  # loom_take_evidence <workdir> <id>
-    local src="$1/.loom" dest="$LOOM_STATE/$2.evidence"
+loom_take_evidence() {  # loom_take_evidence <workdir> <id> [host]
+    local src="$1/.loom" dest="$LOOM_STATE/$2.evidence" host=${3:-} kind
+    if [[ -n $host ]]; then
+        kind=$(loom_ws "$host" "$1" bash -c 'if [ -L .loom ]; then echo link; elif [ -d .loom ]; then echo dir; elif [ -e .loom ]; then echo other; fi') ||
+            loom_error "cannot read the workspace on $host: $1"
+        [[ -n $kind ]] || return 0
+        [[ $kind == dir ]] || loom_error "evidence path is not a directory: $host:$src"
+        rm -rf "$dest"
+        mkdir -p "$dest"
+        loom_ws "$host" "$1" tar -C .loom -cf - . | tar -C "$dest" -xf - || loom_error "could not copy evidence from $host"
+        return 0
+    fi
     [[ -e $src || -L $src ]] || return 0
     [[ -d $src && ! -L $src ]] || loom_error "evidence path is not a directory: $src"
     rm -rf "$dest"
@@ -158,12 +186,16 @@ loom_take_evidence() {  # loom_take_evidence <workdir> <id>
 # worker. Accepted line: "state: <ready|blocked|failed|waiting> — <fact>"
 # (separator may be —, --, - or :).
 loom_harvest() {  # loom_harvest <file> <why-if-silent>
-    local file=$1 silent=$2 workdir offset line state fact
+    local file=$1 silent=$2 workdir offset line state fact host
     local re='^state:[[:space:]]*(ready|blocked|failed|waiting)[[:space:]]*(—|--|-|:)?[[:space:]]*(.*)$'
     workdir=$(jq -r '.workdir' "$file")
     offset=$(jq -r '.report_offset // 0' "$file")
+    host=$(loom_ws_host "$file")
     line=
-    if [[ -f $workdir/REPORT.md && ! -L $workdir/REPORT.md ]]; then
+    if [[ -n $host ]]; then
+        # shellcheck disable=SC2016  # expands in the workspace's shell
+        line=$(loom_ws "$host" "$workdir" bash -c '[ -f REPORT.md ] && [ ! -L REPORT.md ] && tail -n +"$1" REPORT.md' _ "$((offset + 1))" 2>/dev/null | grep -E '^state:' | tail -n 1 || :)
+    elif [[ -f $workdir/REPORT.md && ! -L $workdir/REPORT.md ]]; then
         line=$(tail -n +"$((offset + 1))" "$workdir/REPORT.md" | grep -E '^state:' | tail -n 1 || :)
     fi
     if [[ -n $line && $line =~ $re ]]; then
@@ -178,17 +210,17 @@ loom_harvest() {  # loom_harvest <file> <why-if-silent>
     # branch. WORK.md and REPORT.md are excluded at dispatch.
     local id=${file##*/}
     id=${id%.json}
-    loom_exclude "$workdir"
-    loom_take_evidence "$workdir" "$id"
+    loom_exclude "$workdir" "$host"
+    loom_take_evidence "$workdir" "$id" "$host"
     # The consumer's commit hooks run (they are its quality gate). Auto-fixers
     # rewrite files and fail the first commit by design, so loom re-stages and
     # retries once, as a person would; a second failure is logged (gap #22).
-    if [[ -n $(git -C "$workdir" status --porcelain 2>/dev/null) ]]; then
+    if [[ -n $(loom_ws "$host" "$workdir" git status --porcelain 2>/dev/null) ]]; then
         local clog="$LOOM_STATE/$id.commit.log" try
         : > "$clog"
         for try in 1 2; do
-            if { git -C "$workdir" add -A &&
-                 git -C "$workdir" -c commit.gpgsign=false commit -q -m "loom($id): $state — $fact"; } >> "$clog" 2>&1; then
+            if { loom_ws "$host" "$workdir" git add -A &&
+                 loom_ws "$host" "$workdir" git -c commit.gpgsign=false commit -q -m "loom($id): $state — $fact"; } >> "$clog" 2>&1; then
                 break
             fi
             if [[ $try == 2 ]]; then

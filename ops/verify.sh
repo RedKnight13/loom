@@ -57,8 +57,13 @@ git clone -q --no-checkout "$checkout" "$scratch/tree"
 if [[ $kind == baseline ]]; then
     sha=$base
 else
-    git -C "$workdir" show-ref --verify --quiet "refs/heads/$short" || loom_error "worker clone has no branch $short"
-    git -C "$scratch/tree" fetch -q "$workdir" "refs/heads/$short"
+    wh=$(loom_ws_host "$file")
+    loom_ws "$wh" "$workdir" git show-ref --verify --quiet "refs/heads/$short" || loom_error "worker clone has no branch $short"
+    if [[ -n $wh ]]; then
+        loom_git_ssh -C "$scratch/tree" fetch -q "$wh:$workdir" "refs/heads/$short"
+    else
+        git -C "$scratch/tree" fetch -q "$workdir" "refs/heads/$short"
+    fi
     sha=$(git -C "$scratch/tree" rev-parse FETCH_HEAD)
 fi
 git -C "$scratch/tree" -c advice.detachedHead=false checkout -q "$sha"

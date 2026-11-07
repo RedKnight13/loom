@@ -131,6 +131,23 @@ start)
             placement_args=(--on "$placement_host")
         fi
     fi
+    # The repo is named as it exists on the worker server (#47); the
+    # conductor's checkout path means nothing on another host.
+    repo_sel="path:$(jq -r '.checkout' "$file")"
+    if [[ -n $placement_host ]]; then
+        project="github:$(jq -r '.repo' "$file" | tr '[:upper:]' '[:lower:]')"
+        rpath=$(loom_orca project setups --environment "$placement_host" --json 2>/dev/null |
+            jq -r --arg p "$project" '[.result.setups[]? | select((.projectId | ascii_downcase) == $p and .hostId == "local" and .setupState == "ready") | .path][0] // empty' 2>/dev/null) || rpath=''
+        [[ -n $rpath ]] || loom_error "$(jq -r '.repo' "$file") has no ready Orca project on $placement_host; add it there (orca project setup-existing-folder --environment $placement_host --host local --project $project --path <clone>) and start again"
+        rbase=$(jq -r '.base_sha' "$file")
+        if ! loom_ws "$placement_host" "$rpath" git cat-file -e "$rbase^{commit}" 2>/dev/null; then
+            loom_ws "$placement_host" "$rpath" git fetch -q origin 2>/dev/null || :
+            loom_ws "$placement_host" "$rpath" git cat-file -e "$rbase^{commit}" 2>/dev/null ||
+                loom_error "base ${rbase:0:7} is not in $placement_host:$rpath, even after a fetch"
+        fi
+        repo_sel="path:$rpath"
+    fi
+    ws_host=$placement_host
     loom_lock
     file=$(loom_record "$id")
     [[ $(jq -r '.executor.state' "$file") == pending ]] || loom_error "$id is not pending (state: $(jq -r '.executor.state' "$file"))"
@@ -156,7 +173,7 @@ start)
     [[ -z $timeout ]] || extra+=(--timeout-ms "$timeout")
     rc=0
     loom_orca orchestration worker-start --spec-file "$spec" --worktree new-top-level \
-        --repo "path:$checkout" --name "$id" --base-branch "$base" --setup skip \
+        --repo "$repo_sel" --name "$id" --base-branch "$base" --setup skip \
         --agent "$agent" --task-title "loom $id" --display-name "loom $id" \
         --comment "$repo#$ticket" ${placement_args[@]+"${placement_args[@]}"} ${extra[@]+"${extra[@]}"} \
         --json > "$receipt" 2>&1 || rc=$?
@@ -166,16 +183,16 @@ start)
     workspace=$(receipt_get "$receipt" workspace) || workspace=''
     workdir=''
     if [[ $workspace == *::* ]]; then workdir=${workspace##*::}; fi
-    if [[ -z $workdir || ! -d $workdir ]]; then
+    if [[ -z $workdir ]] || ! loom_ws "$ws_host" "$workdir" true 2>/dev/null; then
         workdir=$(receipt_get "$receipt" worktreePath worktree_path) ||
             workdir=$(jq -r '[.. | objects | .worktree? | objects | .path? | strings] | first // empty' "$receipt" 2>/dev/null) || workdir=''
     fi
-    if [[ -z $workdir || ! -d $workdir ]]; then
+    if [[ -z $workdir ]] || ! loom_ws "$ws_host" "$workdir" true 2>/dev/null; then
         workdir=$(loom_orca worktree show --worktree "name:$id" --json 2>/dev/null | jq -r '[.. | objects | .path? | select(type == "string")] | first // empty') || workdir=''
     fi
     loom_lock
     file=$(loom_record "$id")
-    if [[ $rc != 0 || -z $dispatch || -z $workdir || ! -d $workdir ]]; then
+    if [[ $rc != 0 || -z $dispatch || -z $workdir ]] || ! loom_ws "$ws_host" "$workdir" true 2>/dev/null; then
         # Orca: if worker-start fails, do not rerun it. Loom records and stops.
         loom_write "$file" '.executor.state = "failed_start" | .executor.receipt = $r' --arg r "${receipt##*/}"
         loom_append "$file" failed "orca worker-start did not yield a worker (exit $rc, dispatch '${dispatch:-none}', workspace '${workdir:-none}'): see ${receipt##*/}"
@@ -184,25 +201,21 @@ start)
         exit 1
     fi
     # Keep loom's files out of the consumer's commits (worktrees share info/exclude).
-    common=$(git -C "$workdir" rev-parse --git-common-dir)
-    [[ $common == /* ]] || common="$workdir/$common"
-    for f in WORK.md REPORT.md .loom/; do
-        grep -qxF "$f" "$common/info/exclude" 2>/dev/null || printf '%s\n' "$f" >> "$common/info/exclude"
-    done
-    cp "$LOOM_STATE/$id.WORK.md" "$workdir/WORK.md"
-    branch=$(git -C "$workdir" branch --show-current)
-    head=$(git -C "$workdir" rev-parse HEAD)
+    loom_exclude "$workdir" "$ws_host"
+    loom_ws "$ws_host" "$workdir" bash -c 'cat > WORK.md' < "$LOOM_STATE/$id.WORK.md"
+    branch=$(loom_ws "$ws_host" "$workdir" git branch --show-current)
+    head=$(loom_ws "$ws_host" "$workdir" git rev-parse HEAD)
     kept=false
     jq -e '[.. | objects | .keptOpen? | booleans] | any' "$receipt" >/dev/null && kept=true
     loom_write "$file" '
-      .workdir = $w | .branch = $b | .launched_at = (now | todateiso8601) | .report_offset = 0 |
+      .workdir = $w | .ws_host = (if $wh == "" then null else $wh end) | .branch = $b | .launched_at = (now | todateiso8601) | .report_offset = 0 |
       .executor += {state: "running", dispatch: $d, runtime: $rt, agent: $a, receipt: $r,
                     task: $t, run: $run, kept_open: $kept,
                     placement: (if $ph == "" then null else {host: $ph, selector: $sel} end)}' \
         --arg w "$workdir" --arg b "$branch" --arg d "$dispatch" --arg rt "$runtime" --arg a "$agent" \
         --arg r "${receipt##*/}" --arg t "$(receipt_get "$receipt" taskId task_id || :)" \
         --arg run "$(receipt_get "$receipt" runId run_id || :)" --argjson kept "$kept" \
-        --arg ph "$placement_host" --arg sel "$placement_selector"
+        --arg ph "$placement_host" --arg sel "$placement_selector" --arg wh "$ws_host"
     loom_unlock
     # Attach the ticket to the workspace. Not fatal: the worker is already up.
     loom_orca reference add --worktree "path:$workdir" \

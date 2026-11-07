@@ -432,7 +432,15 @@ case "$1" in
         esac ;;
     host)
         [[ $2 == list ]] || exit 98
-        echo '{"ok":true,"result":{"hosts":[{"kind":"ssh","name":"orca-host","id":"ssh-on","connected":true,"selector":"--host ssh:ssh-on"},{"kind":"ssh","name":"orca-off","id":"ssh-off","connected":false,"selector":"--host ssh:ssh-off"},{"kind":"environment","name":"orca-dup","id":"env-dup","connected":null,"selector":"--environment orca-dup"},{"kind":"ssh","name":"orca-dup","id":"ssh-dup","connected":true,"selector":"--host ssh:ssh-dup"}]}}' ;;
+        echo '{"ok":true,"result":{"hosts":[{"kind":"ssh","name":"orca-host","id":"ssh-on","connected":true,"selector":"--host ssh:ssh-on"},{"kind":"ssh","name":"orca-off","id":"ssh-off","connected":false,"selector":"--host ssh:ssh-off"},{"kind":"environment","name":"orca-dup","id":"env-dup","connected":null,"selector":"--environment orca-dup"},{"kind":"ssh","name":"orca-dup","id":"ssh-dup","connected":true,"selector":"--host ssh:ssh-dup"},{"kind":"ssh","name":"orca-bare","id":"ssh-bare","connected":true,"selector":"--host ssh:ssh-bare"}]}}' ;;
+    project)
+        [[ $2 == setups ]] || exit 98
+        envname=''; [[ ${3:-} == --environment ]] && envname=$4
+        case $envname in
+            orca-host|orca-dup)
+                jq -n --arg p "${ORCA_STUB_REMOTE_REPO:-/nonexistent}" '{ok: true, result: {setups: [{projectId: "github:example/fixture", hostId: "local", path: $p, setupState: "ready"}, {projectId: "github:example/fixture", hostId: "ssh-x", path: "/wrong", setupState: "ready"}]}}' ;;
+            *) echo '{"ok":true,"result":{"setups":[]}}' ;;
+        esac ;;
     reference|worktree|repo|automations)
         echo '{"ok":true,"result":{"stub":"ok"}}' ;;
     *) exit 99 ;;
@@ -538,17 +546,48 @@ pass 'ticket labels: repeatable, default loom-ready, no-default'
 # --- Orca placement and the map (#37, #35) ---
 (
     export LOOM_ORCA="$scratch/bin/orca"
+    # #47: the worker server has its own clone; loom must name that one.
+    export ORCA_STUB_REMOTE_REPO="$scratch/remote-fixture"
+    git clone -q "$LOOM_REPO" "$ORCA_STUB_REMOTE_REPO"
+    git -C "$ORCA_STUB_REMOTE_REPO" config user.name 'Loom Fixture'
+    git -C "$ORCA_STUB_REMOTE_REPO" config user.email "$(git -C "$LOOM_REPO" config user.email)"
+    mkdir -p "$scratch/wsbin"
+    cat > "$scratch/wsbin/ssh" <<'EOF'
+#!/usr/bin/env bash
+# ssh stub for workspace hosts: logs the host, runs the command here.
+while [[ $1 == -o ]]; do shift 2; done
+host=$1; shift
+case $host in orca-host|orca-dup|orca-bare) ;; *) exit 255 ;; esac
+printf '%s\n' "$host" >> "$GH_STATE/ssh-ws.log"
+exec bash -c "$*"
+EOF
+    chmod +x "$scratch/wsbin/ssh"
+    export LOOM_SSH="$scratch/wsbin/ssh"
     sed 's/^checks = "true"$/checks = "true"\nexecutor = "orca"\ncompute = "orca-host"/' "$scratch/consumer.toml" > "$scratch/placement.toml"
     out=$(bash "$ops/dispatch.sh" "$scratch/placement.toml" 7); idp=${out##*$'\n'}
     export ORCA_STUB_WORKER="$scratch/bin/w-slow"
     bash "$ops/orca.sh" start "$idp" >/dev/null || fail 'start on a connected compute host'
     grep -q -- '--on orca-host' "$GH_STATE/start-$idp.args" || fail 'worker not placed on the compute host'
+    grep -q -- "--repo path:$ORCA_STUB_REMOTE_REPO " "$GH_STATE/start-$idp.args" || fail 'remote worker given the conductor checkout, not the host clone (#47)'
+    jq -e '.ws_host == "orca-host"' "$(rec "$idp")" >/dev/null || fail 'workspace host not recorded (#47)'
+    grep -qx orca-host "$GH_STATE/ssh-ws.log" || fail 'remote workspace not reached over ssh (#47)'
     jq -e '.executor.placement.host == "orca-host"' "$(rec "$idp")" >/dev/null || fail 'placement not recorded'
     pid=$(cat "$GH_STATE/disp-$idp.pid"); for _ in $(seq 1 50); do kill -0 "$pid" 2>/dev/null || break; sleep 0.1; done
     sed 's/^compute = "orca-host"$/compute = "orca-off"/' "$scratch/placement.toml" > "$scratch/unplaced.toml"
     out=$(bash "$ops/dispatch.sh" "$scratch/unplaced.toml" 8); idb=${out##*$'\n'}
     bash "$ops/orca.sh" start "$idb" >/dev/null 2>&1 && fail 'start on an unconnected host accepted'
     jq -e '.executor.state == "pending"' "$(rec "$idb")" >/dev/null || fail 'a refused placement changed state'
+    # #47: a connected host without the project is refused before worker-start.
+    sed 's/^compute = "orca-host"$/compute = "orca-bare"/' "$scratch/placement.toml" > "$scratch/bare.toml"
+    out=$(bash "$ops/dispatch.sh" "$scratch/bare.toml" 8); idn=${out##*$'\n'}
+    err=$(bash "$ops/orca.sh" start "$idn" 2>&1) && fail 'start accepted on a host without the project'
+    [[ $err == *'no ready Orca project on orca-bare'* ]] || fail "wrong refusal: $err"
+    [[ ! -f $GH_STATE/start-$idn.args ]] || fail 'worker-start called for a host without the project'
+    jq -e '.executor.state == "pending"' "$(rec "$idn")" >/dev/null || fail 'a host without the project changed state'
+    # #48: a failed start is still one JSON object from the loom call.
+    out=$(bash "$ops/dispatch.sh" "$scratch/placement.toml" 8); idz=${out##*$'\n'}
+    obj=$(ORCA_STUB_FAIL=1 bash "$ops/loom" start "$idz") && fail 'failed start reported ok'
+    jq -e '.ok == false and .cmd == "start" and (.fact | length > 0)' <<< "$obj" >/dev/null || fail "failed start printed no JSON object (#48): [$obj]"
     # #45: the first connected host wins, not compute[0].
     sed 's/^compute = "orca-host"$/compute = ["orca-off", "orca-dup", "orca-host"]/' "$scratch/placement.toml" > "$scratch/fallback.toml"
     out=$(bash "$ops/dispatch.sh" "$scratch/fallback.toml" 9); idf=${out##*$'\n'}
@@ -593,7 +632,15 @@ automation list
 automation run a1
 automation remove a1
 VERBS
-    bash "$ops/orca.sh" harvest "$idp" >/dev/null || fail 'harvest after the read checks'
+    # #47: harvest and collect reach the workspace through its host.
+    : > "$GH_STATE/ssh-ws.log"
+    [[ $(bash "$ops/orca.sh" harvest "$idp") == "$idp ready"* ]] || fail 'harvest after the read checks (remote)'
+    grep -qx orca-host "$GH_STATE/ssh-ws.log" || fail 'remote harvest did not go through ssh'
+    wsp=$(jq -r '.workdir' "$(rec "$idp")")
+    [[ $(git -C "$wsp" log -1 --format=%s) == "loom($idp): ready — wrote notes.txt" ]] || fail 'remote worker files not committed'
+    [[ -f $LOOM_STATE/$idp.evidence/discovery.log ]] || fail 'evidence not copied from the remote workspace'
+    bash "$ops/collect.sh" "$idp" >/dev/null || fail 'remote collect failed'
+    git -C "$LOOM_REPO" show-ref --verify --quiet "refs/heads/orca/$idp" || fail 'remote branch not fetched home'
 
     export ORCA_STUB_WORKER="$scratch/bin/w-hang" GRANDCHILD="$scratch/orca-grandchild"
     out=$(bash "$ops/dispatch.sh" "$scratch/placement.toml" 7); ida=${out##*$'\n'}
