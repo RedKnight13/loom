@@ -18,6 +18,6 @@ executor  = "auto"
 
 laws = [
   "Workers never push; only the conductor pushes, reviews and merges.",
-  "Nothing identifying the owner enters any file, log, or commit.",
+  "Do not add personal paths, machine names, session IDs, or private notes to new content. Existing copyright, author and licence attribution stays.",
   "Captured exit codes only; a check that was not run is reported as not run.",
 ]

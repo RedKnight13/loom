@@ -29,12 +29,16 @@ settled() {
     if [[ $until_id == all ]]; then
         shopt -s nullglob
         for f in "$LOOM_STATE"/*.json; do
-            [[ -z $(jq -r '.worker_pid // empty' "$f") ]] || return 1
+            # loom_alive knows both executors: a local PID+start, or an Orca
+            # dispatch in starting/running (#56). A null worker_pid is not
+            # evidence that an Orca worker has settled.
+            loom_alive "$f" && return 1
         done
         return 0
     fi
     f=$(loom_record "$until_id")
-    [[ -n $(jq -r '.launched_at // empty' "$f") && -z $(jq -r '.worker_pid // empty' "$f") ]]
+    [[ -n $(jq -r '.launched_at // empty' "$f") ]] || return 1
+    ! loom_alive "$f"
 }
 
 if [[ $until_id != all ]]; then
