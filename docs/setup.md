@@ -1,6 +1,7 @@
 # Setup
 
-Loom is plain bash plus `git`, `jq`, `gh`, and optionally Orca and an SSH host.
+Loom is plain bash plus `git`, `jq`, `gh`, and optionally [Orca](https://github.com/stablyai/orca)
+(MIT) and an SSH host.
 There is nothing to build and no service to run.
 
 ## 1. Requirements
@@ -12,7 +13,7 @@ There is nothing to build and no service to run.
 | jq | 1.6+ | every record and config read |
 | gh | any recent, authenticated | tickets, issues, labels |
 | shellcheck | any recent | `shellcheck -x ops/*.sh ops/loom` |
-| Orca CLI | optional | the `orca` executor, placement, worker mail |
+| [Orca](https://github.com/stablyai/orca) | 1.4.246+ (MIT), optional | the `orca` executor, placement, worker mail; app must be running |
 | ssh | optional | `compute` host for checks and placement |
 
 Check:
@@ -101,10 +102,12 @@ is harvested. `WORK.md`, `REPORT.md` and `.loom/` are excluded from that commit;
 
 ## 6. Orca executor
 
-Orca supervises workers and, when a `compute` host is declared, places them
-there.
+Orca (<https://github.com/stablyai/orca>, MIT, **1.4.246+**) supervises
+workers and, when a `compute` host is declared, places them there. Its desktop
+app must be running: `orca status` reports whether the runtime is ready.
 
 ```bash
+orca --version                    # must be 1.4.246 or newer
 orca status                       # runtime reachable and ready
 orca repo add --path ~/src/your-repo
 orca host list                    # connect the target in the Orca app first

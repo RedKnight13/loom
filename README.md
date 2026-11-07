@@ -82,7 +82,7 @@ Every row below is exercised by `ops/selftest.sh` and protected by a mutant in
 | **One call** | `ops/loom` — one command, one JSON object on stdout, exit 0 iff `ok`. The same call for any harness. |
 | **Tickets** | Rendered from `templates/MANDATE.md`; the renderer proves the parser accepts its own output. Repeatable `--label`; `loom-ready` defaulted when the repo has it. |
 | **Eval record** | `accept` opens a Ticket; `ignore` records the decision without one. |
-| **Executors** | `local` (private clone, no remote) and `orca` (supervised worker). `auto` detects Orca. |
+| **Executors** | `local` (private clone, no remote) and `orca` (supervised worker; [Orca](https://github.com/stablyai/orca) 1.4.246+, MIT). `auto` detects Orca. |
 | **Placement** | Consumer `compute` hosts; `start` uses the first one Orca reports connected, and refuses when none is. Never a silent local fallback. |
 | **Checks** | `verify` runs the consumer's checks in a fresh clone, locally or over SSH on the compute host. Unreachable host or failed setup is *could not run*. |
 | **Reports** | `ready | blocked | failed | waiting` in `REPORT.md`; harvest folds the newest line into the record and commits the work. |
@@ -104,6 +104,7 @@ One path. It is the one the project itself uses and tests.
 # 1. Dependencies (macOS shown; on Linux use your package manager)
 brew install jq gh shellcheck
 gh auth login
+# Optional supervised backend (MIT): https://github.com/stablyai/orca  (1.4.246+)
 
 # 2. Clone once, outside any other repo
 git clone https://github.com/RedKnight13/loom.git ~/loom
@@ -122,6 +123,10 @@ bash ops/mutate.sh                                      # exit 0, SURVIVED=0
 
 That is the whole install. Nothing runs in the background, nothing is written
 outside `$LOOM_STATE` (default `~/.loom`).
+
+Prefer to let an agent do it? Paste the [bootstrap prompt](docs/bootstrap.md)
+into Claude Code or Codex; it installs, proves, and stops before touching your
+repository.
 
 **Other options:** call `ops/loom` by path instead of putting `ops/` on PATH;
 run from any checkout with `LOOM_STATE=/path/to/state`; skip Orca if you only
@@ -188,8 +193,10 @@ loom ack add-json.1 "merged as #43"
   only thing that can end a silent worker.
 - **Declare `compute` when checks are slow.** Checks are the expensive part;
   moving them to a build host is the single biggest quality-of-life change.
-- **Use Orca when you want supervision and placement.** Use the local executor
-  when you want the smallest possible setup. The call above does not change.
+- **Use Orca when you want supervision and placement.** Orca is MIT
+  (<https://github.com/stablyai/orca>), supported from **1.4.246**; its app must
+  be running. Use the local executor when you want the smallest setup. The call
+  above does not change.
 - **Start with a docs or single-test ticket.** Let the first real ticket be one
   whose failure teaches you the system cheaply.
 
@@ -249,7 +256,7 @@ and `consumers/loom.toml` are the tracked ones.
 | Mode | Workspace | Who supervises | Why |
 | --- | --- | --- | --- |
 | `local` | private clone, no remote, own `.git` | `launch.sh` + watchdog | a sandboxed worker can commit; no remote means it cannot push |
-| `orca` | Orca-created worktree, optionally on a compute host | Orca | supervised terminals, placement, release, mail |
+| `orca` | Orca-created worktree, optionally on a compute host | [Orca](https://github.com/stablyai/orca) 1.4.246+ (MIT) | supervised terminals, placement, release, mail |
 
 `compute` applies to both: checks run there over SSH, and Orca workers are placed
 there. A declared but unreachable host refuses. Loom never quietly uses the
@@ -290,6 +297,7 @@ conductor's laptop.
 - [ROADMAP.md](ROADMAP.md) — layers and the certification bar
 - [docs/setup.md](docs/setup.md) — install, consumer config, Orca, compute host
 - [docs/support.md](docs/support.md) — support matrix and known gaps
+- [docs/bootstrap.md](docs/bootstrap.md) — a copy-paste setup prompt for an agent
 - `docs/superpowers/specs/` — the 0.5.0 call contract and the 0.6.0 additions
 - [HANDOVER.md](HANDOVER.md) — current state, for whoever picks this up
 
