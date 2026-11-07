@@ -36,6 +36,10 @@ Rules for this task:
    - the checks command you already trust for that repo (it must exit 0 on main)
    - the worktrees directory (default: ~/work/<repo>-workdirs)
    - executor: auto, local, or orca
+   - how many workers may run at once for this consumer. Before asking, run
+     `bash ops/loom capacity` and offer its suggested number as the default
+     (Orca ready? how many connected hosts?). Write it as `workers = N` and
+     say that omitting the line means no cap.
    Then create consumers/<name>.toml from consumers/example.toml with those
    values, and show me the file. If the consumer repo is under git, commit only
    that config file, with the message "consumers: register <name>".

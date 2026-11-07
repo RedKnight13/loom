@@ -28,7 +28,8 @@ before creating an issue.</p>
   <li>Check prerequisites and report versions.</li>
   <li>Clone Loom to <code>~/loom</code>, refusing a dirty checkout.</li>
   <li>Run selftest, <code>shellcheck</code>, and the mutant suite; stop on any non-zero exit.</li>
-  <li>Ask for the consumer repo, its checks command, the worktrees directory, and the executor.</li>
+  <li>Ask for the consumer repo, its checks command, the worktrees directory, the executor, and the
+      default number of workers — suggesting what <code>loom capacity</code> detects from Orca.</li>
   <li>Verify <code>gh</code> and, for Orca, the runtime and the 1.4.246 floor.</li>
   <li>Render a ticket with <code>--dry-run</code> and stop before opening it.</li>
 </ol>

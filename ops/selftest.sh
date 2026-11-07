@@ -9,6 +9,9 @@ pids=()
 cleanup() {
     local p
     for p in ${pids[@]+"${pids[@]}"}; do kill -KILL "$p" 2>/dev/null || :; done
+    # Stub workers started by the Orca stub are not all in pids; their command
+    # lines carry the scratch path. Kill them so the suite leaves no orphans.
+    pkill -f "$scratch" 2>/dev/null || :
     rm -rf "$scratch"
 }
 trap cleanup EXIT
@@ -156,6 +159,22 @@ out=$(LOOM_ALLOW_ANY_CHECKOUT=1 LOOM_REPO="$scratch/other" bash "$ops/dispatch.s
 rm -rf "${out%$'\n'*}" "$LOOM_STATE/${out##*$'\n'}.json"
 pass 'dispatch refuses a foreign checkout; the override is explicit (#54)'
 
+# --- workers: a declared cap limits open assignments (bootstrap asks for it) ---
+(
+    export LOOM_STATE="$scratch/limit-state"
+    sed -e 's/^checks = "true"$/checks = "true"\nexecutor = "local"\nworkers = 1/' \
+        -e "s|^worktrees = .*|worktrees = \"$scratch/limit-dirs\"|" "$scratch/consumer.toml" > "$scratch/limit1.toml"
+    out=$(bash "$ops/dispatch.sh" "$scratch/limit1.toml" 7) || fail 'first dispatch under workers=1 refused'
+    id1=${out##*$'\n'}
+    jq -e '.workers == 1' "$LOOM_STATE/$id1.json" >/dev/null || fail 'workers not recorded'
+    err=$(bash "$ops/dispatch.sh" "$scratch/limit1.toml" 8 2>&1) && fail 'workers=1 allowed a second open assignment'
+    [[ $err == *'worker limit reached (workers=1)'* ]] || fail "wrong worker-limit error: $err"
+    sed 's/^workers = 1$/workers = 2/' "$scratch/limit1.toml" > "$scratch/limit2.toml"
+    bash "$ops/dispatch.sh" "$scratch/limit2.toml" 8 >/dev/null || fail 'workers=2 refused a second assignment'
+    rm -rf "$scratch/limit-state" "$scratch/limit-dirs"
+)
+pass 'workers cap: open assignments stop at the declared number (#64)'
+
 # --- conductor report validation ---
 if bash "$ops/report.sh" "$id1" unknown bad 2>/dev/null; then fail 'invalid state accepted'; fi
 if bash "$ops/report.sh" ../escape ready bad 2>/dev/null; then fail 'unsafe id accepted'; fi
@@ -192,6 +211,11 @@ age "$id2"
 [[ -z $(bash "$ops/watchdog.sh" --limit-min 1 --id "$id1") ]] || fail 'scoped watchdog touched another assignment'
 kill -0 "$worker" || fail 'scoped watchdog killed an out-of-scope worker'
 [[ $(bash "$ops/watchdog.sh" --limit-min 1 --id "$id2") == "$id2 failed watchdog_kill" ]] || fail 'watchdog action missing'
+for _ in $(seq 1 300); do kill -0 "$launcher" 2>/dev/null || break; sleep 0.1; done
+if kill -0 "$launcher" 2>/dev/null; then
+    kill -KILL "$launcher" 2>/dev/null || :
+    fail 'launcher did not return after the watchdog kill'
+fi
 wait "$launcher" 2>/dev/null || :
 sleep 0.3
 ! kill -0 "$worker" 2>/dev/null || fail 'worker survived'
@@ -477,6 +501,8 @@ EOF
     # detection
     ORCA_STUB_MODE=down bash "$ops/orca.sh" detect >/dev/null && fail 'detect: down runtime reported ready'
     [[ $(bash "$ops/orca.sh" detect) == 'orca ready: runtime stub-runtime-1' ]] || fail 'detect: ready runtime not reported'
+    obj=$(bash "$ops/loom" capacity)
+    jq -e '.ok == true and (.fact | test("suggested workers: [1-9]"))' <<< "$obj" >/dev/null || fail "capacity: $obj"
     sed 's/^checks = "true"$/checks = "true"\nexecutor = "orca"/' "$scratch/consumer.toml" > "$scratch/orca.toml"
     ORCA_STUB_MODE=down bash "$ops/dispatch.sh" "$scratch/orca.toml" 7 >/dev/null 2>&1 && fail 'required orca not ready: dispatch accepted'
     bash "$ops/dispatch.sh" "$scratch/orca.toml" 7 --executor local >/dev/null 2>&1 && fail 'consumer requires orca: --executor local accepted'
