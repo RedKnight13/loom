@@ -60,6 +60,7 @@ loom_validate() {
       (.worker_pid == null or (.worker_start | type == "string" and length > 0)) and
       (.started_at | iso) and
       ((has("launched_at") | not) or (.launched_at | iso)) and
+      ((has("limit_min") | not) or .limit_min == null or (.limit_min | type == "number" and . > 0)) and
       ((has("report_offset") | not) or (.report_offset | type == "number" and . >= 0)) and
       (.reports | type == "array") and
       all(.reports[]; (.at | iso) and
@@ -89,6 +90,7 @@ loom_pstart() {
     local s
     s=$(ps -o lstart= -p "$1" 2>/dev/null) || return 1
     s="${s#"${s%%[![:space:]]*}"}"
+    s="${s%"${s##*[![:space:]]}"}"
     [[ -n $s ]] || return 1
     printf '%s' "$s"
 }
@@ -120,6 +122,17 @@ loom_harvest() {  # loom_harvest <file> <why-if-silent>
     else
         state=failed
         fact=$silent
+    fi
+    # Workers never touch git (executor sandboxes may forbid it): loom seals
+    # whatever the worker left in its workdir as one commit on the ticket
+    # branch. WORK.md and REPORT.md are excluded at dispatch.
+    local id=${file##*/}
+    id=${id%.json}
+    if [[ -n $(git -C "$workdir" status --porcelain 2>/dev/null) ]]; then
+        if ! { git -C "$workdir" add -A &&
+               git -C "$workdir" -c commit.gpgsign=false commit -q -m "loom($id): $state — $fact"; } >/dev/null 2>&1; then
+            fact="$fact [loom could not commit the workdir]"
+        fi
     fi
     loom_append "$file" "$state" "$fact" true
     printf '%s\n' "$state"

@@ -1,0 +1,12 @@
+# Loom as its own consumer: drill tickets (L2) live here as issues.
+# Loom's code is written by the conductor; workers on loom tickets are drill
+# subjects, and drill branches are never merged.
+repo      = "RedKnight13/loom"
+checks    = "bash ops/selftest.sh && shellcheck -x ops/*.sh"
+worktrees = "~/Work/claude-code/loom-workdirs"
+laws = [
+  "Workers never push; only the conductor pushes, reviews and merges, under the owner's GitHub name.",
+  "Nothing identifying the owner enters any file, log, or commit.",
+  "Never guess a decision that belongs to the owner: end the turn blocked with one concrete question.",
+  "Captured exit codes only; a check that was not run is reported as not run.",
+]
