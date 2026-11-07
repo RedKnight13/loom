@@ -10,7 +10,7 @@ What works today, what does not, and what it was tested on. Version **0.6.0**.
 | Ticket labels | ✅ | repeatable `--label`; `loom-ready` defaulted when present |
 | Eval record (`accept` / `ignore`) | ✅ | ignore is an append-only `decisions.jsonl` |
 | Local executor (private clone) | ✅ | no remote, own `.git`, git-free worker |
-| Orca executor | ✅ | supervised worker, mail, release |
+| Orca executor ([MIT](https://github.com/stablyai/orca)) | ✅ | supervised worker, mail, release; requires 1.4.246+ and a running app |
 | Orca placement on `compute` | ✅ | first connected host wins; refuses when none |
 | Checks over SSH | ✅ | bundle over stdin, fresh tree, log back |
 | `--on HOST` for one verify run | ✅ | for assignments dispatched before a host was declared |

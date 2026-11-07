@@ -12,9 +12,13 @@ Version 0.6.0. One call, one JSON object:
 
 ## Start here
 
+- [Bootstrap prompt](bootstrap.md) — paste into Claude Code or Codex; it installs and proves Loom
 - [Setup](setup.md) — install, consumer config, Orca, compute host
 - [Support](support.md) — what works, what does not, known gaps
 - [Setup checklist](setup.md#8-first-ticket-checklist) — before the first ticket
+
+Supervised backend: [Orca](https://github.com/stablyai/orca) (MIT, 1.4.246+).
+Loom works without it; the local executor is fully supported.
 
 ## The law and the tools
 
