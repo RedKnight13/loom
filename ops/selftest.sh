@@ -431,7 +431,7 @@ EOF
     bash "$ops/orca.sh" start "$ido" >/dev/null 2>&1 && fail 'double start accepted'
     pid=$(cat "$GH_STATE/disp-$ido.pid"); for _ in $(seq 1 50); do kill -0 "$pid" 2>/dev/null || break; sleep 0.1; done
     # Start already excluded .loom/. Strip it so harvest's own exclude is what is under test.
-    sed -i '' '/^\.loom\/$/d' "$(git -C "$ws" rev-parse --git-common-dir)/info/exclude"
+    sed -i.orig '/^\.loom\/$/d' "$(git -C "$ws" rev-parse --git-common-dir)/info/exclude"
     [[ $(bash "$ops/orca.sh" harvest "$ido") == "$ido ready (harvested from orca dispatch disp-$ido)" ]] || fail 'harvest outcome'
     [[ $(git -C "$ws" log -1 --format=%s) == "loom($ido): ready — wrote notes.txt" ]] || fail 'orca worker files not committed'
     ! git -C "$ws" ls-files | grep -qE '^(WORK|REPORT)\.md$' || fail 'loom files committed from an Orca worktree'
@@ -525,6 +525,18 @@ EOF
     [[ $rc == 126 ]] || fail "failed compute_setup must be could-not-run (126), got $rc"
 )
 pass 'compute host: remote run with fallback, refusal when unreachable, setup failure is could-not-run'
+
+# --- process start time is trimmed on every platform (gap #10) ---
+# macOS pads ps's lstart; Linux does not. A stub ps pads both ends so the trim
+# is tested everywhere, not only where the platform happens to pad.
+(
+    mkdir -p "$scratch/psbin"
+    printf '#!/bin/sh\nprintf "  Sat Nov  7 05:26:31 2026    \\n"\n' > "$scratch/psbin/ps"
+    chmod +x "$scratch/psbin/ps"
+    got=$(PATH="$scratch/psbin:$PATH" bash -c 'source "$1"; loom_pstart 12345' _ "$ops/lib.sh")
+    [[ $got == 'Sat Nov  7 05:26:31 2026' ]] || fail "loom_pstart must trim both ends: [$got]"
+)
+pass 'process start time trimmed (stub ps pads both ends)'
 
 # --- the lock: a live holder blocks, a dead holder is broken ---
 n=$(jq '.reports | length' "$(rec "$id1")")
