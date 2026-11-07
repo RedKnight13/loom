@@ -432,7 +432,7 @@ case "$1" in
         esac ;;
     host)
         [[ $2 == list ]] || exit 98
-        echo '{"ok":true,"result":{"hosts":[{"kind":"ssh","name":"orca-host","id":"ssh-on","connected":true,"selector":"--host ssh:ssh-on"},{"kind":"ssh","name":"orca-off","id":"ssh-off","connected":false,"selector":"--host ssh:ssh-off"}]}}' ;;
+        echo '{"ok":true,"result":{"hosts":[{"kind":"ssh","name":"orca-host","id":"ssh-on","connected":true,"selector":"--host ssh:ssh-on"},{"kind":"ssh","name":"orca-off","id":"ssh-off","connected":false,"selector":"--host ssh:ssh-off"},{"kind":"environment","name":"orca-dup","id":"env-dup","connected":null,"selector":"--environment orca-dup"},{"kind":"ssh","name":"orca-dup","id":"ssh-dup","connected":true,"selector":"--host ssh:ssh-dup"}]}}' ;;
     reference|worktree|repo|automations)
         echo '{"ok":true,"result":{"stub":"ok"}}' ;;
     *) exit 99 ;;
@@ -549,6 +549,13 @@ pass 'ticket labels: repeatable, default loom-ready, no-default'
     out=$(bash "$ops/dispatch.sh" "$scratch/unplaced.toml" 8); idb=${out##*$'\n'}
     bash "$ops/orca.sh" start "$idb" >/dev/null 2>&1 && fail 'start on an unconnected host accepted'
     jq -e '.executor.state == "pending"' "$(rec "$idb")" >/dev/null || fail 'a refused placement changed state'
+    # #45: the first connected host wins, not compute[0].
+    sed 's/^compute = "orca-host"$/compute = ["orca-off", "orca-dup", "orca-host"]/' "$scratch/placement.toml" > "$scratch/fallback.toml"
+    out=$(bash "$ops/dispatch.sh" "$scratch/fallback.toml" 9); idf=${out##*$'\n'}
+    bash "$ops/orca.sh" start "$idf" >/dev/null || fail 'start refused though a later compute host is connected'
+    jq -e '.executor.placement.host == "orca-dup"' "$(rec "$idf")" >/dev/null || fail 'not placed on the first connected host'
+    grep -q -- '--on orca-dup' "$GH_STATE/start-$idf.args" || fail 'worker not started on the first connected host'
+    pid=$(cat "$GH_STATE/disp-$idf.pid"); for _ in $(seq 1 50); do kill -0 "$pid" 2>/dev/null || break; sleep 0.1; done
 
     [[ $(bash "$ops/orca.sh" show "$idp") == *settled* ]] || fail 'worker-show verdict'
     bash "$ops/orca.sh" read "$idp" >/dev/null || fail 'worker-read'
