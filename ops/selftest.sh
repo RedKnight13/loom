@@ -25,6 +25,7 @@ mkdir -p "$GH_STATE"
 export GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null
 repo=$LOOM_REPO
 git -C "$repo" init -q -b main
+git -C "$repo" remote add origin https://github.com/example/fixture
 git -C "$repo" config user.name 'Loom Fixture'
 git -C "$repo" config user.email 'fixture@example.invalid'
 git -C "$repo" config commit.gpgsign false
@@ -139,6 +140,21 @@ work1=${out%$'\n'*}; id1=${out##*$'\n'}
 [[ -z $(git -C "$work1" status --porcelain) ]] || fail 'WORK.md must be excluded from git'
 jq -e '.attempt == 1 and .worker_pid == null and .reports == [] and .base_sha == "'"$base"'"' "$(rec "$id1")" >/dev/null || fail 'record shape'
 pass 'dispatch makes a private, remote-less clone with mandate'
+
+# --- dispatch refuses a checkout whose origin is not the consumer's repo (#54) ---
+mkdir -p "$scratch/other"
+git -C "$scratch/other" init -q -b main
+git -C "$scratch/other" config user.name 'Other Fixture'
+git -C "$scratch/other" config user.email 'other@example.invalid'
+git -C "$scratch/other" config commit.gpgsign false
+git -C "$scratch/other" remote add origin https://github.com/example/other
+git -C "$scratch/other" commit -q --allow-empty -m other
+err=$(LOOM_REPO="$scratch/other" bash "$ops/dispatch.sh" "$scratch/consumer.toml" 7 2>&1) && fail 'a foreign checkout was accepted'
+[[ $err == *'not example/fixture'* ]] || fail "wrong refusal: $err"
+out=$(LOOM_ALLOW_ANY_CHECKOUT=1 LOOM_REPO="$scratch/other" bash "$ops/dispatch.sh" "$scratch/consumer.toml" 7) || fail 'explicit override refused'
+# Leave no record or workdir: later cases assert attempt numbering.
+rm -rf "${out%$'\n'*}" "$LOOM_STATE/${out##*$'\n'}.json"
+pass 'dispatch refuses a foreign checkout; the override is explicit (#54)'
 
 # --- conductor report validation ---
 if bash "$ops/report.sh" "$id1" unknown bad 2>/dev/null; then fail 'invalid state accepted'; fi
@@ -611,6 +627,7 @@ EOF
     jq -e '.executor.placement.host == "orca-dup"' "$(rec "$idf")" >/dev/null || fail 'not placed on the first connected host'
     grep -q -- '--on orca-dup' "$GH_STATE/start-$idf.args" || fail 'worker not started on the first connected host'
     pid=$(cat "$GH_STATE/disp-$idf.pid"); for _ in $(seq 1 50); do kill -0 "$pid" 2>/dev/null || break; sleep 0.1; done
+    bash "$ops/orca.sh" harvest "$idf" >/dev/null || fail 'harvest the #45 worker'
 
     [[ $(bash "$ops/orca.sh" show "$idp") == *settled* ]] || fail 'worker-show verdict'
     bash "$ops/orca.sh" read "$idp" >/dev/null || fail 'worker-read'
@@ -667,6 +684,27 @@ VERBS
     jq -e '.executor.state == "running"' "$(rec "$ida")" >/dev/null || fail 'refused harvest changed the record'
     bash "$ops/orca.sh" abandon "$ida" >/dev/null || fail 'abandon'
     jq -e '.executor.state == "abandoned" and (.reports[-1].fact | startswith("owner_fenced"))' "$(rec "$ida")" >/dev/null || fail 'abandon recorded as a stop'
+
+    # #56: watch must not end while an Orca dispatch is running.
+    out=$(bash "$ops/dispatch.sh" "$scratch/placement.toml" 7); idw=${out##*$'\n'}
+    bash "$ops/orca.sh" start "$idw" >/dev/null || fail 'start for the watch case'
+    pids+=("$(cat "$GH_STATE/disp-$idw.pid")")
+    started=$(date +%s)
+    ( sleep 3; bash "$ops/orca.sh" abandon "$idw" >/dev/null ) &
+    pids+=("$!")
+    within 25 bash "$ops/heartbeat.sh" --until "$idw" --every 1 > "$scratch/hb-orca-id" || fail 'watch failed for an Orca worker'
+    [[ $(( $(date +%s) - started )) -ge 2 ]] || fail 'watch ended while the Orca worker was running (#56)'
+    grep -q "^$idw"$'\t' <<< "$(cat "$scratch/hb-orca-id")" || fail 'watch did not end with status for the Orca worker'
+
+    out=$(bash "$ops/dispatch.sh" "$scratch/placement.toml" 7); idall=${out##*$'\n'}
+    bash "$ops/orca.sh" start "$idall" >/dev/null || fail 'start for the --until all case'
+    pids+=("$(cat "$GH_STATE/disp-$idall.pid")")
+    started=$(date +%s)
+    ( sleep 3; bash "$ops/orca.sh" abandon "$idall" >/dev/null ) &
+    pids+=("$!")
+    within 25 bash "$ops/heartbeat.sh" --until all --every 1 > "$scratch/hb-orca-all" || fail 'watch --until all failed'
+    [[ $(( $(date +%s) - started )) -ge 2 ]] || fail 'watch --until all ended while an Orca worker was running (#56)'
+    pass 'watch waits for running Orca workers, for one id and for all (#56)'
 )
 pass 'orca map: placement refused when unconnected, show/read/keep-open/list/peek/send/gate/run, abandon is fencing'
 

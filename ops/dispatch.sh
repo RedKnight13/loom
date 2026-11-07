@@ -38,6 +38,17 @@ worktrees=$(jq -r '.worktrees' <<< "$config")
 case $worktrees in \~) worktrees=$HOME ;; \~/*) worktrees="$HOME/${worktrees:2}" ;; esac
 [[ $worktrees == /* ]] || loom_error 'worktrees must be an absolute path (or ~/...)'
 checkout=$(git -C "${LOOM_REPO:-.}" rev-parse --show-toplevel) || loom_error 'run in the consumer checkout or set LOOM_REPO'
+# The checkout must be the consumer's repo, or the base commit comes from the
+# wrong project (gap #54). Compare the origin URL case-insensitively, ignoring
+# scheme, host and a trailing .git. LOOM_ALLOW_ANY_CHECKOUT=1 covers a repo
+# with no origin of its own (a local-only checkout).
+if [[ ${LOOM_ALLOW_ANY_CHECKOUT:-0} != 1 ]]; then
+    origin=$(git -C "$checkout" remote get-url origin 2>/dev/null || :)
+    [[ -n $origin ]] || loom_error "checkout has no origin; expected $repo (set LOOM_ALLOW_ANY_CHECKOUT=1 for a local-only repo)"
+    slug=$(printf '%s' "$origin" | sed -E 's#^(git@|ssh://git@|https?://|git://)##; s#^[^/:]+[:/]##; s#\.git$##; s#/$##' | tr '[:upper:]' '[:lower:]')
+    want=$(printf '%s' "$repo" | tr '[:upper:]' '[:lower:]')
+    [[ $slug == "$want" ]] || loom_error "checkout origin is '$origin' ($slug), not $repo"
+fi
 issue=$(gh issue view "$2" --repo "$repo" --json number,title,body)
 jq -e --argjson number "$2" '.number == $number and (.title | type == "string") and (.body | type == "string")' <<< "$issue" >/dev/null || loom_error 'invalid issue response'
 mandate=$(jq -r '.body' <<< "$issue" | loom_mandate)
