@@ -5,10 +5,12 @@
 # consumer's checks in a FRESH clone the worker never had access to:
 #   --baseline  at the base the worker started from (run before or after
 #               launch), so Done-means can be judged as "no new failures";
-#   default     at the tip of the ticket branch in the worker's clone.
+#   default     at the consumer's ticket branch tip after collect; before
+#               collect, at the tip in the worker's clone.
 # Records the run in the assignment; a branch run also records a conductor
-# report (ready = verified, failed = checks failed or could not run).
-# Exit code: the checks' own exit code (126/127 = could not run).
+# report (ready = verified, failed = checks failed, could not run, or tip moved).
+# Exit code: the checks' own exit code (126/127 = could not run), or 1 when
+# refusing to certify a branch that moved during the run.
 set -euo pipefail
 # shellcheck source=ops/lib.sh
 source "${BASH_SOURCE[0]%/*}/lib.sh"
@@ -38,6 +40,7 @@ checkout=$(jq -r '.checkout' "$file")
 workdir=$(jq -r '.workdir' "$file")
 short=$(jq -r '.branch // .short_name' "$file")  # the branch (Orca names its own)
 base=$(jq -r '.base_sha' "$file")
+collected=$(jq -r '.collected_sha // empty' "$file")
 
 # Compute host (gap #36): a consumer that declares one gets its checks run
 # there; if none is reachable, refuse. Never fall back to this machine.
@@ -56,8 +59,17 @@ trap 'rm -rf "$scratch"' EXIT
 git clone -q --no-checkout "$checkout" "$scratch/tree"
 if [[ $kind == baseline ]]; then
     sha=$base
+elif [[ -n $collected ]]; then
+    # The conductor may have rebased since collect. The consumer branch is
+    # authoritative now, even if the worker clone still has the old commit.
+    wh=''
+    source=$checkout
+    git -C "$checkout" show-ref --verify --quiet "refs/heads/$short" || loom_error "consumer checkout has no branch $short (collected $collected); refusing to verify the worker commit"
+    git -C "$scratch/tree" fetch -q "$checkout" "refs/heads/$short"
+    sha=$(git -C "$scratch/tree" rev-parse FETCH_HEAD)
 else
     wh=$(loom_ws_host "$file")
+    source=$workdir
     loom_ws "$wh" "$workdir" git show-ref --verify --quiet "refs/heads/$short" || loom_error "worker clone has no branch $short"
     if [[ -n $wh ]]; then
         loom_git_ssh -C "$scratch/tree" fetch -q "$wh:$workdir" "refs/heads/$short"
@@ -104,14 +116,23 @@ file=$(loom_record "$1")
 loom_write "$file" '.checks_runs = ((.checks_runs // []) + [{kind: $kind, sha: $sha, exit: $rc, at: $at, host: (if $host == "" then null else $host end)}])' \
     --arg kind "$kind" --arg sha "$sha" --argjson rc "$rc" --arg at "$started" --arg host "$host"
 if [[ $kind == branch ]]; then
+    # Checks may take long enough for the conductor to move the branch again.
+    # Keep the actual check exit above, but refuse to certify a stale commit.
+    current=$(loom_ws "$wh" "$source" git rev-parse --verify "refs/heads/$short^{commit}" 2>/dev/null) || current=missing
+    if [[ $current != "$sha" ]]; then
+        fact="branch $short changed during verification: checked $sha ($verdict), current $current; rerun verify"
+        loom_append "$file" failed "$fact"
+        loom_unlock
+        loom_error "$fact"
+    fi
     baseline=$(jq -r '[.checks_runs[] | select(.kind == "baseline")][-1].exit // "not run"' "$file")
     if [[ $rc == 0 ]]; then
-        loom_append "$file" ready "conductor verified: $verdict at ${sha:0:7} (baseline: $baseline)"
+        loom_append "$file" ready "conductor verified: $verdict at $sha (baseline: $baseline)"
     else
-        loom_append "$file" failed "conductor check: $verdict at ${sha:0:7} (baseline: $baseline)"
+        loom_append "$file" failed "conductor check: $verdict at $sha (baseline: $baseline)"
     fi
 fi
 loom_unlock
-printf '%s %s: %s at %s%s\n' "$1" "$kind" "$verdict" "${sha:0:7}" "${host:+ on $host}"
+printf '%s %s: %s at %s%s\n' "$1" "$kind" "$verdict" "$sha" "${host:+ on $host}"
 [[ $rc == 0 ]] || tail -n 15 "$log" >&2
 exit "$rc"

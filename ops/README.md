@@ -21,10 +21,10 @@ bash ops/loom launch add-flag.1 -- codex exec -s workspace-write "Read WORK.md .
 # 3. Keep the clock.
 bash ops/loom watch --until add-flag.1
 
-# 4. On ready: re-check in a fresh clone, collect, then PR.
+# 4. On ready: collect, re-check in a fresh clone, then PR.
 bash ops/loom verify add-flag.1 --baseline
-bash ops/loom verify add-flag.1
 bash ops/loom collect add-flag.1
+bash ops/loom verify add-flag.1
 
 # 5. When a person has dealt with a result, settle it out of status.
 bash ops/loom ack add-flag.1 "reviewed, PR merged"
@@ -45,9 +45,18 @@ scripts under `ops/` remain the mechanism; `ops/loom` is the contract.
 | `watchdog.sh [--limit-min N]` | Live worker silent past N minutes (default 30) → kills its **whole process group**, records `failed / watchdog_kill` once, keeps the workdir. Worker gone without its launcher (e.g. the conductor session died) → harvests its report or records `failed / worker_lost_no_report`. A recycled PID never matches the recorded start time and is never signalled. |
 | `heartbeat.sh --until <ID\|all> [--every SEC] [--limit-min N]` | The conductor's clock: runs the watchdog every SEC (default 60), prints only its actions, stops when the assignment (or all) has settled, then prints status. |
 | `status.sh` | One line per assignment whose latest report is `ready`, `blocked` or `failed` and has no live worker: `id<TAB>state<TAB>fact`. Silent when healthy. |
-| `verify.sh <id> [--baseline]` | Runs the consumer's `checks` in a **fresh clone** the worker never touched — at the base (`--baseline`) or at the ticket branch tip. Records every run; a branch run records a conductor report (`ready` = verified, `failed` = checks failed). Exit 126/127 is reported as **could not run**, never as a test failure. |
+| `verify.sh <id> [--baseline]` | Runs the consumer's `checks` in a **fresh clone** the worker never touched — at the base (`--baseline`) or at the ticket branch tip. After collect, uses the current consumer branch tip; before collect, uses the worker branch. Records every run and its full SHA; a branch run records a conductor report (`ready` = verified, `failed` = checks failed or branch moved). Exit 126/127 is reported as **could not run**, never as a test failure. |
 | `collect.sh <id>` | Fetches the ticket branch from the worker clone into the consumer checkout, prints the commits over the recorded base, and records `.collected_sha`. Never pushes. |
 | `report.sh <id> <state> "<fact>"` | Conductor-side manual report (e.g. recording a review verdict). |
+
+After rebasing or otherwise moving a collected branch, run `loom verify <id>`
+again before merging. It checks and reports the current tip, leaving
+`.collected_sha` as the original collection record. A missing consumer branch
+is refused; verification never falls back to the worker after collect. If the
+branch moves during checks, verification exits 1 and reports both the checked
+SHA and the current SHA (or `missing`), with a failed conductor report. The
+recorded check exit remains the actual check result; rerun verification at the
+new tip. `--baseline` always uses the recorded base SHA.
 
 ## The worker contract
 
@@ -133,7 +142,7 @@ bash ops/verify.sh <id> --baseline
 bash ops/orca.sh start <id> [--agent codex]   # worker-start in a new top-level worktree
 # ... end the turn: Orca wakes the conductor when the worker is done ...
 bash ops/orca.sh harvest <id>                 # fold REPORT.md, commit, settle
-bash ops/verify.sh <id> && bash ops/collect.sh <id>
+bash ops/collect.sh <id> && bash ops/verify.sh <id>
 ```
 
 - Orca creates and owns the worker's workspace (a worktree of the consumer
