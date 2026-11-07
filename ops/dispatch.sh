@@ -103,10 +103,12 @@ jq -n --argjson ticket "$2" --arg repo "$repo" --arg short "$short" \
       --arg workdir "$workdir" --arg checkout "$checkout" --arg base "$base_sha" \
       --argjson attempt "$attempt" --argjson limit "$(jq '.limit_min // null' <<< "$config")" \
       --argjson checks "$(jq '.checks // null' <<< "$config")" --argjson config_commit "$config_commit" \
-      --arg executor "$executor" --arg runtime "$orca_runtime" '
+      --arg executor "$executor" --arg runtime "$orca_runtime" \
+      --argjson compute "$(jq 'if has("compute") then [.compute] | flatten else null end' <<< "$config")" \
+      --argjson compute_setup "$(jq '.compute_setup // null' <<< "$config")" '
   {ticket: $ticket, repo: $repo, short_name: $short, attempt: $attempt,
    workdir: $workdir, checkout: $checkout, base_sha: $base,
-   checks: $checks, config_commit: $config_commit, limit_min: $limit, worker_pid: null, worker_start: null,
+   checks: $checks, compute: $compute, compute_setup: $compute_setup, config_commit: $config_commit, limit_min: $limit, worker_pid: null, worker_start: null,
    executor: (if $executor == "orca" then {kind: "orca", state: "pending", runtime: $runtime} else {kind: "local"} end),
    started_at: (now | todateiso8601), reports: []}
 ' > "$LOOM_STATE/.pending"
