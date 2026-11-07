@@ -1,12 +1,16 @@
-# Loom as its own consumer: drill tickets (L2) live here as issues.
-# Loom's code is written by the conductor; workers on loom tickets are drill
-# subjects, and drill branches are never merged.
+# Loom as its own consumer: Loom's own development tickets live here as issues.
+# The conductor writes and merges; workers only produce branches in their
+# worktrees and never push.
 repo      = "RedKnight13/loom"
 checks    = "bash ops/selftest.sh && shellcheck -x ops/*.sh ops/loom"
 worktrees = "~/work/loom-workdirs"
+limit_min = 45                           # generous enough for one honest turn
+workers   = 2                            # max open assignments; loom capacity suggested 2
+executor  = "auto"                       # Orca when ready, else the local launcher
+
 laws = [
   "Workers never push; only the conductor pushes, reviews and merges, under the owner's GitHub name.",
-  "Nothing identifying the owner enters any file, log, or commit.",
+  "Do not add personal paths, machine names, session IDs, or private notes to new content. Existing copyright, author and licence attribution stays.",
   "Never guess a decision that belongs to the owner: end the turn blocked with one concrete question.",
   "Captured exit codes only; a check that was not run is reported as not run.",
 ]
