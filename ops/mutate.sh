@@ -42,5 +42,6 @@ run status.sh 's/select($last <= (now - $limit \* 60))/select(false)/' "stale Or
 run dispatch.sh "s#\[\[ -n \$orca_runtime \]\] || loom_error 'executor orca required[^;]*; ##" "required Orca not enforced" m21
 run lib.sh 's/        loom_orca_running "$1"/        false/' "a running Orca worker is not live" m22
 run collect.sh 's/^if \[\[ $(cd "$workdir" \&\& cd/if true || [[ $(cd "$workdir" \&\& cd/' "collect fetches into a shared-repo branch" m23
+run verify.sh 's/^\[\[ $kind == baseline \]\] || ! loom_alive/! loom_alive/' "baseline refused while the worker runs" m24
 echo "SURVIVED=$survived"
 exit "$survived"
