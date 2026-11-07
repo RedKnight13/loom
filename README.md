@@ -5,7 +5,7 @@ agent gets one isolated copy of the repo. Every turn ends with one structured
 line. A watchdog holds the clock. Only you push.
 
 Version **0.6.0** · MIT · ~2,700 lines of bash and rules · no server, no
-database, no model of its own.
+database, no model of its own · [site](https://redknight13.github.io/loom/)
 
 ---
 
