@@ -415,6 +415,8 @@ EOF
     jq -e '.executor.state == "pending"' "$(rec "$ido")" >/dev/null || fail 'a refused start changed state'
     export ORCA_STUB_WORKER="$scratch/bin/w-slow"
     bash "$ops/orca.sh" start "$ido" >/dev/null || fail 'orca start failed'
+    bash "$ops/verify.sh" "$ido" --baseline >/dev/null || fail 'baseline refused while the worker runs (gap #32)'
+    bash "$ops/verify.sh" "$ido" >/dev/null 2>&1 && fail 'branch verify allowed while the worker runs'
     ws="$GH_STATE/orca-ws/$ido"
     jq -e --arg w "$ws" --arg b "orca/$ido" '.workdir == $w and .branch == $b and .executor.state == "running" and .executor.dispatch == "disp-'"$ido"'" and .worker_pid == null' "$(rec "$ido")" >/dev/null || fail "orca start record: $(jq -c . "$(rec "$ido")")"
     grep -q "loom worker for assignment $ido" "$GH_STATE/spec-$ido.md" || fail 'spec not handed to Orca'
