@@ -623,6 +623,8 @@ EOF
     mk fallback 'compute = ["dead-agni", "fake-agni"]'
     out=$(bash "$ops/dispatch.sh" "$scratch/fallback.toml" 7); idc=${out##*$'\n'}
     jq -e '.compute == ["dead-agni", "fake-agni"]' "$(rec "$idc")" >/dev/null || fail 'compute not recorded as a list'
+    obj=$(bash "$ops/loom" compute --consumer "$scratch/fallback.toml")
+    jq -e '.ok == true and .fact == "compute host: fake-agni"' <<< "$obj" >/dev/null || fail "loom compute: $obj"
     out=$(bash "$ops/verify.sh" "$idc" --baseline) || fail "remote baseline failed: $out $(cat "$LOOM_STATE/$idc.checks-baseline.log")"
     [[ $out == *' on fake-agni' ]] || fail "verify must name the compute host: $out"
     jq -e '.checks_runs[-1] | .host == "fake-agni" and .exit == 0' "$(rec "$idc")" >/dev/null || fail 'run not recorded with its host'
