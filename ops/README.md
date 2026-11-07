@@ -92,3 +92,41 @@ could-not-run), stale and live locks, corrupt state.
 `bash ops/mutate.sh` proves the selftest has teeth: each mutant re-introduces
 a fixed defect and the selftest must fail on every one. A gap fix lands with
 its selftest case **and** its mutant.
+
+## Executors: Orca first
+
+Owner's rule (2026-11-07): workers "only start or stop through orcacli".
+Loom detects the Orca CLI (`orca status`: runtime reachable and ready) and
+routes through it.
+
+| Policy (`executor` in the consumer config, or `dispatch --executor`) | Behaviour |
+| --- | --- |
+| `auto` (default) | Orca when detected, else the local launcher |
+| `orca` | Orca required; refused while Orca is not ready — never a silent fallback |
+| `local` | the local launcher (`launch.sh`) |
+
+While Orca is detected, `launch.sh` refuses to start anything unless
+`LOOM_ALLOW_LOCAL=1` is set explicitly.
+
+The Orca lifecycle:
+
+```bash
+bash ops/orca.sh detect                       # exit 0 = ready
+bash ops/dispatch.sh consumers/<repo>.toml 42 # record only; no clone
+bash ops/verify.sh <id> --baseline
+bash ops/orca.sh start <id> [--agent codex]   # worker-start in a new top-level worktree
+# ... end the turn: Orca wakes the conductor when the worker is done ...
+bash ops/orca.sh harvest <id>                 # fold REPORT.md, commit, settle
+bash ops/verify.sh <id> && bash ops/collect.sh <id>
+```
+
+- Orca creates and owns the worker's workspace (a worktree of the consumer
+  checkout, which must be registered once: `orca repo add --path <checkout>`).
+  Loom adopts it: writes WORK.md, excludes loom's files, commits on harvest.
+- Loom **never signals an Orca worker**. Past its limit, `status.sh` shows it
+  as `stale` for the owner's decision (Orca: a timeout alone never authorizes
+  a stop). `orca.sh stop` asks Orca to stop it and records a stop only when
+  Orca confirms one; `stop_unknown` changes nothing.
+- A failed `worker-start` is recorded (`failed_start`) and never retried.
+- Raw Orca receipts are kept as `$LOOM_STATE/<id>.orca-*.receipt`.
+- Do not poll Orca's mailbox from scripts: Orca wakes the conductor.
