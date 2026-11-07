@@ -2,7 +2,7 @@
 # shellcheck disable=SC2016  # single-quoted $names here are jq variables
 # orca.sh — the Orca executor and the Orca surface Loom needs (gaps #25, #26,
 # #35, #36, #37). Owner, 2026-11-07: workers "only start or stop through
-# orcacli", and all compute runs on build, never the laptop.
+# orcacli", and all compute runs on the declared host, never the laptop.
 #
 #   orca.sh detect                  is the Orca CLI/runtime ready? (exit 0 = yes)
 #   orca.sh hosts                   name, connected, selector per Orca host

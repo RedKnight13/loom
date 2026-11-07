@@ -1,0 +1,11 @@
+# Local consumer configs are private: they name a real repo and real paths.
+consumers/*.toml
+!consumers/example.toml
+!consumers/loom.toml
+
+# Loom state never lives in the tree, but just in case.
+.loom/
+
+# Editors and OS noise.
+.DS_Store
+*.swp

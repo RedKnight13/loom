@@ -33,7 +33,7 @@ iff `ok`. It cannot tell which executor ran the work. Specs in
 | Proof | `bash ops/selftest.sh` exit 0 · `shellcheck -x ops/*.sh ops/loom` exit 0 · `bash ops/mutate.sh`: 50 mutants, all caught |
 | Drills | D1–D4 passed at 0.5.0 on real repos. **Not yet re-run at 0.6.0.** |
 | Gaps | Found by running real workers; tracked as issues. Open: #35 (task-DAG start) and #54 (checkout origin check). |
-| Consumers | `consumers/consumer.toml` (first real consumer), `consumers/loom.toml` (drills) |
+| Consumers | `consumers/the consumer.toml` (first real consumer), `consumers/loom.toml` (drills) |
 | State dir | `~/.loom`: one JSON record + logs per assignment, plus `<id>.evidence/` and receipts |
 
 ## How to run one ticket end to end
@@ -80,7 +80,7 @@ repo's code is built by workers under tickets.
 - **Drill refresh** — D1–D4 evidence is from 0.5.0; placement and compute
   changed, so re-run and commit a new evidence file before calling 0.6.0
   certified.
-- **License** — no `LICENSE` file. Open-sourcing needs one; D3 is the question.
+- **License** — MIT, in `LICENSE`. D3 is answered.
 
 ## Standing risks, named
 
@@ -89,6 +89,6 @@ repo's code is built by workers under tickets.
 - **Executor sandboxes differ.** Loom assumes a worker can read/write its own
   workspace. Anything stricter is the consumer's problem to declare.
 - **`gh` is a dependency** for tickets. A non-GitHub Source is a later seam.
-- **Private names in-tree.** `consumers/consumer.toml`, this file, the drills and
+- **Private names in-tree.** `consumers/the consumer.toml`, this file, the drills and
   the specs name private projects and hosts. Review them before making the
   repository public; the public README/docs are already scrubbed.
