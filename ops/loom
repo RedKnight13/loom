@@ -11,7 +11,7 @@ v=$(tr -d '[:space:]' < "$root/VERSION")
 cmd=${1:-}
 shift || true
 
-usage='usage: loom version | accept --consumer FILE --short NAME --title T --scope S --out O --done D | ignore --consumer FILE --short NAME --reason TEXT | dispatch --consumer FILE --issue N [--executor auto|local|orca] | launch ID -- CMD... | start ID [--agent NAME] | harvest ID | stop ID | release ID | watch --until ID|all [--every SEC] [--limit-min N] | status | verify ID [--baseline] [--on HOST] | collect ID | report ID STATE FACT | ack ID FACT | detect'
+usage='usage: loom version | accept --consumer FILE --short NAME --title T --scope S --out O --done D | ignore --consumer FILE --short NAME --reason TEXT | dispatch --consumer FILE --issue N [--executor auto|local|orca] | launch ID -- CMD... | start ID [--agent NAME] | harvest ID | stop ID | release ID | watch --until ID|all [--every SEC] [--limit-min N] | status | verify ID [--baseline] | collect ID | report ID STATE FACT | ack ID FACT | detect'
 
 emit() {  # emit <ok:true|false> <state> <fact> [id] [ticket] [items-json] [actions-json] [exit]
     local ok=$1 state=$2 fact=$3 id=${4:-} ticket=${5:-} items=${6:-[]} actions=${7:-[]} code=${8:-}
@@ -213,13 +213,13 @@ case $cmd in
         emit true "$1" "$2" "$id"
         ;;
     watch)
-        until_id='' every='' limit=''
+        until_id=''
         wargs=()
         while [[ $# -gt 0 ]]; do
             case $1 in
                 --until) [[ $# -ge 2 ]] || emit false failed "$usage" "" "" "[]" "[]" 2; until_id=$2; shift 2 ;;
-                --every) [[ $# -ge 2 ]] || emit false failed "$usage" "" "" "[]" "[]" 2; every=$2; wargs+=(--every "$2"); shift 2 ;;
-                --limit-min) [[ $# -ge 2 ]] || emit false failed "$usage" "" "" "[]" "[]" 2; limit=$2; wargs+=(--limit-min "$2"); shift 2 ;;
+                --every) [[ $# -ge 2 ]] || emit false failed "$usage" "" "" "[]" "[]" 2; wargs+=(--every "$2"); shift 2 ;;
+                --limit-min) [[ $# -ge 2 ]] || emit false failed "$usage" "" "" "[]" "[]" 2; wargs+=(--limit-min "$2"); shift 2 ;;
                 *) emit false failed "$usage" "" "" "[]" "[]" 2 ;;
             esac
         done
@@ -242,6 +242,39 @@ case $cmd in
           else "waiting" end' <<< "$items")
         fact=$(jq -r 'if length == 0 then "nothing waits for a person" else .[0].fact end' <<< "$items")
         emit true "$state" "$fact" "$id_out" "" "$items" "$actions"
+        ;;
+    compute)
+        consumer=''
+        while [[ $# -gt 0 ]]; do
+            case $1 in
+                --consumer) [[ $# -ge 2 ]] || emit false failed "$usage" "" "" "[]" "[]" 2; consumer=$2; shift 2 ;;
+                *) emit false failed "$usage" "" "" "[]" "[]" 2 ;;
+            esac
+        done
+        [[ -n $consumer ]] || emit false failed "$usage" "" "" "[]" "[]" 2
+        config=$(loom_config "$consumer")
+        hosts=$(jq -r 'if has("compute") then (.compute | if type == "string" then . else join(" ") end) else "" end' <<< "$config")
+        if [[ -z $hosts ]]; then
+            emit true complete "no compute host declared"
+        fi
+        for h in $hosts; do
+            if loom_ssh_ready "$h"; then emit true complete "compute host: $h"; fi
+        done
+        emit false failed "no declared compute host is reachable: $hosts"
+        ;;
+    hosts)
+        [[ $# == 0 ]] || emit false failed "$usage" "" "" "[]" "[]" 2
+        out=$(run_out bash "$ops/orca.sh" hosts)
+        items=$(printf '%s\n' "$out" | jq -Rsc '[split("\n")[] | select(length > 0) | split("\t") | {id: .[0], state: (if .[1] == "true" then "connected" else "disconnected" end), fact: (.[2] // "")}]')
+        emit true complete "$(printf '%s\n' "$out" | head -n 1)" "" "" "$items"
+        ;;
+    show|read|abandon|keep-open|list|peek|inbox)
+        out=$(run_out bash "$ops/orca.sh" "$cmd" "$@")
+        emit true complete "$(printf '%s\n' "$out" | head -n 1)"
+        ;;
+    request|send|ask|reply|gate|task|run|reference|worktree|repo|base-ref|automation)
+        out=$(run_out bash "$ops/orca.sh" "$cmd" "$@")
+        emit true complete "$(printf '%s\n' "$out" | head -n 1)"
         ;;
     '')
         emit false failed "$usage" "" "" "[]" "[]" 2
