@@ -194,7 +194,9 @@ start)
     file=$(loom_record "$id")
     if [[ $rc != 0 || -z $dispatch || -z $workdir ]] || ! loom_ws "$ws_host" "$workdir" true 2>/dev/null; then
         # Orca: if worker-start fails, do not rerun it. Loom records and stops.
-        loom_write "$file" '.executor.state = "failed_start" | .executor.receipt = $r' --arg r "${receipt##*/}"
+        # Gap #50: keep Orca's dispatch id (outcome_unknown has one) so abandon can follow it.
+        loom_write "$file" '.executor.state = "failed_start" | .executor.receipt = $r | .executor.dispatch = (if $d == "" then null else $d end)' \
+            --arg r "${receipt##*/}" --arg d "$dispatch"
         loom_append "$file" failed "orca worker-start did not yield a worker (exit $rc, dispatch '${dispatch:-none}', workspace '${workdir:-none}'): see ${receipt##*/}"
         loom_unlock
         printf '%s failed_start (exit %s): see %s\n' "$id" "$rc" "$receipt" >&2
@@ -288,9 +290,25 @@ abandon)
     loom_init
     file=$(loom_record "$id")
     [[ $(loom_executor "$file") == orca ]] || loom_error "$id is not an Orca assignment"
-    [[ $(jq -r '.executor.state' "$file") == running ]] || loom_error "$id has no running Orca worker to abandon"
-    dispatch=$(jq -r '.executor.dispatch' "$file")
+    xstate=$(jq -r '.executor.state' "$file")
+    dispatch=$(jq -r '.executor.dispatch // empty' "$file")
+    # Gap #50: a failed start with a dispatch may hold Orca resources; ask Orca first.
+    [[ $xstate == running || ( $xstate == failed_start && -n $dispatch ) ]] ||
+        loom_error "$id has no running Orca worker or failed start with a dispatch to abandon"
     receipt="$LOOM_STATE/$id.orca-abandon.receipt"
+    if [[ $xstate == failed_start ]]; then
+        show="$LOOM_STATE/$id.orca-show.receipt"
+        if ! loom_orca orchestration worker-show --dispatch "$dispatch" --json > "$show" 2>&1; then
+            grep -q 'dispatch_not_found' "$show" || loom_error "worker-show failed for $dispatch; nothing recorded: see ${show##*/}"
+            loom_lock
+            file=$(loom_record "$id")
+            loom_append "$file" failed "owner_fenced (failed start; Orca no longer knows dispatch $dispatch)"
+            loom_write "$file" '.executor.state = "abandoned"'
+            loom_unlock
+            printf '%s abandoned: Orca no longer knows dispatch %s; nothing to fence\n' "$id" "$dispatch"
+            exit 0
+        fi
+    fi
     rc=0
     loom_orca orchestration worker-abandon --dispatch "$dispatch" --json > "$receipt" 2>&1 || rc=$?
     [[ $rc == 0 ]] || { printf '%s: orca refused the abandon (exit %s): see %s\n' "$id" "$rc" "$receipt" >&2; exit 1; }
