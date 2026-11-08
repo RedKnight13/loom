@@ -21,6 +21,7 @@ What works today, what does not, and what it was tested on. Version **0.6.0**.
 | Release after collect | ✅ | confirmed by Orca; never deletes worktrees |
 | Structured report harvest | ✅ | one state line per turn |
 | Consumer commit hooks | ✅ | fixers retried once; rejections logged |
+| Calibration and read-only drift check | ✅ | fixed offline drill; acceptance remains `not_run` |
 | The one-call JSON envelope | ✅ | every verb |
 | Orca read/write verbs (`send ask reply gate task run reference worktree repo base-ref automation`) | ✅ (thin) | pass-through; behaviour is Orca's, smoke-tested |
 | Orca task-DAG start (`--task --deps`) | ❌ | mapped, not wired |
@@ -29,6 +30,52 @@ What works today, what does not, and what it was tested on. Version **0.6.0**.
 | Non-GitHub ticket source | ❌ | seam exists; not implemented |
 | Multi-conductor coordination | ❌ | one state dir, one conductor at a time |
 | Windows native | ❌ | bash 3.2+/POSIX shell expected; WSL untested |
+
+## Bootstrap and continuity limits
+
+The [bootstrap prompt](bootstrap.txt) supports capability-based setup: shell
+execution, tool-enabled inspection/editing without execution, and explicitly
+unwired plain chat. It preserves existing files and asks only for unresolved
+consequential decisions. Installation is limited to granted authorization.
+
+[LOOM_SESSION.md](https://github.com/RedKnight13/loom/blob/main/templates/LOOM_SESSION.md) is a project checklist, not an
+automatic hook. Its bridge requires `loom-calibration:v1` in root `AGENTS.md`
+or `CLAUDE.md`, only after supported loading conventions are inspected. Both
+files are fingerprinted when present; neither may be substituted with a global
+instruction overwrite. Fresh-session loading must be observed;
+otherwise continuity is unverified. Unsupported clients must open it manually.
+Rechecking at session entry, before delegation and after dependency changes is
+an agent instruction, not guaranteed runtime enforcement or background repair.
+
+The confirmed schema-1 contract provides `loom calibrate --consumer FILE`
+(explicit record plus fixed offline drill) and `loom calibrate --consumer FILE
+--check` (comparison without writes, locks or drill rerun). Both ship in
+`ops/loom`; older installations must be checked for command availability.
+Hermetic regressions compose the shipped bridge with record/check, including
+concurrent input changes, SHA-256 caller repositories and relative state paths.
+This does not prove actual fresh-session instruction loading or live worker
+execution. No additional TOML keys are required.
+
+Ready means current prerequisites and offline drill only; acceptance is always
+`not_run`. Exit 0 is ready, 1 is blocked/failed and 2 is usage failure. Sanitized
+private baselines are under `${LOOM_STATE:-$HOME/.loom}/calibration/<key>.json`.
+Fingerprint changes require review before explicit re-recording; check never
+refreshes evidence. A failed record preserves the previous baseline. Observable changes during
+record/check are refused; adversarial filesystem races remain outside the
+contract. Relative `LOOM_STATE` resolves from invocation cwd; existing state
+directories require mode 0700 and proof files mode 0600. No model,
+provider authentication, real worker, consumer checks or remote compute is
+proved by calibration. The tools' byte hashes detect accidental change; they
+are not cryptographic attestation or proof that an executable is trustworthy.
+
+Schema 1 does not automatically guard existing dispatch/start/launch commands.
+The session agent must invoke and inspect the check, confirm it read the bridge,
+and stop delegation on failure. The comparison-to-delegation gap remains.
+Structural wiring, offline selftest/lint and live ticket-to-verification proof are separate
+evidence levels. The first two never imply the third. A prompt cannot establish
+universal security, automatic monitoring or full dependability. Setup uses
+selftest/lint; contributors and CI also use the longer portable mutation gate, locally or
+on a compute host with `bash ops/mutate.sh --on HOST`.
 
 ## Platform
 
@@ -57,8 +104,10 @@ Tracked as issues on the repository. At 0.6.0:
   consumer's `start_timeout_ms` raised (for example `300000`).
 - The verification drills (D1–D4) were captured at 0.5.0; 0.6.0 changes
   placement and compute, so the evidence needs a refresh against this code.
-- `dispatch` accepts a checkout whose `origin` is not the ticket's repo (#54).
-- No CI. The gate is `selftest` + `shellcheck` + `mutate` on the conductor's machine.
+- `dispatch` checks checkout origin against the ticket repository; the explicit
+  `LOOM_ALLOW_ANY_CHECKOUT=1` override relaxes it and must not be enabled by
+  bootstrap merely to bypass a mismatch.
+- No CI. The gate is `selftest` + `shellcheck` + `mutate`, run by the conductor locally or on a compute host.
 
 ## Getting help
 

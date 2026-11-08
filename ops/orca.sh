@@ -35,12 +35,12 @@
 # consumer checkout, which must be registered in Orca once) and supervises
 # it. Loom never signals an Orca worker; a stale one is surfaced by status.sh
 # for the owner. Orca wakes the conductor when a worker finishes: do not poll.
-# Raw receipts are kept as $LOOM_STATE/<id>.orca-*.receipt (never *.json: that
-# suffix is reserved for assignment records).
+# Raw receipts use <id>.orca-*.receipt[.<random>] in $LOOM_STATE (never
+# *.json: that suffix is reserved for assignment records).
 set -euo pipefail
 # shellcheck source=ops/lib.sh
 source "${BASH_SOURCE[0]%/*}/lib.sh"
-usage='usage: orca.sh detect | hosts | start <id> [--agent A] | harvest <id> | stop <id> | release <id> | show <id> | read <id> | abandon <id> | keep-open <id> | list [--run R] | request <request-id> | peek | inbox | send <id> --subject S [--body B] | ask <id> --question Q | reply --id M --body B | gate create|resolve|list | task create|update | run create|use|current|show|list | reference add|find|list | worktree rm|ps|list | repo | base-ref <ref> | automation create|list|run|remove'
+usage='usage: orca.sh detect | hosts | start <id> [--agent A] | reconcile <id> --dispatch D | harvest <id> | stop <id> | release <id> | show <id> | read <id> | abandon <id> | keep-open <id> | list [--run R] | request <request-id> | peek | inbox | send <id> --subject S [--body B] | ask <id> --question Q | reply --id M --body B | gate create|resolve|list | task create|update | run create|use|current|show|list | reference add|find|list | worktree rm|ps|list | repo | base-ref <ref> | automation create|list|run|remove'
 [[ $# -ge 1 ]] || loom_error "$usage"
 cmd=$1
 shift
@@ -56,15 +56,92 @@ receipt_get() {  # receipt_get <file> <key>...
     return 1
 }
 
-# Classify what worker-show says about one dispatch: active | settled | unknown.
-dispatch_state() {  # dispatch_state <receipt>
-    local words
-    words=$(jq -r '[.. | objects | (.terminalState? // .state? // .status?) | select(type == "string")] | unique | join(",")' "$1" 2>/dev/null || :)
-    case ",$words," in
-        *',active,'*|*',running,'*|*',starting,'*|*',in_progress,'*|*',working,'*) printf 'active' ;;
-        *',settled,'*|*',closed,'*|*',finished,'*|*',succeeded,'*|*',completed,'*|*',released,'*) printf 'settled' ;;
-        *) printf 'unknown' ;;
-    esac
+# Read only the documented worker-show envelope, never arbitrary nested metadata.
+worker_view() {
+    jq -e '
+      select(.ok == true) | .result |
+      if .dispatch then
+        {dispatch: .dispatch.id, task: .dispatch.taskId, run: .dispatch.runId,
+         parent: .dispatch.followUpOf, workspace: (.projection.workspace.id // .worker.worktreeId),
+         state: .dispatch.status, worker_state: .worker.state,
+         worker_dispatch: .worker.dispatchId, projection_dispatch: .projection.dispatchId,
+         completed_at: .dispatch.completedAt, outcome: .projection.outcome,
+         durable: .projection.evidence.durable, live_status: .projection.evidence.liveStatus,
+         liveness_reason: .projection.liveness.reason,
+         liveness: .projection.liveness.verdict, terminal: .projection.resource.terminalState}
+      else
+        {dispatch: .dispatchId, task: .taskId, run: .runId, parent: .followUpOf,
+         workspace: .workspace, state: .state, worker_state: .state,
+         liveness: .liveness, terminal: .terminalState}
+      end | select(.dispatch | type == "string" and length > 0)
+    ' "$1"
+}
+
+# A retained terminal is resource accounting, not active work. Fresh live
+# telemetry needs full, exact durable success before bypassing the live veto.
+# Keep ordinary completion and the existing stale_status exception unchanged.
+dispatch_state() {  # receipt, expected dispatch
+    local view
+    view=$(worker_view "$1" 2>/dev/null) || { printf unknown; return; }
+    jq -r --arg d "$2" '
+      def live_completion:
+        .liveness == "live" and .state == "completed" and
+        .worker_dispatch == $d and .worker_state == "succeeded" and
+        .projection_dispatch == $d and .outcome == "succeeded" and
+        .durable == true and .live_status == "fresh" and
+        (.completed_at | (type == "string" and length > 0) or (type == "number" and . > 0));
+      if .dispatch != $d then "unknown"
+      elif (.worker_dispatch != null and .worker_dispatch != $d) or
+           (.projection_dispatch != null and .projection_dispatch != $d) then "unknown"
+      elif live_completion then "settled"
+      elif (.liveness | IN("live", "working", "running")) or
+           (.state | IN("active", "running", "starting", "ready", "dispatched")) then "active"
+      elif .state == "completed" and
+           (.worker_state | IN("failed", "stopped", "outcome_unknown", "running", "starting", "active", "working", "unknown", "unverifiable") | not) and
+           (.outcome == null or (.outcome | IN("succeeded", "completed"))) and
+           (.liveness == null or (.liveness | IN("idle", "exited", "absent", "completed")) or
+            (.liveness == "unverifiable" and .liveness_reason == "stale_status" and
+             .worker_dispatch == $d and .worker_state == "succeeded" and .outcome == "succeeded" and
+             .durable == true and .live_status == "stale" and
+             (.completed_at | (type == "string" and length > 0) or (type == "number" and . > 0))))
+      then "settled" else "unknown" end
+    ' <<< "$view"
+}
+
+# Every read/send gets a private, atomically created receipt. The random suffix
+# must end the template for BSD/macOS mktemp; never rename or reuse old receipts.
+new_receipt() { mktemp "$LOOM_STATE/$id.orca-$1.receipt.XXXXXX"; }
+
+# Check a bounded, direct follow-up link. A follow-up has its own task, but
+# must stay in the same Run and exact workspace as the recorded parent.
+followup_link() {  # parent-view, child-view
+    jq -ne --argjson p "$1" --argjson c "$2" '
+      def nonempty: type == "string" and length > 0;
+      ($p.dispatch | nonempty) and ($p.task | nonempty) and ($p.run | nonempty) and
+      ($p.workspace | nonempty) and ($c.task | nonempty) and
+      $c.parent == $p.dispatch and $c.dispatch != $p.dispatch and
+      $c.task != $p.task and $c.run == $p.run and $c.workspace == $p.workspace
+    ' >/dev/null
+}
+
+# Adopt only after chain validation; caller holds the assignment lock. Preserve
+# the entire old record and evidence before clearing completion/collection flags.
+adopt_followup() {  # file, child-view, receipt, report boundary
+    local file=$1 view=$2 receipt=$3 boundary=$4 archive old
+    archive=$(mktemp -d "$LOOM_STATE/$id.history.XXXXXX")
+    cp "$file" "$archive/assignment.receipt"
+    for old in "$LOOM_STATE/$id.evidence" "$LOOM_STATE/$id.commit.log" "$LOOM_STATE/$id.orca-"*.receipt "$LOOM_STATE/$id.orca-"*.receipt.*; do
+        [[ ! -e $old ]] || cp -R "$old" "$archive/"
+    done
+    loom_write "$file" '
+      .executor.history = ((.executor.history // []) +
+          [{dispatch: .executor.dispatch, task: .executor.task, state: .executor.state,
+            archive: $archive, continued_at: (now | todateiso8601)}]) |
+      .executor.dispatch = $v.dispatch | .executor.task = $v.task |
+      .executor.state = "running" | .executor.followup_receipt = $receipt |
+      .report_offset = $offset | .launched_at = (now | todateiso8601) |
+      del(.executor.settled_at, .executor.released, .executor.released_at, .collected_sha, .acked)
+    ' --argjson v "$view" --arg archive "${archive##*/}" --arg receipt "${receipt##*/}" --argjson offset "$boundary"
 }
 
 orca_call() {  # orca_call <receipt> <args...>: run Orca, save its output
@@ -236,20 +313,17 @@ harvest)
     file=$(loom_record "$id")
     [[ $(loom_executor "$file") == orca && $(jq -r '.executor.state' "$file") == running ]] || loom_error "$id has no running Orca worker to harvest"
     dispatch=$(jq -r '.executor.dispatch' "$file")
-    # Ask Orca before claiming the dispatch settled (#35). Unknown shapes do
-    # not block a conductor's explicit harvest; a clearly active one does.
-    show="$LOOM_STATE/$id.orca-show.receipt"
-    if loom_orca orchestration worker-show --dispatch "$dispatch" --json > "$show" 2>&1; then
-        case $(dispatch_state "$show") in
-            active) loom_error "dispatch $dispatch is still active; wait for it to settle before harvest" ;;
-            settled) : ;;
-            *) printf 'loom: warning: worker-show gave no settled verdict; harvesting anyway: see %s\n' "${show##*/}" >&2 ;;
-        esac
-    else
-        printf 'loom: warning: worker-show failed; harvesting anyway: see %s\n' "${show##*/}" >&2
-    fi
     loom_lock
     file=$(loom_record "$id")
+    [[ $(jq -r '.executor.state' "$file") == running && $(jq -r '.executor.dispatch' "$file") == "$dispatch" ]] ||
+        loom_error 'assignment changed before harvest; retry'
+    [[ $(jq -r '.executor.continuation_pending // false' "$file") == false ]] ||
+        loom_error 'send outcome unresolved; reconcile its follow-up before harvest'
+    show=$(new_receipt show)
+    loom_orca orchestration worker-show --dispatch "$dispatch" --full --json > "$show" 2>&1 ||
+        loom_error "worker-show failed; nothing harvested: see ${show##*/}"
+    [[ $(dispatch_state "$show" "$dispatch") == settled ]] ||
+        loom_error "dispatch $dispatch is not positively completed; nothing harvested: see ${show##*/}"
     state=$(loom_harvest "$file" 'worker_done_without_report (orca)')
     loom_write "$file" '.executor.state = "settled" | .executor.settled_at = (now | todateiso8601)'
     loom_unlock
@@ -349,10 +423,10 @@ show)
     file=$(loom_record "$id")
     dispatch=$(jq -r '.executor.dispatch // empty' "$file")
     [[ -n $dispatch ]] || loom_error "$id has no Orca dispatch"
-    receipt="$LOOM_STATE/$id.orca-show.receipt"
-    orca_call "$receipt" orchestration worker-show --dispatch "$dispatch" --json ||
+    receipt=$(new_receipt show)
+    orca_call "$receipt" orchestration worker-show --dispatch "$dispatch" --full --json ||
         { printf '%s: worker-show failed: see %s\n' "$id" "${receipt##*/}" >&2; exit 1; }
-    state=$(dispatch_state "$receipt")
+    state=$(dispatch_state "$receipt" "$dispatch")
     printf '%s show: %s (dispatch %s)\n' "$id" "$state" "$dispatch"
     ;;
 
@@ -405,7 +479,109 @@ send)
     id=$1; subject=$3; shift 3
     body=''
     if [[ $# == 2 && $1 == --body ]]; then body=$2; elif [[ $# != 0 ]]; then loom_error "$usage"; fi
-    loom_orca orchestration send --to "dispatch:$id" --subject "$subject" --body "$body" --json
+    loom_id "$id"
+    loom_init
+    loom_lock
+    # Older callers pass an Orca dispatch ID. Resolve it inside the lock;
+    # never send untracked work or choose between duplicate assignment owners.
+    if [[ ! -e $LOOM_STATE/$id.json ]]; then
+        matches=()
+        for candidate in "$LOOM_STATE/"*.json; do
+            [[ -f $candidate && ! -L $candidate ]] || continue
+            if jq -e --arg d "$id" '.executor.kind == "orca" and .executor.dispatch == $d' "$candidate" >/dev/null; then
+                matches+=("${candidate##*/}")
+            fi
+        done
+        [[ ${#matches[@]} == 1 ]] || loom_error 'send target is not one unambiguous stored assignment or dispatch'
+        id=${matches[0]%.json}
+        loom_id "$id"
+    fi
+    file=$(loom_record "$id")
+    [[ $(loom_executor "$file") == orca ]] || loom_error "$id is not an Orca assignment"
+    xstate=$(jq -r '.executor.state' "$file")
+    [[ $xstate == running || $xstate == settled ]] || loom_error "$id cannot receive continuation in $xstate"
+    [[ $(jq -r '.executor.continuation_pending // false' "$file") == false ]] ||
+        loom_error 'previous send unresolved; reconcile before sending again'
+    dispatch=$(jq -r '.executor.dispatch' "$file")
+    # A continuation stays on the recorded remote workspace; never resume a
+    # local worker when the assignment declares remote compute.
+    jq -e '(.compute // []) as $hosts | ($hosts | length) == 0 or
+        (.ws_host as $h | $h != null and ($hosts | index($h)) != null)' "$file" >/dev/null ||
+        loom_error 'recorded worker is not on configured compute; no local continuation'
+    # Record the boundary before delivery: the worker can append immediately.
+    boundary=$(loom_report_boundary "$file")
+    receipt=$(new_receipt send)
+    loom_write "$file" '.executor.continuation_pending = true | .executor.send_boundary = $n | .executor.send_receipt = $r' \
+        --argjson n "$boundary" --arg r "${receipt##*/}"
+    loom_orca orchestration send --to "dispatch:$dispatch" --subject "$subject" --body "$body" --json > "$receipt" 2>&1 ||
+        loom_error "send outcome unresolved; do not resend; reconcile after inspection: see ${receipt##*/}"
+    jq -e '.ok == true' "$receipt" >/dev/null || loom_error "send not confirmed: see ${receipt##*/}"
+    next=$(jq -r '.result.dispatchId // empty' "$receipt")
+    if [[ -n $next && $next != "$dispatch" ]]; then
+        [[ $(jq -r '.result.followUpOf // empty' "$receipt") == "$dispatch" ]] ||
+            loom_error "send has no matching follow-up parent: see ${receipt##*/}"
+        # Reconcile performs the same exact identity checks as recovery.
+        loom_unlock
+        bash "${BASH_SOURCE[0]}" reconcile "$id" --dispatch "$next" >/dev/null
+    elif [[ $xstate == running ]] && jq -e '(.result.delivery? == null) and
+        ((.result.messageId | type == "string") or (.result.message.id | type == "string"))' "$receipt" >/dev/null; then
+        loom_write "$file" 'del(.executor.continuation_pending, .executor.send_boundary)'
+        loom_unlock
+    else
+        loom_error "unrecognized send receipt; reconcile before harvest: see ${receipt##*/}"
+    fi
+    cat "$receipt"
+    ;;
+
+reconcile)
+    [[ $# == 3 && $2 == --dispatch ]] || loom_error "$usage"
+    id=$1; next=$3
+    loom_id "$id"; loom_id "$next"
+    loom_init
+    loom_lock
+    file=$(loom_record "$id")
+    [[ $(loom_executor "$file") == orca ]] || loom_error "$id is not an Orca assignment"
+    [[ $(jq -r '.executor.state' "$file") =~ ^(running|settled)$ ]] || loom_error 'assignment cannot be reconciled in this state'
+    dispatch=$(jq -r '.executor.dispatch' "$file")
+    receipt=$(new_receipt reconcile)
+    loom_orca orchestration worker-show --dispatch "$next" --full --json > "$receipt" 2>&1 ||
+        loom_error "cannot verify follow-up: see ${receipt##*/}"
+    child=$(worker_view "$receipt") || loom_error 'invalid follow-up receipt'
+    [[ $(jq -r '.dispatch' <<< "$child") == "$next" ]] || loom_error 'follow-up dispatch mismatch'
+    if [[ $next == "$dispatch" ]]; then
+        [[ $(jq -r '.executor.continuation_pending // false' "$file") == false ]] ||
+            loom_error 'an old dispatch cannot resolve an uncertain send; verify the follow-up identity'
+        loom_unlock
+        printf '%s already tracks dispatch %s\n' "$id" "$next"
+        exit 0
+    fi
+    original=$child
+    seen=" $next "
+    for ((depth=0; depth<16; depth++)); do
+        parent=$(jq -r '.parent // empty' <<< "$child")
+        [[ -n $parent && $seen != *" $parent "* ]] || loom_error 'missing or cyclic follow-up ancestry'
+        loom_id "$parent"
+        show=$(new_receipt ancestor)
+        loom_orca orchestration worker-show --dispatch "$parent" --full --json > "$show" 2>&1 ||
+            loom_error "cannot verify ancestor: see ${show##*/}"
+        ancestor=$(worker_view "$show") || loom_error 'invalid ancestor receipt'
+        [[ $(jq -r '.dispatch' <<< "$ancestor") == "$parent" ]] || loom_error 'ancestor dispatch mismatch'
+        followup_link "$ancestor" "$child" || loom_error 'follow-up task/run/workspace chain mismatch'
+        if [[ $parent == "$dispatch" ]]; then break; fi
+        seen+="$parent "
+        child=$ancestor
+    done
+    [[ $parent == "$dispatch" ]] || loom_error 'follow-up chain exceeds 16 links'
+    [[ $(jq -r '.executor.task' "$file") == "$(jq -r '.task' <<< "$ancestor")" &&
+       $(jq -r '.executor.run' "$file") == "$(jq -r '.run' <<< "$ancestor")" &&
+       $(jq -r '.workspace' <<< "$ancestor") == *"::$(jq -r '.workdir' "$file")" ]] ||
+        loom_error 'ancestor does not belong to this assignment'
+    boundary=$(jq -r '.executor.send_boundary // empty' "$file")
+    [[ -n $boundary ]] || boundary=$(loom_report_boundary "$file")
+    adopt_followup "$file" "$original" "$receipt" "$boundary"
+    loom_write "$file" 'del(.executor.continuation_pending, .executor.send_boundary)'
+    loom_unlock
+    printf '%s tracks follow-up dispatch %s; harvest still requires positive completion\n' "$id" "$next"
     ;;
 
 ask)
@@ -520,6 +696,7 @@ release)
     loom_init
     file=$(loom_record "$id")
     [[ $(loom_executor "$file") == orca ]] || loom_error "$id is not an Orca assignment"
+    [[ $(jq -r '.executor.continuation_pending // false' "$file") == false ]] || loom_error 'send outcome unresolved; reconcile before release'
     [[ $(jq -r '.executor.state' "$file") == settled ]] || loom_error "$id is not settled; release after harvest or a confirmed stop"
     [[ $(jq -r '.collected_sha // empty' "$file") =~ ^[0-9a-f]{40}$ ]] || loom_error "$id branch is not collected; release after collect"
     [[ $(jq -r '.executor.released // false' "$file") == false ]] || loom_error "$id already released"
