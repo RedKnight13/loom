@@ -231,7 +231,7 @@ fi
     (
         export NATIVE_ORCA_CALLS="$scratch/cal-orca-calls"
         # Observe resolution as well as execution; no real tool is replaced.
-        # shellcheck disable=SC2317  # exported override invoked by calibration
+        # shellcheck disable=SC2317,SC2329  # exported override invoked by calibration
         command() {
             if [[ ${1:-} == -v && ${2:-} == "${LOOM_ORCA:-orca}" ]]; then
                 printf 'resolved\n' >> "$NATIVE_ORCA_CALLS"
@@ -277,7 +277,8 @@ EOF
     [[ $(jq -r '.fingerprint.bridge' "$proof") == "$expected" ]] || fail 'bridge serialization is not canonical'
     expected=$(
         for source in "$ops/../VERSION" "$ops/loom" "$ops"/*.sh; do
-            case $source in */VERSION) relative=VERSION ;; *) relative=ops/${source##*/} ;; esac
+            # Balance case-pattern parentheses for Bash 3.2 command substitution.
+            case $source in (*/VERSION) relative=VERSION ;; (*) relative=ops/${source##*/} ;; esac
             jq -nc --arg n "$relative" --arg d "$(git hash-object --no-filters "$source")" '[$n,$d]'
         done | jq -Scs 'sort_by(.[0])' | git hash-object --stdin
     )
