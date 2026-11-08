@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Fixed-command, explicitly installed SSH endpoint. No request-supplied paths.
-# shellcheck disable=SC2154 # S4 context loader supplies _nn_* state.
+# shellcheck disable=SC2154,SC2030,SC2031 # S4 context loader supplies _nn_* state.
 
 _loom_remote_root() ( cd -- "${BASH_SOURCE[0]%/*}" && pwd -P; )
 _loom_remote_load() {
@@ -19,10 +19,11 @@ _loom_remote_load() {
     local file
     [[ -d $_rh_runtime/schemas && ! -L $_rh_runtime/schemas ]] || return 2
     [[ -z $(find "$_rh_runtime/schemas" ! -type f ! -type d -print -quit) ]] || return 2
-    for file in native.sh native-supervisor.sh output.sh protocol.sh policy.sh state.sh; do
+    for file in native.sh native-supervisor.sh output.sh protocol.sh policy.sh state.sh mail.sh worker-bridge.sh; do
         _loom_ssh_private "$_rh_runtime/ops/$file" || return 2
     done
     unset LOOM_NATIVE_PROTOCOL_MODULE LOOM_NATIVE_STATE_MODULE LOOM_NATIVE_POLICY_MODULE LOOM_NATIVE_TEST_FAULT
+    unset LOOM_MAIL_PROTOCOL_MODULE LOOM_MAIL_STATE_MODULE LOOM_MAIL_POLICY_MODULE LOOM_MAIL_NATIVE_MODULE LOOM_MAIL_SSH_MODULE
     # shellcheck disable=SC1090,SC1091
     source "$_rh_runtime/ops/native.sh" || return 2
     _loom_native_load && loom_protocol_lex "$_rh_config"
@@ -41,7 +42,7 @@ _loom_remote_identity() {
     local helper_digest context_digest
     helper_digest=$({
         sha256sum "$root/remote-helper.sh" "$root/transport-ssh.sh" "$_rh_config"
-        for file in native.sh native-supervisor.sh output.sh protocol.sh policy.sh state.sh; do sha256sum "$_rh_runtime/ops/$file"; done
+        for file in native.sh native-supervisor.sh output.sh protocol.sh policy.sh state.sh mail.sh worker-bridge.sh; do sha256sum "$_rh_runtime/ops/$file"; done
         while IFS= read -r -d '' file; do
             _loom_ssh_private "$file" || return 2
             sha256sum "$file"
@@ -219,7 +220,19 @@ loom_remote_serve() (
             jq -c .request "$temp/header" > "$temp/request"
             loom_protocol_check_request "$temp/request" > "$temp/response" || rc=$?
             if (( rc==0 )); then
-                if [[ $(jq -r .op "$temp/request") == workspace.prepare ]]; then
+                if [[ $(jq -r .protocol "$temp/request") == loom.coordination ]]; then
+                    if [[ $(jq -r .op "$temp/request") == mail.pump ]]; then
+                        # Load S7 only after the pinned helper/context identity is
+                        # authenticated. Mail commands from workers never select
+                        # this trusted intake path or a request-supplied context.
+                        # shellcheck disable=SC1090,SC1091
+                        source "$_rh_runtime/ops/worker-bridge.sh" || return 2
+                        loom_worker_bridge_exchange "$_rh_context" "$temp/request" > "$temp/response" || rc=$?
+                    else
+                        loom_protocol_receipt "$temp/request" refused unsupported_capability 'Only bounded mail exchange is supported by this host helper' 'mail.pump.v1' > "$temp/response"
+                        rc=2
+                    fi
+                elif [[ $(jq -r .op "$temp/request") == workspace.prepare ]]; then
                     /bin/bash "$root/remote-helper.sh" _prepare "$root" "$(jq -r .context_id "$temp/header")" "$temp/request" > "$temp/response" || rc=$?
                 elif [[ $(jq -r .op "$temp/request") == hello && $_rh_plan != null ]]; then
                     jq '.args.required_capabilities -= ["workspace.prepare.v1"]' "$temp/request" > "$temp/native-request"
