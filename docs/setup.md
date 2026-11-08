@@ -196,6 +196,7 @@ laws      = [                        # copied verbatim into every WORK.md
 limit_min = 45                       # optional; default 30
 executor  = "auto"                   # auto | local | orca
 workers   = 3                        # optional: max open assignments; omit = unlimited
+agent     = "codex"                  # optional: Orca worker agent; omit = codex
 ```
 
 </div>
@@ -224,6 +225,11 @@ a commit. Preserve existing configuration; bootstrap does not commit it.
 `workers` is the maximum number of open assignments for this consumer. `dispatch`
 counts records that are live or dispatched-but-unsettled and refuses past the
 cap with the ids that hold the slots. Omit the key for no cap.
+
+`agent` names the Orca worker agent (for example `codex` or `claude`). It is
+recorded with each dispatch and used by `start`; `start ID --agent NAME`
+overrides it for one launch. Local workers run the command you pass to
+`launch`, so the key does not apply to them.
 
 `bash "$LOOM_TOOLS/ops/loom" capacity` reports what Orca can carry right now — runtime ready, connected
 hosts — and suggests a number (one per connected host, minimum one). The
@@ -354,8 +360,9 @@ bash "$LOOM_TOOLS/ops/loom" release add-flag.1                  # after collect
 
 </div>
 
-`start` defaults to the `codex` agent; use `start add-flag.1 --agent NAME` for an
-approved alternative available in Orca. `collect` fetches the branch and `release`
+`start` uses the consumer's `agent` (default `codex`); use
+`start add-flag.1 --agent NAME` to override it for one launch with an approved
+alternative available in Orca. `collect` fetches the branch and `release`
 releases the settled worker; neither proves project acceptance. Review, push and
 merge remain the authorized conductor's actions. Reverify after any change to
 the collected revision.

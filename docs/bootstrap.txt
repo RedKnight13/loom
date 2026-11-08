@@ -64,10 +64,19 @@ prompt is not proof of dependable operation.
    Reuse an existing config when correct. Infer candidates from repository
    remotes, project instructions and CI, but do not invent an owner's decision
    or treat an arbitrary shell command as trusted. Ask only for unresolved
-   ticket repository, trusted checks, workspace location, executor and worker
-   cap. Run `bash "$LOOM_TOOLS/ops/loom" capacity` when available and offer its
-   suggestion; it is not permission to launch that many workers. Omitted
-   workers = no cap.
+   ticket repository, trusted checks, workspace location, executor, worker
+   count and worker agent. Before asking, inspect what is available instead of
+   guessing: `bash "$LOOM_TOOLS/ops/loom" capacity` for Orca readiness,
+   connected hosts and a suggested count; `bash "$LOOM_TOOLS/ops/loom" hosts`
+   for the host names;
+   `orca account list --json` for agents the runtime can launch; and the agent
+   CLIs actually installed for local workers.
+   If Orca is ready with a connected host, say its environment is already set
+   up and reuse it; do not install or reconfigure it. Offer the suggested count
+   as the default and write `workers = N`; omitting it means no cap. For Orca
+   workers write `agent = "<id>"` (omit to use codex); local workers run the
+   command you launch. Report a choice the owner leaves open as unset; a
+   suggestion is not permission to launch that many workers.
    Create or narrowly update consumers/<name>.toml from consumers/example.toml
    only within authorized scope; preserve unrelated values. Private configs
    there are ignored, except the tracked examples. A tracked consumer config
@@ -166,7 +175,8 @@ prompt is not proof of dependable operation.
    with --consumer "$FILE" and the same reviewed --short/--title/--scope/--out/--done
    values (omit --dry-run). This opens an issue, not a worker and not project
    acceptance. Use its returned ticket number for an authorized dispatch,
-   then its returned assignment id for start (Orca) or launch (local); check
+   then its returned assignment id for start (Orca: uses the config's agent;
+   `--agent` overrides) or launch (local: your command); check
    calibration immediately before dispatch and again before start/launch.
    Follow the setup reference for harvest, revision-specific verify and collect;
    do not continue dependent actions after a failed command or non-ready report.

@@ -77,6 +77,7 @@ loom_validate() {
       ((has("effort") | not) or .effort == null or (.effort | type == "string")) and
       ((has("start_timeout_ms") | not) or .start_timeout_ms == null or (.start_timeout_ms | type == "number" and . > 0)) and
       ((has("workers") | not) or .workers == null or (.workers | type == "number" and . > 0)) and
+      ((has("agent") | not) or .agent == null or (.agent | type == "string" and test("^[a-z0-9-]+$"))) and
       ((has("config_commit") | not) or .config_commit == null or (.config_commit | type == "string" and test("^[0-9a-f]{40}$"))) and
       ((has("checks") | not) or .checks == null or (.checks | type == "string")) and
       ((has("checks_runs") | not) or (.checks_runs | type == "array" and
@@ -299,7 +300,8 @@ loom_config() {
      ((has("effort") | not) or (.effort | type == "string" and (test("[\\s]") | not))) and
      ((has("start_timeout_ms") | not) or (.start_timeout_ms | type == "number" and . > 0 and . == floor)) and
      ((has("workers") | not) or (.workers | type == "number" and . > 0 and . == floor)) and
-     ((keys - ["repo", "checks", "worktrees", "laws", "limit_min", "executor", "compute", "compute_setup", "compute_selector", "model", "effort", "start_timeout_ms", "workers"]) | length == 0)
+     ((has("agent") | not) or (.agent | type == "string" and test("^[a-z0-9-]+$"))) and
+     ((keys - ["repo", "checks", "worktrees", "laws", "limit_min", "executor", "compute", "compute_setup", "compute_selector", "model", "effort", "start_timeout_ms", "workers", "agent"]) | length == 0)
   then . else error("invalid consumer config") end
 ' "$1" || loom_error 'unsupported or invalid consumer TOML; see ops/README.md'
 }

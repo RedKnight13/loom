@@ -20,6 +20,10 @@ stale code.
 | Plain chat without project tools | Unwired; reopen in a capable project session |
 
 Setup runs `bash ops/selftest.sh` and `shellcheck -x ops/*.sh ops/loom`.
+Worker count and the Orca worker agent are asked only when unresolved: `loom
+capacity` reports readiness, connected hosts and a suggested count, `loom hosts`
+names them, and `orca account list --json` shows agents the runtime can launch.
+A ready Orca environment is reused, not reconfigured.
 `ops/mutate.sh` is the longer contributor/CI gate, not a setup requirement.
 It can run locally or on a compute host with `bash ops/mutate.sh --on HOST`.
 Missing tools are installed only within granted authorization. Existing files,
