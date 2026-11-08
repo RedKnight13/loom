@@ -1,0 +1,3691 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:loom:execution:1.0",
+  "title": "Loom execution protocol 1.0",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/request"
+    },
+    {
+      "$ref": "#/$defs/response"
+    }
+  ],
+  "$defs": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "x-loom-maxUtf8Bytes": 128,
+      "pattern": "^[^\u0000]*$",
+      "examples": [
+        "example"
+      ]
+    },
+    "digest": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 57,
+      "x-loom-maxUtf8Bytes": 57,
+      "pattern": "^git-blob-sha1-v1:[0-9a-f]{40}$",
+      "examples": [
+        "git-blob-sha1-v1:1111111111111111111111111111111111111111"
+      ]
+    },
+    "artifact": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "x-loom-maxUtf8Bytes": 256,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*(/[A-Za-z0-9][A-Za-z0-9_-]*)*$",
+      "examples": [
+        "artifacts/example"
+      ]
+    },
+    "timestamp": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 20,
+      "x-loom-maxUtf8Bytes": 20,
+      "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]Z$",
+      "examples": [
+        "2026-01-01T00:00:00Z"
+      ],
+      "format": "date-time"
+    },
+    "version": {
+      "type": "object",
+      "properties": {
+        "major": {
+          "const": 1
+        },
+        "minor": {
+          "const": 0
+        }
+      },
+      "required": [
+        "major",
+        "minor"
+      ],
+      "additionalProperties": false
+    },
+    "extensions": {
+      "type": "object",
+      "maxProperties": 32,
+      "propertyNames": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128,
+        "x-loom-maxUtf8Bytes": 128,
+        "pattern": "^[a-z][a-z0-9_-]*([.:][a-z][a-z0-9_-]*)+$",
+        "examples": [
+          "example.extra"
+        ]
+      }
+    },
+    "actor": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "x-loom-maxUtf8Bytes": 128,
+          "pattern": "^[^\u0000]*$",
+          "examples": [
+            "example"
+          ]
+        },
+        "run_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "x-loom-maxUtf8Bytes": 128,
+              "pattern": "^[^\u0000]*$",
+              "examples": [
+                "example"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "id",
+        "run_id",
+        "epoch"
+      ],
+      "additionalProperties": false
+    },
+    "target": {
+      "type": "object",
+      "properties": {
+        "assignment_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "x-loom-maxUtf8Bytes": 128,
+              "pattern": "^[^\u0000]*$",
+              "examples": [
+                "example"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "attempt_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "x-loom-maxUtf8Bytes": 128,
+              "pattern": "^[^\u0000]*$",
+              "examples": [
+                "example"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "host_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "x-loom-maxUtf8Bytes": 128,
+              "pattern": "^[^\u0000]*$",
+              "examples": [
+                "example"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "assignment_id",
+        "attempt_id",
+        "host_id"
+      ],
+      "additionalProperties": false
+    },
+    "error": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "x-loom-maxUtf8Bytes": 128,
+          "pattern": "^[^\u0000]*$",
+          "examples": [
+            "example"
+          ]
+        },
+        "message": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 4096,
+          "x-loom-maxUtf8Bytes": 4096,
+          "pattern": "^[^\u0000]*$",
+          "examples": [
+            "example"
+          ]
+        },
+        "retry": {
+          "enum": [
+            "never",
+            "same_operation",
+            "after_reconcile"
+          ]
+        }
+      },
+      "required": [
+        "code",
+        "message",
+        "retry"
+      ],
+      "additionalProperties": false
+    },
+    "effect": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "x-loom-maxUtf8Bytes": 128,
+          "pattern": "^[^\u0000]*$",
+          "examples": [
+            "example"
+          ]
+        },
+        "resource": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "x-loom-maxUtf8Bytes": 128,
+          "pattern": "^[^\u0000]*$",
+          "examples": [
+            "example"
+          ]
+        },
+        "disposition": {
+          "enum": [
+            "created",
+            "updated",
+            "retained",
+            "unknown"
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "resource",
+        "disposition"
+      ],
+      "additionalProperties": false
+    },
+    "evidence": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "x-loom-maxUtf8Bytes": 128,
+          "pattern": "^[^\u0000]*$",
+          "examples": [
+            "example"
+          ]
+        },
+        "ref": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "x-loom-maxUtf8Bytes": 256,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*(/[A-Za-z0-9][A-Za-z0-9_-]*)*$",
+          "examples": [
+            "artifacts/example"
+          ]
+        },
+        "digest": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 57,
+              "x-loom-maxUtf8Bytes": 57,
+              "pattern": "^git-blob-sha1-v1:[0-9a-f]{40}$",
+              "examples": [
+                "git-blob-sha1-v1:1111111111111111111111111111111111111111"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "kind",
+        "ref",
+        "digest",
+        "bytes",
+        "truncated"
+      ],
+      "additionalProperties": false
+    },
+    "limits": {
+      "type": "object",
+      "properties": {
+        "request_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1048576
+        },
+        "response_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1048576
+        },
+        "metadata_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65536
+        },
+        "message_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65536
+        },
+        "read_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65536
+        },
+        "list_rows": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "diagnostic_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1048576
+        }
+      },
+      "required": [
+        "request_bytes",
+        "response_bytes",
+        "metadata_bytes",
+        "message_bytes",
+        "read_bytes",
+        "list_rows",
+        "diagnostic_bytes"
+      ],
+      "additionalProperties": false
+    },
+    "start_limits": {
+      "type": "object",
+      "properties": {
+        "runtime_ms": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "stop_on_timeout": {
+          "type": "boolean"
+        },
+        "allow_kill": {
+          "type": "boolean"
+        },
+        "output_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1073741824
+        }
+      },
+      "required": [
+        "runtime_ms",
+        "stop_on_timeout",
+        "allow_kill",
+        "output_bytes"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "stop_on_timeout": {
+                "const": true
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "runtime_ms": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "allow_kill": {
+                "const": true
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "stop_on_timeout": {
+                "const": true
+              }
+            }
+          }
+        }
+      ]
+    },
+    "binding": {
+      "type": "object",
+      "properties": {
+        "assignment_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "x-loom-maxUtf8Bytes": 128,
+          "pattern": "^[^\u0000]*$",
+          "examples": [
+            "example"
+          ]
+        },
+        "attempt_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "x-loom-maxUtf8Bytes": 128,
+          "pattern": "^[^\u0000]*$",
+          "examples": [
+            "example"
+          ]
+        },
+        "host_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "x-loom-maxUtf8Bytes": 128,
+          "pattern": "^[^\u0000]*$",
+          "examples": [
+            "example"
+          ]
+        }
+      },
+      "required": [
+        "assignment_id",
+        "attempt_id",
+        "host_id"
+      ],
+      "additionalProperties": false
+    },
+    "native_identity": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "native"
+        },
+        "host_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "x-loom-maxUtf8Bytes": 128,
+          "pattern": "^[^\u0000]*$",
+          "examples": [
+            "example"
+          ]
+        },
+        "transport_identity": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "x-loom-maxUtf8Bytes": 128,
+          "pattern": "^[^\u0000]*$",
+          "examples": [
+            "example"
+          ]
+        },
+        "host_installation_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "x-loom-maxUtf8Bytes": 128,
+          "pattern": "^[^\u0000]*$",
+          "examples": [
+            "example"
+          ]
+        },
+        "boot_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "x-loom-maxUtf8Bytes": 128,
+          "pattern": "^[^\u0000]*$",
+          "examples": [
+            "example"
+          ]
+        },
+        "uid": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "pid": {
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 4194304
+        },
+        "start_ticks": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 20,
+          "x-loom-maxUtf8Bytes": 20,
+          "pattern": "^[0-9]+$",
+          "examples": [
+            "123"
+          ]
+        },
+        "pgid": {
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 4194304
+        },
+        "sid": {
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 4194304
+        },
+        "supervisor_pid": {
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 4194304
+        },
+        "supervisor_start_ticks": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 20,
+          "x-loom-maxUtf8Bytes": 20,
+          "pattern": "^[0-9]+$",
+          "examples": [
+            "123"
+          ]
+        },
+        "attempt_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "x-loom-maxUtf8Bytes": 128,
+          "pattern": "^[^\u0000]*$",
+          "examples": [
+            "example"
+          ]
+        },
+        "launch_nonce": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "x-loom-maxUtf8Bytes": 128,
+          "pattern": "^[^\u0000]*$",
+          "examples": [
+            "example"
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "host_id",
+        "transport_identity",
+        "host_installation_id",
+        "boot_id",
+        "uid",
+        "pid",
+        "start_ticks",
+        "pgid",
+        "sid",
+        "supervisor_pid",
+        "supervisor_start_ticks",
+        "attempt_id",
+        "launch_nonce"
+      ],
+      "additionalProperties": false
+    },
+    "provider_identity": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "provider"
+        },
+        "provider_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "x-loom-maxUtf8Bytes": 128,
+          "pattern": "^[^\u0000]*$",
+          "examples": [
+            "example"
+          ]
+        },
+        "resource_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "x-loom-maxUtf8Bytes": 128,
+          "pattern": "^[^\u0000]*$",
+          "examples": [
+            "example"
+          ]
+        },
+        "attempt_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "x-loom-maxUtf8Bytes": 128,
+          "pattern": "^[^\u0000]*$",
+          "examples": [
+            "example"
+          ]
+        },
+        "host_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "x-loom-maxUtf8Bytes": 128,
+          "pattern": "^[^\u0000]*$",
+          "examples": [
+            "example"
+          ]
+        },
+        "binding_digest": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 57,
+          "x-loom-maxUtf8Bytes": 57,
+          "pattern": "^git-blob-sha1-v1:[0-9a-f]{40}$",
+          "examples": [
+            "git-blob-sha1-v1:1111111111111111111111111111111111111111"
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "provider_id",
+        "resource_id",
+        "attempt_id",
+        "host_id",
+        "binding_digest"
+      ],
+      "additionalProperties": false
+    },
+    "identity": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/native_identity"
+        },
+        {
+          "$ref": "#/$defs/provider_identity"
+        }
+      ]
+    },
+    "terminal": {
+      "type": "object",
+      "properties": {
+        "exit_code": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 255
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "signal": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 64
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "captured": {
+          "type": "boolean"
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/evidence"
+          },
+          "minItems": 0,
+          "maxItems": 100
+        }
+      },
+      "required": [
+        "exit_code",
+        "signal",
+        "captured",
+        "evidence"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "captured": {
+                "const": false
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "exit_code": {
+                "type": "null"
+              },
+              "signal": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "captured": {
+                "const": true
+              }
+            }
+          },
+          "then": {
+            "anyOf": [
+              {
+                "properties": {
+                  "exit_code": {
+                    "type": "integer"
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "signal": {
+                    "type": "integer"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "resource": {
+      "type": "object",
+      "properties": {
+        "ref": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "x-loom-maxUtf8Bytes": 128,
+          "pattern": "^[^\u0000]*$",
+          "examples": [
+            "example"
+          ]
+        },
+        "state": {
+          "enum": [
+            "owned",
+            "retained",
+            "released",
+            "unknown"
+          ]
+        }
+      },
+      "required": [
+        "ref",
+        "state"
+      ],
+      "additionalProperties": false
+    },
+    "observation": {
+      "type": "object",
+      "properties": {
+        "binding": {
+          "$ref": "#/$defs/binding"
+        },
+        "state": {
+          "enum": [
+            "reserved",
+            "starting",
+            "running",
+            "stop_requested",
+            "exited",
+            "start_failed",
+            "unknown"
+          ]
+        },
+        "identity": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/identity"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "identity_verified": {
+          "type": "boolean"
+        },
+        "terminal": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/terminal"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "x-loom-maxUtf8Bytes": 128,
+          "pattern": "^[^\u0000]*$",
+          "examples": [
+            "example"
+          ]
+        },
+        "observed_at": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 20,
+          "x-loom-maxUtf8Bytes": 20,
+          "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]Z$",
+          "examples": [
+            "2026-01-01T00:00:00Z"
+          ],
+          "format": "date-time"
+        },
+        "resources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/resource"
+          },
+          "minItems": 0,
+          "maxItems": 100
+        }
+      },
+      "required": [
+        "binding",
+        "state",
+        "identity",
+        "identity_verified",
+        "terminal",
+        "source",
+        "observed_at",
+        "resources"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "identity_verified": {
+                "const": true
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "identity": {
+                "$ref": "#/$defs/identity"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "not": {
+                  "const": "exited"
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "terminal": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "chunk": {
+      "type": "object",
+      "properties": {
+        "source": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "x-loom-maxUtf8Bytes": 128,
+          "pattern": "^[^\u0000]*$",
+          "examples": [
+            "example"
+          ]
+        },
+        "generation": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "x-loom-maxUtf8Bytes": 128,
+          "pattern": "^[^\u0000]*$",
+          "examples": [
+            "example"
+          ]
+        },
+        "data": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 65536,
+          "x-loom-maxUtf8Bytes": 65536,
+          "pattern": "^[^\u0000]*$",
+          "examples": [
+            "example"
+          ]
+        },
+        "next_cursor": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "x-loom-maxUtf8Bytes": 128,
+              "pattern": "^[^\u0000]*$",
+              "examples": [
+                "example"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "eof": {
+          "type": "boolean"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "gap": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "from_byte": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "to_byte": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "from_byte",
+                "to_byte"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "source",
+        "generation",
+        "data",
+        "next_cursor",
+        "eof",
+        "truncated",
+        "gap"
+      ],
+      "additionalProperties": false
+    },
+    "dimension": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "x-loom-maxUtf8Bytes": 128,
+          "pattern": "^[^\u0000]*$",
+          "examples": [
+            "example"
+          ]
+        },
+        "observed_at": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 20,
+          "x-loom-maxUtf8Bytes": 20,
+          "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]Z$",
+          "examples": [
+            "2026-01-01T00:00:00Z"
+          ],
+          "format": "date-time"
+        },
+        "scope_digest": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 57,
+          "x-loom-maxUtf8Bytes": 57,
+          "pattern": "^git-blob-sha1-v1:[0-9a-f]{40}$",
+          "examples": [
+            "git-blob-sha1-v1:1111111111111111111111111111111111111111"
+          ]
+        }
+      },
+      "required": [
+        "value",
+        "source",
+        "observed_at",
+        "scope_digest"
+      ],
+      "additionalProperties": false
+    },
+    "discovery": {
+      "type": "object",
+      "properties": {
+        "profile_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "x-loom-maxUtf8Bytes": 128,
+          "pattern": "^[^\u0000]*$",
+          "examples": [
+            "example"
+          ]
+        },
+        "agent_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "x-loom-maxUtf8Bytes": 128,
+          "pattern": "^[^\u0000]*$",
+          "examples": [
+            "example"
+          ]
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "x-loom-maxUtf8Bytes": 128,
+              "pattern": "^[^\u0000]*$",
+              "examples": [
+                "example"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "effort": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "x-loom-maxUtf8Bytes": 128,
+              "pattern": "^[^\u0000]*$",
+              "examples": [
+                "example"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "host_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "x-loom-maxUtf8Bytes": 128,
+          "pattern": "^[^\u0000]*$",
+          "examples": [
+            "example"
+          ]
+        },
+        "profile_digest": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 57,
+          "x-loom-maxUtf8Bytes": 57,
+          "pattern": "^git-blob-sha1-v1:[0-9a-f]{40}$",
+          "examples": [
+            "git-blob-sha1-v1:1111111111111111111111111111111111111111"
+          ]
+        },
+        "installed": {
+          "$ref": "#/$defs/dimension"
+        },
+        "configured": {
+          "$ref": "#/$defs/dimension"
+        },
+        "launch_verified": {
+          "$ref": "#/$defs/dimension"
+        },
+        "unknown_reason": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 0,
+              "maxLength": 4096,
+              "x-loom-maxUtf8Bytes": 4096,
+              "pattern": "^[^\u0000]*$",
+              "examples": [
+                "example"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "profile_id",
+        "agent_id",
+        "model",
+        "effort",
+        "host_id",
+        "profile_digest",
+        "installed",
+        "configured",
+        "launch_verified",
+        "unknown_reason"
+      ],
+      "additionalProperties": false
+    },
+    "host": {
+      "type": "object",
+      "properties": {
+        "host_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "x-loom-maxUtf8Bytes": 128,
+          "pattern": "^[^\u0000]*$",
+          "examples": [
+            "example"
+          ]
+        },
+        "transport": {
+          "enum": [
+            "process",
+            "ssh",
+            "adapter"
+          ]
+        },
+        "reachability": {
+          "enum": [
+            "reachable",
+            "unreachable",
+            "unknown"
+          ]
+        },
+        "observed_at": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 20,
+          "x-loom-maxUtf8Bytes": 20,
+          "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]Z$",
+          "examples": [
+            "2026-01-01T00:00:00Z"
+          ],
+          "format": "date-time"
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/evidence"
+          },
+          "minItems": 0,
+          "maxItems": 100
+        }
+      },
+      "required": [
+        "host_id",
+        "transport",
+        "reachability",
+        "observed_at",
+        "evidence"
+      ],
+      "additionalProperties": false
+    },
+    "args.hello": {
+      "type": "object",
+      "properties": {
+        "versions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "major": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 65535
+              },
+              "minor": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 65535
+              }
+            },
+            "required": [
+              "major",
+              "minor"
+            ],
+            "additionalProperties": false
+          },
+          "minItems": 1,
+          "maxItems": 32,
+          "uniqueItems": true
+        },
+        "required_capabilities": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "x-loom-maxUtf8Bytes": 128,
+            "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+\\.v[1-9][0-9]*$",
+            "examples": [
+              "execution.stop.group.v1"
+            ]
+          },
+          "minItems": 0,
+          "maxItems": 100,
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "versions",
+        "required_capabilities"
+      ],
+      "additionalProperties": false
+    },
+    "result.hello": {
+      "type": "object",
+      "properties": {
+        "selected_version": {
+          "type": "object",
+          "properties": {
+            "major": {
+              "const": 1
+            },
+            "minor": {
+              "const": 0
+            }
+          },
+          "required": [
+            "major",
+            "minor"
+          ],
+          "additionalProperties": false
+        },
+        "provider": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "x-loom-maxUtf8Bytes": 128,
+              "pattern": "^[^\u0000]*$",
+              "examples": [
+                "example"
+              ]
+            },
+            "version": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "x-loom-maxUtf8Bytes": 128,
+              "pattern": "^[^\u0000]*$",
+              "examples": [
+                "example"
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "version"
+          ],
+          "additionalProperties": false
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/capability"
+          },
+          "minItems": 0,
+          "maxItems": 100
+        },
+        "limits": {
+          "$ref": "#/$defs/limits"
+        },
+        "schema_digest": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 57,
+          "x-loom-maxUtf8Bytes": 57,
+          "pattern": "^git-blob-sha1-v1:[0-9a-f]{40}$",
+          "examples": [
+            "git-blob-sha1-v1:1111111111111111111111111111111111111111"
+          ]
+        }
+      },
+      "required": [
+        "selected_version",
+        "provider",
+        "capabilities",
+        "limits",
+        "schema_digest"
+      ],
+      "additionalProperties": false
+    },
+    "args.hosts.list": {
+      "type": "object",
+      "properties": {
+        "cursor": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "x-loom-maxUtf8Bytes": 128,
+              "pattern": "^[^\u0000]*$",
+              "examples": [
+                "example"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        }
+      },
+      "required": [
+        "limit"
+      ],
+      "additionalProperties": false
+    },
+    "result.hosts.list": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/host"
+          },
+          "minItems": 0,
+          "maxItems": 100
+        },
+        "next_cursor": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "x-loom-maxUtf8Bytes": 128,
+              "pattern": "^[^\u0000]*$",
+              "examples": [
+                "example"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "items",
+        "next_cursor"
+      ],
+      "additionalProperties": false
+    },
+    "args.agents.discover": {
+      "type": "object",
+      "properties": {
+        "host_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "x-loom-maxUtf8Bytes": 128,
+          "pattern": "^[^\u0000]*$",
+          "examples": [
+            "example"
+          ]
+        },
+        "profile_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "x-loom-maxUtf8Bytes": 128,
+            "pattern": "^[^\u0000]*$",
+            "examples": [
+              "example"
+            ]
+          },
+          "minItems": 1,
+          "maxItems": 100,
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "host_id",
+        "profile_ids"
+      ],
+      "additionalProperties": false
+    },
+    "result.agents.discover": {
+      "type": "object",
+      "properties": {
+        "profiles": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/discovery"
+          },
+          "minItems": 0,
+          "maxItems": 100
+        }
+      },
+      "required": [
+        "profiles"
+      ],
+      "additionalProperties": false
+    },
+    "args.workspace.prepare": {
+      "type": "object",
+      "properties": {
+        "workspace_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "x-loom-maxUtf8Bytes": 128,
+          "pattern": "^[^\u0000]*$",
+          "examples": [
+            "example"
+          ]
+        },
+        "base_sha": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40,
+          "x-loom-maxUtf8Bytes": 40,
+          "pattern": "^[0-9a-f]{40}$",
+          "examples": [
+            "1111111111111111111111111111111111111111"
+          ]
+        },
+        "bundle_ref": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "x-loom-maxUtf8Bytes": 256,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*(/[A-Za-z0-9][A-Za-z0-9_-]*)*$",
+          "examples": [
+            "artifacts/example"
+          ]
+        },
+        "bundle_digest": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 57,
+          "x-loom-maxUtf8Bytes": 57,
+          "pattern": "^git-blob-sha1-v1:[0-9a-f]{40}$",
+          "examples": [
+            "git-blob-sha1-v1:1111111111111111111111111111111111111111"
+          ]
+        },
+        "branch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "x-loom-maxUtf8Bytes": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_/-]*$",
+          "examples": [
+            "work/example"
+          ]
+        },
+        "manifest_digest": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 57,
+          "x-loom-maxUtf8Bytes": 57,
+          "pattern": "^git-blob-sha1-v1:[0-9a-f]{40}$",
+          "examples": [
+            "git-blob-sha1-v1:1111111111111111111111111111111111111111"
+          ]
+        }
+      },
+      "required": [
+        "workspace_id",
+        "base_sha",
+        "bundle_ref",
+        "bundle_digest",
+        "branch",
+        "manifest_digest"
+      ],
+      "additionalProperties": false
+    },
+    "result.workspace.prepare": {
+      "type": "object",
+      "properties": {
+        "workspace_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "x-loom-maxUtf8Bytes": 128,
+          "pattern": "^[^\u0000]*$",
+          "examples": [
+            "example"
+          ]
+        },
+        "host_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "x-loom-maxUtf8Bytes": 128,
+          "pattern": "^[^\u0000]*$",
+          "examples": [
+            "example"
+          ]
+        },
+        "base_sha": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40,
+          "x-loom-maxUtf8Bytes": 40,
+          "pattern": "^[0-9a-f]{40}$",
+          "examples": [
+            "1111111111111111111111111111111111111111"
+          ]
+        },
+        "manifest_digest": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 57,
+          "x-loom-maxUtf8Bytes": 57,
+          "pattern": "^git-blob-sha1-v1:[0-9a-f]{40}$",
+          "examples": [
+            "git-blob-sha1-v1:1111111111111111111111111111111111111111"
+          ]
+        },
+        "disposition": {
+          "enum": [
+            "created",
+            "existing"
+          ]
+        }
+      },
+      "required": [
+        "workspace_id",
+        "host_id",
+        "base_sha",
+        "manifest_digest",
+        "disposition"
+      ],
+      "additionalProperties": false
+    },
+    "args.execution.start": {
+      "type": "object",
+      "properties": {
+        "workspace_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "x-loom-maxUtf8Bytes": 128,
+          "pattern": "^[^\u0000]*$",
+          "examples": [
+            "example"
+          ]
+        },
+        "profile_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "x-loom-maxUtf8Bytes": 128,
+          "pattern": "^[^\u0000]*$",
+          "examples": [
+            "example"
+          ]
+        },
+        "profile_digest": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 57,
+          "x-loom-maxUtf8Bytes": 57,
+          "pattern": "^git-blob-sha1-v1:[0-9a-f]{40}$",
+          "examples": [
+            "git-blob-sha1-v1:1111111111111111111111111111111111111111"
+          ]
+        },
+        "argv": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 65536,
+            "x-loom-maxUtf8Bytes": 65536,
+            "pattern": "^[^\u0000]*$",
+            "examples": [
+              "example"
+            ]
+          },
+          "minItems": 1,
+          "maxItems": 256,
+          "prefixItems": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 65536,
+              "x-loom-maxUtf8Bytes": 65536,
+              "pattern": "^[^\u0000]*$",
+              "examples": [
+                "example"
+              ]
+            }
+          ]
+        },
+        "prompt_ref": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "x-loom-maxUtf8Bytes": 256,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*(/[A-Za-z0-9][A-Za-z0-9_-]*)*$",
+          "examples": [
+            "artifacts/example"
+          ]
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "x-loom-maxUtf8Bytes": 128,
+              "pattern": "^[^\u0000]*$",
+              "examples": [
+                "example"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "effort": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "x-loom-maxUtf8Bytes": 128,
+              "pattern": "^[^\u0000]*$",
+              "examples": [
+                "example"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "limits": {
+          "$ref": "#/$defs/start_limits"
+        },
+        "manifest_digest": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 57,
+          "x-loom-maxUtf8Bytes": 57,
+          "pattern": "^git-blob-sha1-v1:[0-9a-f]{40}$",
+          "examples": [
+            "git-blob-sha1-v1:1111111111111111111111111111111111111111"
+          ]
+        }
+      },
+      "required": [
+        "workspace_id",
+        "profile_id",
+        "profile_digest",
+        "argv",
+        "prompt_ref",
+        "model",
+        "effort",
+        "limits",
+        "manifest_digest"
+      ],
+      "additionalProperties": false
+    },
+    "result.execution.start": {
+      "type": "object",
+      "properties": {
+        "binding": {
+          "$ref": "#/$defs/binding"
+        },
+        "identity": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/identity"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "start_evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/evidence"
+          },
+          "minItems": 0,
+          "maxItems": 100
+        },
+        "prompt_acceptance": {
+          "enum": [
+            "accepted",
+            "unknown"
+          ]
+        },
+        "resources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/resource"
+          },
+          "minItems": 0,
+          "maxItems": 100
+        }
+      },
+      "required": [
+        "binding",
+        "identity",
+        "start_evidence",
+        "prompt_acceptance",
+        "resources"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "prompt_acceptance": {
+                "const": "accepted"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "identity": {
+                "$ref": "#/$defs/identity"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "args.execution.inspect": {
+      "type": "object",
+      "properties": {
+        "operation_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "x-loom-maxUtf8Bytes": 128,
+          "pattern": "^[^\u0000]*$",
+          "examples": [
+            "example"
+          ]
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "result.execution.inspect": {
+      "$ref": "#/$defs/observation"
+    },
+    "args.execution.list": {
+      "type": "object",
+      "properties": {
+        "run_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "x-loom-maxUtf8Bytes": 128,
+          "pattern": "^[^\u0000]*$",
+          "examples": [
+            "example"
+          ]
+        },
+        "cursor": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "x-loom-maxUtf8Bytes": 128,
+              "pattern": "^[^\u0000]*$",
+              "examples": [
+                "example"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        }
+      },
+      "required": [
+        "run_id",
+        "limit"
+      ],
+      "additionalProperties": false
+    },
+    "result.execution.list": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/observation"
+          },
+          "minItems": 0,
+          "maxItems": 100
+        },
+        "next_cursor": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "x-loom-maxUtf8Bytes": 128,
+              "pattern": "^[^\u0000]*$",
+              "examples": [
+                "example"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "items",
+        "next_cursor"
+      ],
+      "additionalProperties": false
+    },
+    "args.execution.read": {
+      "type": "object",
+      "properties": {
+        "source": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "x-loom-maxUtf8Bytes": 128,
+          "pattern": "^[^\u0000]*$",
+          "examples": [
+            "example"
+          ]
+        },
+        "cursor": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "x-loom-maxUtf8Bytes": 128,
+              "pattern": "^[^\u0000]*$",
+              "examples": [
+                "example"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "limit_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65536
+        }
+      },
+      "required": [
+        "source",
+        "limit_bytes"
+      ],
+      "additionalProperties": false
+    },
+    "result.execution.read": {
+      "$ref": "#/$defs/chunk"
+    },
+    "args.execution.stop": {
+      "type": "object",
+      "properties": {
+        "reason": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 4096,
+          "x-loom-maxUtf8Bytes": 4096,
+          "pattern": "^[^\u0000]*$",
+          "examples": [
+            "example"
+          ]
+        },
+        "grace_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 300000
+        },
+        "allow_kill": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "reason",
+        "grace_ms",
+        "allow_kill"
+      ],
+      "additionalProperties": false
+    },
+    "result.execution.stop": {
+      "type": "object",
+      "properties": {
+        "binding": {
+          "$ref": "#/$defs/binding"
+        },
+        "requested_signals": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "TERM",
+              "KILL"
+            ]
+          },
+          "minItems": 0,
+          "maxItems": 2,
+          "uniqueItems": true
+        },
+        "identity_verified": {
+          "type": "boolean"
+        },
+        "group_state": {
+          "enum": [
+            "live",
+            "exited",
+            "unknown"
+          ]
+        },
+        "confirmed_stopped": {
+          "type": "boolean"
+        },
+        "terminal": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/terminal"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "binding",
+        "requested_signals",
+        "identity_verified",
+        "group_state",
+        "confirmed_stopped",
+        "terminal"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "confirmed_stopped": {
+                "const": true
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "identity_verified": {
+                "const": true
+              },
+              "group_state": {
+                "const": "exited"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "args.execution.release": {
+      "type": "object",
+      "properties": {
+        "retention_policy": {
+          "enum": [
+            "retain",
+            "release"
+          ]
+        }
+      },
+      "required": [
+        "retention_policy"
+      ],
+      "additionalProperties": false
+    },
+    "result.execution.release": {
+      "type": "object",
+      "properties": {
+        "binding": {
+          "$ref": "#/$defs/binding"
+        },
+        "resources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/resource"
+          },
+          "minItems": 0,
+          "maxItems": 100
+        }
+      },
+      "required": [
+        "binding",
+        "resources"
+      ],
+      "additionalProperties": false
+    },
+    "args.execution.reconcile": {
+      "type": "object",
+      "properties": {
+        "operation_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "x-loom-maxUtf8Bytes": 128,
+          "pattern": "^[^\u0000]*$",
+          "examples": [
+            "example"
+          ]
+        }
+      },
+      "required": [
+        "operation_id"
+      ],
+      "additionalProperties": false
+    },
+    "result.execution.reconcile": {
+      "type": "object",
+      "properties": {
+        "operation_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "x-loom-maxUtf8Bytes": 128,
+          "pattern": "^[^\u0000]*$",
+          "examples": [
+            "example"
+          ]
+        },
+        "observation": {
+          "$ref": "#/$defs/observation"
+        }
+      },
+      "required": [
+        "operation_id",
+        "observation"
+      ],
+      "additionalProperties": false
+    },
+    "args.execution.prompt": {
+      "type": "object",
+      "properties": {
+        "message_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "x-loom-maxUtf8Bytes": 128,
+          "pattern": "^[^\u0000]*$",
+          "examples": [
+            "example"
+          ]
+        },
+        "delivery_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "x-loom-maxUtf8Bytes": 128,
+          "pattern": "^[^\u0000]*$",
+          "examples": [
+            "example"
+          ]
+        },
+        "body_ref": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "x-loom-maxUtf8Bytes": 256,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*(/[A-Za-z0-9][A-Za-z0-9_-]*)*$",
+          "examples": [
+            "artifacts/example"
+          ]
+        },
+        "mode": {
+          "enum": [
+            "live",
+            "boundary"
+          ]
+        }
+      },
+      "required": [
+        "message_id",
+        "delivery_id",
+        "body_ref",
+        "mode"
+      ],
+      "additionalProperties": false
+    },
+    "result.execution.prompt": {
+      "type": "object",
+      "properties": {
+        "binding": {
+          "$ref": "#/$defs/binding"
+        },
+        "message_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "x-loom-maxUtf8Bytes": 128,
+          "pattern": "^[^\u0000]*$",
+          "examples": [
+            "example"
+          ]
+        },
+        "delivery_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "x-loom-maxUtf8Bytes": 128,
+          "pattern": "^[^\u0000]*$",
+          "examples": [
+            "example"
+          ]
+        },
+        "acceptance": {
+          "enum": [
+            "accepted",
+            "queued",
+            "unknown"
+          ]
+        }
+      },
+      "required": [
+        "binding",
+        "message_id",
+        "delivery_id",
+        "acceptance"
+      ],
+      "additionalProperties": false
+    },
+    "args.execution.fence": {
+      "type": "object",
+      "properties": {
+        "reason": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 4096,
+          "x-loom-maxUtf8Bytes": 4096,
+          "pattern": "^[^\u0000]*$",
+          "examples": [
+            "example"
+          ]
+        },
+        "new_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "reason",
+        "new_epoch"
+      ],
+      "additionalProperties": false
+    },
+    "result.execution.fence": {
+      "type": "object",
+      "properties": {
+        "binding": {
+          "$ref": "#/$defs/binding"
+        },
+        "epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "fenced": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "binding",
+        "epoch",
+        "fenced"
+      ],
+      "additionalProperties": false
+    },
+    "args.workspace.read": {
+      "type": "object",
+      "properties": {
+        "artifact": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "x-loom-maxUtf8Bytes": 256,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*(/[A-Za-z0-9][A-Za-z0-9_-]*)*$",
+          "examples": [
+            "artifacts/example"
+          ]
+        },
+        "cursor": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "x-loom-maxUtf8Bytes": 128,
+              "pattern": "^[^\u0000]*$",
+              "examples": [
+                "example"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "limit_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65536
+        }
+      },
+      "required": [
+        "artifact",
+        "limit_bytes"
+      ],
+      "additionalProperties": false
+    },
+    "result.workspace.read": {
+      "$ref": "#/$defs/chunk"
+    },
+    "args.workspace.export": {
+      "type": "object",
+      "properties": {
+        "sha": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40,
+          "x-loom-maxUtf8Bytes": 40,
+          "pattern": "^[0-9a-f]{40}$",
+          "examples": [
+            "1111111111111111111111111111111111111111"
+          ]
+        },
+        "kind": {
+          "enum": [
+            "git_bundle",
+            "evidence"
+          ]
+        },
+        "limit_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1073741824
+        }
+      },
+      "required": [
+        "sha",
+        "kind",
+        "limit_bytes"
+      ],
+      "additionalProperties": false
+    },
+    "result.workspace.export": {
+      "type": "object",
+      "properties": {
+        "artifact": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "x-loom-maxUtf8Bytes": 256,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*(/[A-Za-z0-9][A-Za-z0-9_-]*)*$",
+          "examples": [
+            "artifacts/example"
+          ]
+        },
+        "digest": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 57,
+          "x-loom-maxUtf8Bytes": 57,
+          "pattern": "^git-blob-sha1-v1:[0-9a-f]{40}$",
+          "examples": [
+            "git-blob-sha1-v1:1111111111111111111111111111111111111111"
+          ]
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1073741824
+        },
+        "sha": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40,
+          "x-loom-maxUtf8Bytes": 40,
+          "pattern": "^[0-9a-f]{40}$",
+          "examples": [
+            "1111111111111111111111111111111111111111"
+          ]
+        }
+      },
+      "required": [
+        "artifact",
+        "digest",
+        "bytes",
+        "sha"
+      ],
+      "additionalProperties": false
+    },
+    "capability": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "enum": [
+            "agents.discover.v1",
+            "effort.select.v1",
+            "events.push.v1",
+            "execution.fence.v1",
+            "execution.inspect.v1",
+            "execution.list.v1",
+            "execution.read.v1",
+            "execution.reconcile.v1",
+            "execution.release.v1",
+            "execution.start.v1",
+            "execution.stop.group.v1",
+            "hosts.list.v1",
+            "model.select.v1",
+            "owner.fence.v1",
+            "prompt.boundary.v1",
+            "prompt.live.v1",
+            "resume.session.v1",
+            "ui.keep_open.v1",
+            "workspace.export.v1",
+            "workspace.prepare.v1",
+            "workspace.read.v1"
+          ]
+        },
+        "state": {
+          "enum": [
+            "supported",
+            "unsupported",
+            "unknown"
+          ]
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/evidence"
+          },
+          "minItems": 0,
+          "maxItems": 100
+        },
+        "limits": {
+          "type": "object",
+          "properties": {
+            "max_bytes": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 1048576
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "max_items": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 100
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "max_bytes",
+            "max_items"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "name",
+        "state",
+        "evidence",
+        "limits"
+      ],
+      "additionalProperties": false
+    },
+    "adapter_config": {
+      "type": "object",
+      "properties": {
+        "schema": {
+          "const": 1
+        },
+        "executable": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096,
+          "x-loom-maxUtf8Bytes": 4096,
+          "pattern": "^/[^\u0000]+$",
+          "examples": [
+            "/usr/bin/false"
+          ]
+        },
+        "executable_digest": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 57,
+          "x-loom-maxUtf8Bytes": 57,
+          "pattern": "^git-blob-sha1-v1:[0-9a-f]{40}$",
+          "examples": [
+            "git-blob-sha1-v1:1111111111111111111111111111111111111111"
+          ]
+        },
+        "argv": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 65536,
+            "x-loom-maxUtf8Bytes": 65536,
+            "pattern": "^[^\u0000]*$",
+            "examples": [
+              "example"
+            ]
+          },
+          "minItems": 0,
+          "maxItems": 256
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/capability"
+          },
+          "minItems": 0,
+          "maxItems": 100
+        },
+        "limits": {
+          "$ref": "#/$defs/limits"
+        }
+      },
+      "required": [
+        "schema",
+        "executable",
+        "executable_digest",
+        "argv",
+        "capabilities",
+        "limits"
+      ],
+      "additionalProperties": false
+    },
+    "request": {
+      "type": "object",
+      "properties": {
+        "protocol": {
+          "const": "loom.execution"
+        },
+        "version": {
+          "type": "object",
+          "properties": {
+            "major": {
+              "const": 1
+            },
+            "minor": {
+              "const": 0
+            }
+          },
+          "required": [
+            "major",
+            "minor"
+          ],
+          "additionalProperties": false
+        },
+        "request_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "x-loom-maxUtf8Bytes": 128,
+          "pattern": "^[^\u0000]*$",
+          "examples": [
+            "example"
+          ]
+        },
+        "operation_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "x-loom-maxUtf8Bytes": 128,
+              "pattern": "^[^\u0000]*$",
+              "examples": [
+                "example"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "idempotency_key": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "x-loom-maxUtf8Bytes": 128,
+              "pattern": "^[^\u0000]*$",
+              "examples": [
+                "example"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "op": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "x-loom-maxUtf8Bytes": 128,
+          "pattern": "^[^\u0000]*$",
+          "examples": [
+            "example"
+          ]
+        },
+        "actor": {
+          "$ref": "#/$defs/actor"
+        },
+        "target": {
+          "$ref": "#/$defs/target"
+        },
+        "expected_revision": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "timeout_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 300000
+        },
+        "args": {},
+        "extensions": {
+          "$ref": "#/$defs/extensions"
+        }
+      },
+      "required": [
+        "protocol",
+        "version",
+        "request_id",
+        "operation_id",
+        "idempotency_key",
+        "op",
+        "actor",
+        "target",
+        "expected_revision",
+        "timeout_ms",
+        "args",
+        "extensions"
+      ],
+      "additionalProperties": false,
+      "oneOf": [
+        {
+          "properties": {
+            "op": {
+              "const": "hello"
+            },
+            "args": {
+              "$ref": "#/$defs/args.hello"
+            },
+            "operation_id": {
+              "type": "null"
+            },
+            "idempotency_key": {
+              "type": "null"
+            },
+            "expected_revision": {
+              "type": "null"
+            }
+          }
+        },
+        {
+          "properties": {
+            "op": {
+              "const": "hosts.list"
+            },
+            "args": {
+              "$ref": "#/$defs/args.hosts.list"
+            },
+            "operation_id": {
+              "type": "null"
+            },
+            "idempotency_key": {
+              "type": "null"
+            },
+            "expected_revision": {
+              "type": "null"
+            }
+          }
+        },
+        {
+          "properties": {
+            "op": {
+              "const": "agents.discover"
+            },
+            "args": {
+              "$ref": "#/$defs/args.agents.discover"
+            },
+            "operation_id": {
+              "type": "null"
+            },
+            "idempotency_key": {
+              "type": "null"
+            },
+            "expected_revision": {
+              "type": "null"
+            }
+          }
+        },
+        {
+          "properties": {
+            "op": {
+              "const": "workspace.prepare"
+            },
+            "args": {
+              "$ref": "#/$defs/args.workspace.prepare"
+            },
+            "operation_id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "x-loom-maxUtf8Bytes": 128,
+              "pattern": "^[^\u0000]*$",
+              "examples": [
+                "example"
+              ]
+            },
+            "idempotency_key": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "x-loom-maxUtf8Bytes": 128,
+              "pattern": "^[^\u0000]*$",
+              "examples": [
+                "example"
+              ]
+            },
+            "expected_revision": {
+              "type": "null"
+            },
+            "target": {
+              "properties": {
+                "assignment_id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "x-loom-maxUtf8Bytes": 128,
+                  "pattern": "^[^\u0000]*$",
+                  "examples": [
+                    "example"
+                  ]
+                },
+                "host_id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "x-loom-maxUtf8Bytes": 128,
+                  "pattern": "^[^\u0000]*$",
+                  "examples": [
+                    "example"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "properties": {
+            "op": {
+              "const": "execution.start"
+            },
+            "args": {
+              "$ref": "#/$defs/args.execution.start"
+            },
+            "operation_id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "x-loom-maxUtf8Bytes": 128,
+              "pattern": "^[^\u0000]*$",
+              "examples": [
+                "example"
+              ]
+            },
+            "idempotency_key": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "x-loom-maxUtf8Bytes": 128,
+              "pattern": "^[^\u0000]*$",
+              "examples": [
+                "example"
+              ]
+            },
+            "expected_revision": {
+              "type": "null"
+            },
+            "target": {
+              "$ref": "#/$defs/binding"
+            }
+          }
+        },
+        {
+          "properties": {
+            "op": {
+              "const": "execution.inspect"
+            },
+            "args": {
+              "$ref": "#/$defs/args.execution.inspect"
+            },
+            "operation_id": {
+              "type": "null"
+            },
+            "idempotency_key": {
+              "type": "null"
+            },
+            "expected_revision": {
+              "type": "null"
+            },
+            "target": {
+              "$ref": "#/$defs/binding"
+            }
+          }
+        },
+        {
+          "properties": {
+            "op": {
+              "const": "execution.list"
+            },
+            "args": {
+              "$ref": "#/$defs/args.execution.list"
+            },
+            "operation_id": {
+              "type": "null"
+            },
+            "idempotency_key": {
+              "type": "null"
+            },
+            "expected_revision": {
+              "type": "null"
+            }
+          }
+        },
+        {
+          "properties": {
+            "op": {
+              "const": "execution.read"
+            },
+            "args": {
+              "$ref": "#/$defs/args.execution.read"
+            },
+            "operation_id": {
+              "type": "null"
+            },
+            "idempotency_key": {
+              "type": "null"
+            },
+            "expected_revision": {
+              "type": "null"
+            },
+            "target": {
+              "$ref": "#/$defs/binding"
+            }
+          }
+        },
+        {
+          "properties": {
+            "op": {
+              "const": "execution.stop"
+            },
+            "args": {
+              "$ref": "#/$defs/args.execution.stop"
+            },
+            "operation_id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "x-loom-maxUtf8Bytes": 128,
+              "pattern": "^[^\u0000]*$",
+              "examples": [
+                "example"
+              ]
+            },
+            "idempotency_key": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "x-loom-maxUtf8Bytes": 128,
+              "pattern": "^[^\u0000]*$",
+              "examples": [
+                "example"
+              ]
+            },
+            "expected_revision": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "target": {
+              "$ref": "#/$defs/binding"
+            }
+          }
+        },
+        {
+          "properties": {
+            "op": {
+              "const": "execution.release"
+            },
+            "args": {
+              "$ref": "#/$defs/args.execution.release"
+            },
+            "operation_id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "x-loom-maxUtf8Bytes": 128,
+              "pattern": "^[^\u0000]*$",
+              "examples": [
+                "example"
+              ]
+            },
+            "idempotency_key": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "x-loom-maxUtf8Bytes": 128,
+              "pattern": "^[^\u0000]*$",
+              "examples": [
+                "example"
+              ]
+            },
+            "expected_revision": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "target": {
+              "$ref": "#/$defs/binding"
+            }
+          }
+        },
+        {
+          "properties": {
+            "op": {
+              "const": "execution.reconcile"
+            },
+            "args": {
+              "$ref": "#/$defs/args.execution.reconcile"
+            },
+            "operation_id": {
+              "type": "null"
+            },
+            "idempotency_key": {
+              "type": "null"
+            },
+            "expected_revision": {
+              "type": "null"
+            },
+            "target": {
+              "$ref": "#/$defs/binding"
+            }
+          }
+        },
+        {
+          "properties": {
+            "op": {
+              "const": "execution.prompt"
+            },
+            "args": {
+              "$ref": "#/$defs/args.execution.prompt"
+            },
+            "operation_id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "x-loom-maxUtf8Bytes": 128,
+              "pattern": "^[^\u0000]*$",
+              "examples": [
+                "example"
+              ]
+            },
+            "idempotency_key": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "x-loom-maxUtf8Bytes": 128,
+              "pattern": "^[^\u0000]*$",
+              "examples": [
+                "example"
+              ]
+            },
+            "expected_revision": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "target": {
+              "$ref": "#/$defs/binding"
+            }
+          }
+        },
+        {
+          "properties": {
+            "op": {
+              "const": "execution.fence"
+            },
+            "args": {
+              "$ref": "#/$defs/args.execution.fence"
+            },
+            "operation_id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "x-loom-maxUtf8Bytes": 128,
+              "pattern": "^[^\u0000]*$",
+              "examples": [
+                "example"
+              ]
+            },
+            "idempotency_key": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "x-loom-maxUtf8Bytes": 128,
+              "pattern": "^[^\u0000]*$",
+              "examples": [
+                "example"
+              ]
+            },
+            "expected_revision": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "target": {
+              "$ref": "#/$defs/binding"
+            }
+          }
+        },
+        {
+          "properties": {
+            "op": {
+              "const": "workspace.read"
+            },
+            "args": {
+              "$ref": "#/$defs/args.workspace.read"
+            },
+            "operation_id": {
+              "type": "null"
+            },
+            "idempotency_key": {
+              "type": "null"
+            },
+            "expected_revision": {
+              "type": "null"
+            },
+            "target": {
+              "properties": {
+                "assignment_id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "x-loom-maxUtf8Bytes": 128,
+                  "pattern": "^[^\u0000]*$",
+                  "examples": [
+                    "example"
+                  ]
+                },
+                "host_id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "x-loom-maxUtf8Bytes": 128,
+                  "pattern": "^[^\u0000]*$",
+                  "examples": [
+                    "example"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "properties": {
+            "op": {
+              "const": "workspace.export"
+            },
+            "args": {
+              "$ref": "#/$defs/args.workspace.export"
+            },
+            "operation_id": {
+              "type": "null"
+            },
+            "idempotency_key": {
+              "type": "null"
+            },
+            "expected_revision": {
+              "type": "null"
+            },
+            "target": {
+              "properties": {
+                "assignment_id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "x-loom-maxUtf8Bytes": 128,
+                  "pattern": "^[^\u0000]*$",
+                  "examples": [
+                    "example"
+                  ]
+                },
+                "host_id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "x-loom-maxUtf8Bytes": 128,
+                  "pattern": "^[^\u0000]*$",
+                  "examples": [
+                    "example"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "response": {
+      "type": "object",
+      "properties": {
+        "protocol": {
+          "const": "loom.execution"
+        },
+        "version": {
+          "type": "object",
+          "properties": {
+            "major": {
+              "const": 1
+            },
+            "minor": {
+              "const": 0
+            }
+          },
+          "required": [
+            "major",
+            "minor"
+          ],
+          "additionalProperties": false
+        },
+        "request_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "x-loom-maxUtf8Bytes": 128,
+          "pattern": "^[^\u0000]*$",
+          "examples": [
+            "example"
+          ]
+        },
+        "operation_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "x-loom-maxUtf8Bytes": 128,
+              "pattern": "^[^\u0000]*$",
+              "examples": [
+                "example"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "op": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "x-loom-maxUtf8Bytes": 128,
+          "pattern": "^[^\u0000]*$",
+          "examples": [
+            "example"
+          ]
+        },
+        "target": {
+          "$ref": "#/$defs/target"
+        },
+        "ok": {
+          "type": "boolean"
+        },
+        "status": {
+          "enum": [
+            "completed",
+            "accepted",
+            "pending",
+            "unknown",
+            "refused",
+            "failed"
+          ]
+        },
+        "revision": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "durable": {
+          "type": "boolean"
+        },
+        "result": {},
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/error"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "effects": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/effect"
+          },
+          "minItems": 0,
+          "maxItems": 100
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/evidence"
+          },
+          "minItems": 0,
+          "maxItems": 100
+        },
+        "observed_at": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 20,
+          "x-loom-maxUtf8Bytes": 20,
+          "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]Z$",
+          "examples": [
+            "2026-01-01T00:00:00Z"
+          ],
+          "format": "date-time"
+        },
+        "extensions": {
+          "$ref": "#/$defs/extensions"
+        }
+      },
+      "required": [
+        "protocol",
+        "version",
+        "request_id",
+        "operation_id",
+        "op",
+        "target",
+        "ok",
+        "status",
+        "revision",
+        "durable",
+        "result",
+        "error",
+        "effects",
+        "evidence",
+        "observed_at",
+        "extensions"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "ok": {
+                "const": true
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "status": {
+                "enum": [
+                  "completed",
+                  "accepted",
+                  "pending"
+                ]
+              },
+              "error": {
+                "type": "null"
+              }
+            },
+            "oneOf": [
+              {
+                "properties": {
+                  "op": {
+                    "const": "hello"
+                  },
+                  "result": {
+                    "$ref": "#/$defs/result.hello"
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "op": {
+                    "const": "hosts.list"
+                  },
+                  "result": {
+                    "$ref": "#/$defs/result.hosts.list"
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "op": {
+                    "const": "agents.discover"
+                  },
+                  "result": {
+                    "$ref": "#/$defs/result.agents.discover"
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "op": {
+                    "const": "workspace.prepare"
+                  },
+                  "result": {
+                    "$ref": "#/$defs/result.workspace.prepare"
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "op": {
+                    "const": "execution.start"
+                  },
+                  "result": {
+                    "$ref": "#/$defs/result.execution.start"
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "op": {
+                    "const": "execution.inspect"
+                  },
+                  "result": {
+                    "$ref": "#/$defs/result.execution.inspect"
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "op": {
+                    "const": "execution.list"
+                  },
+                  "result": {
+                    "$ref": "#/$defs/result.execution.list"
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "op": {
+                    "const": "execution.read"
+                  },
+                  "result": {
+                    "$ref": "#/$defs/result.execution.read"
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "op": {
+                    "const": "execution.stop"
+                  },
+                  "result": {
+                    "$ref": "#/$defs/result.execution.stop"
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "op": {
+                    "const": "execution.release"
+                  },
+                  "result": {
+                    "$ref": "#/$defs/result.execution.release"
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "op": {
+                    "const": "execution.reconcile"
+                  },
+                  "result": {
+                    "$ref": "#/$defs/result.execution.reconcile"
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "op": {
+                    "const": "execution.prompt"
+                  },
+                  "result": {
+                    "$ref": "#/$defs/result.execution.prompt"
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "op": {
+                    "const": "execution.fence"
+                  },
+                  "result": {
+                    "$ref": "#/$defs/result.execution.fence"
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "op": {
+                    "const": "workspace.read"
+                  },
+                  "result": {
+                    "$ref": "#/$defs/result.workspace.read"
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "op": {
+                    "const": "workspace.export"
+                  },
+                  "result": {
+                    "$ref": "#/$defs/result.workspace.export"
+                  }
+                }
+              }
+            ]
+          },
+          "else": {
+            "properties": {
+              "status": {
+                "enum": [
+                  "unknown",
+                  "refused",
+                  "failed"
+                ]
+              },
+              "error": {
+                "$ref": "#/$defs/error"
+              },
+              "result": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "missing_capability": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128,
+                        "x-loom-maxUtf8Bytes": 128,
+                        "pattern": "^[^\u0000]*$",
+                        "examples": [
+                          "example"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "missing_capability"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
+              }
+            },
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "status": {
+                      "const": "refused"
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "effects": {
+                      "maxItems": 0
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "const": "unsupported_capability"
+                        }
+                      }
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "status": {
+                      "const": "refused"
+                    },
+                    "result": {
+                      "type": "object",
+                      "properties": {
+                        "missing_capability": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128,
+                          "x-loom-maxUtf8Bytes": 128,
+                          "pattern": "^[^\u0000]*$",
+                          "examples": [
+                            "example"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "missing_capability"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "effects": {
+                      "maxItems": 0
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "op": {
+                "const": "hello"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "effects": {
+                "maxItems": 0
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  "x-loom-operations": {
+    "hello": {
+      "protocol": "execution",
+      "mode": "read",
+      "capability": null
+    },
+    "hosts.list": {
+      "protocol": "execution",
+      "mode": "read",
+      "capability": "hosts.list.v1"
+    },
+    "agents.discover": {
+      "protocol": "execution",
+      "mode": "read",
+      "capability": "agents.discover.v1"
+    },
+    "workspace.prepare": {
+      "protocol": "execution",
+      "mode": "create",
+      "capability": "workspace.prepare.v1"
+    },
+    "execution.start": {
+      "protocol": "execution",
+      "mode": "create",
+      "capability": "execution.start.v1"
+    },
+    "execution.inspect": {
+      "protocol": "execution",
+      "mode": "read",
+      "capability": "execution.inspect.v1"
+    },
+    "execution.list": {
+      "protocol": "execution",
+      "mode": "read",
+      "capability": "execution.list.v1"
+    },
+    "execution.read": {
+      "protocol": "execution",
+      "mode": "read",
+      "capability": "execution.read.v1"
+    },
+    "execution.stop": {
+      "protocol": "execution",
+      "mode": "mutate",
+      "capability": "execution.stop.group.v1"
+    },
+    "execution.release": {
+      "protocol": "execution",
+      "mode": "mutate",
+      "capability": "execution.release.v1"
+    },
+    "execution.reconcile": {
+      "protocol": "execution",
+      "mode": "read",
+      "capability": "execution.reconcile.v1"
+    },
+    "execution.prompt": {
+      "protocol": "execution",
+      "mode": "mutate",
+      "capability": "prompt.boundary.v1"
+    },
+    "execution.fence": {
+      "protocol": "execution",
+      "mode": "mutate",
+      "capability": "execution.fence.v1"
+    },
+    "workspace.read": {
+      "protocol": "execution",
+      "mode": "read",
+      "capability": "workspace.read.v1"
+    },
+    "workspace.export": {
+      "protocol": "execution",
+      "mode": "read",
+      "capability": "workspace.export.v1"
+    }
+  },
+  "x-loom-maxEnvelopeBytes": 1048576,
+  "x-loom-maxHelloBytes": 65536,
+  "x-loom-maxDepth": 64
+}
