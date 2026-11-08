@@ -1,6 +1,4 @@
----
-title: loom
-description: Work coordination for coding agents — tickets, mandates, one worker per ticket, structured reports, a watchdog.
+title: Loom
+description: Dependable delegated work for coding agents — scoped tasks, structured reports, fresh checks, and human review.
 theme: jekyll-theme-cayman
 show_downloads: false
----
