@@ -9,7 +9,8 @@ prompt is not proof of dependable operation.
    - Inspect the current project, its instruction files, repository remotes,
      existing Loom checkout/configuration, trusted checks and tool choices.
      Preserve existing files and unrelated changes; do not reset, clean,
-     overwrite or silently update a checkout. Do not print credentials.
+     overwrite or silently update a checkout (the announced fast-forward of the
+     Loom tools checkout in step 2 is the only update). Do not print credentials.
    - With shell access (including a tool-enabled chat that can execute shell),
      follow the CLI path below. Tool-enabled nonCLI sessions may inspect and
      edit through available file/repository tools within the same authorization;
@@ -24,6 +25,21 @@ prompt is not proof of dependable operation.
    Inspect versions of bash (3.2+), git, jq (1.6+), gh and shellcheck; inspect
    Orca only if available or required. Reuse the existing approved checkout.
    If absent, clone the repository into an authorized unused directory.
+   Set LOOM_TOOLS to the absolute path of that Loom tools checkout. With local
+   work preserved, bring it to the current origin main before running anything:
+     git -C "$LOOM_TOOLS" status --short
+     git -C "$LOOM_TOOLS" symbolic-ref --short HEAD
+     git -C "$LOOM_TOOLS" fetch --prune origin
+     git -C "$LOOM_TOOLS" rev-list --left-right --count origin/main...HEAD
+   Stop and ask if the tree is dirty, if HEAD is not main, or if any commit is
+   ahead of origin/main; never reset, stash, rebase or force the update. Only
+   when clean and only behind ("<n> 0"), fast-forward:
+     git -C "$LOOM_TOOLS" merge --ff-only origin/main
+   Report the commit before and after. If the fast-forward moved HEAD, re-read
+   docs/bootstrap.txt at the new commit and follow its later steps where they
+   differ. The steps below assume this checkout is current; an older checkout
+   can lack the commands they name. If the Loom default branch is not main, use
+   it and say so.
    Install missing tools only when existing authorization covers that action;
    otherwise ask for the specific missing permission. Do not add dependencies
    merely to complete this prompt. Preserve user configuration and never
@@ -34,14 +50,15 @@ prompt is not proof of dependable operation.
    authorization, switch executors or launch unattended repairs to get green.
 
 3. Run the setup gates from the Loom checkout:
+     cd "$LOOM_TOOLS"
      bash ops/selftest.sh
      shellcheck -x ops/*.sh ops/loom
    Capture SELFTEST and LINT separately; both must be 0. These are offline
    implementation checks, not live consumer proof. Do not run ops/mutate.sh
    during setup: it is the longer contributor/CI mutation gate, runnable locally
    or on a compute host with `bash ops/mutate.sh --on HOST`.
-   Set LOOM_TOOLS to the absolute path of this trusted checkout. Use
-   bash "$LOOM_TOOLS/ops/loom" below; no installed loom alias is assumed.
+   LOOM_TOOLS is bound in step 2. No installed loom alias is assumed; call
+   bash "$LOOM_TOOLS/ops/loom" below.
 
 4. Resolve consumer configuration.
    Reuse an existing config when correct. Infer candidates from repository

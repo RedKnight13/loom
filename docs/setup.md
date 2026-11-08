@@ -6,7 +6,7 @@ title: Setup
   <div>
     <p class="intro">Setup · Start with your project</p>
     <h1 id="setup">Set up Loom.<br>Keep your context.</h1>
-    <p class="lead">Give your coding agent the bootstrap prompt. It inspects your project, reuses existing choices, and guides you through configuration and offline checks.</p>
+    <p class="lead">Give your coding agent the bootstrap prompt. It updates the tools checkout to the latest <code>main</code>, inspects your project, reuses existing choices, and guides you through configuration and offline checks.</p>
     <div class="actions"><button class="button primary" data-copy-bootstrap hidden>Copy bootstrap prompt</button><a class="button secondary" href="copy.html">Read the prompt</a></div>
     <p class="copy-status" role="status" aria-live="polite" data-copy-status></p>
     <p class="fine"><a href="bootstrap.txt">Open raw prompt</a> to select and copy manually. Prefer hands-on setup? <a href="#manual-reference">Jump to the manual reference.</a></p>
@@ -104,6 +104,13 @@ unused directory you are authorized to use:
 git clone https://github.com/RedKnight13/loom.git
 cd loom
 export LOOM_TOOLS="$(pwd -P)"
+# Reusing a checkout? Bring it to origin main before the gates.
+git status --short
+git fetch --prune origin
+git rev-list --left-right --count origin/main...HEAD
+# Stop if the tree is dirty, HEAD is not main, or any commit is ahead.
+# Only a cleanly-behind checkout may fast-forward; never reset, stash or force.
+git merge --ff-only origin/main
 bash ops/selftest.sh
 selftest_exit=$?
 printf 'SELFTEST=%s\n' "$selftest_exit"
@@ -119,6 +126,12 @@ printf 'LINT=%s\n' "$lint_exit"
 checkout. If reusing an installation, enter its directory and set
 `export LOOM_TOOLS="$(pwd -P)"` there. Run the two gates above from that directory.
 Keep this variable available in each terminal used below.
+
+Bring the checkout to the current `origin/main` before the gates. A dirty tree,
+a `HEAD` that is not `main`, or any commit ahead of `origin/main` means stop and
+ask; only a cleanly-behind checkout fast-forwards, never reset, stash or force.
+Setup is written for the latest `main`, and the prompt re-reads itself after an
+update.
 If a tool starts a fresh shell for each call, bind the variables in the same
 invocation as the command or explicitly source an approved private setup file.
 This also applies to `LOOM_REPO` and `FILE` below; past tool calls or chats do
