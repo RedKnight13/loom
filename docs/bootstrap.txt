@@ -120,8 +120,8 @@ prompt is not proof of dependable operation.
    your own pick. If ambiguous, list the matches and do not pick; if unknown,
    say so and do not substitute.
    If the person explicitly has no opinion, say
-   "Let me propose an ideal flow for us" then apply the criteria in section 8 of
-   docs/superpowers/specs/2026-11-08-pattern-catalog-design.md in order:
+   "Let me propose an ideal flow for us" then apply the criteria in the pattern
+   page, docs/patterns.md (Choose a pattern), in order:
    eligibility, task shape, evidence, cost, safety and reversibility, then the
    simplest option/fewest workers/closest-to-solo tie-break. Unknown capability
    is ineligible; unsupported evidence stays unknown. Pick one eligible pattern

@@ -44,7 +44,7 @@ update; there is no separate catalog URL, clone or pull.
 An explicit name wins. An ambiguous name lists the matches without picking;
 an unknown name is reported without substitution. If you explicitly have no
 opinion, the session says "Let me propose an ideal flow for us", applies the
-[selection criteria](superpowers/specs/2026-11-08-pattern-catalog-design.md#8-criteria-for-the-pick)
+[selection criteria](patterns.html#recommendations)
 in order—eligibility, task shape, evidence, cost, safety and reversibility,
 then the simplest/fewest-workers/closest-to-solo tie-break—and picks one.
 It explains the deciding criteria and any tie-break. Unknown capabilities are
