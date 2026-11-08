@@ -38,7 +38,7 @@ execution, tool-enabled inspection/editing without execution, and explicitly
 unwired plain chat. It preserves existing files and asks only for unresolved
 consequential decisions. Installation is limited to granted authorization.
 
-[LOOM_SESSION.md](../templates/LOOM_SESSION.md) is a project checklist, not an
+[LOOM_SESSION.md](https://github.com/RedKnight13/loom/blob/main/templates/LOOM_SESSION.md) is a project checklist, not an
 automatic hook. Its bridge requires `loom-calibration:v1` in root `AGENTS.md`
 or `CLAUDE.md`, only after supported loading conventions are inspected. Both
 files are fingerprinted when present; neither may be substituted with a global

@@ -22,7 +22,7 @@ unresolved choices require questions.
 
 ## Session continuity
 
-The prompt uses [LOOM_SESSION.md](../templates/LOOM_SESSION.md) to add a small,
+The prompt uses [LOOM_SESSION.md](https://github.com/RedKnight13/loom/blob/main/templates/LOOM_SESSION.md) to add a small,
 marked bridge to root `AGENTS.md` or `CLAUDE.md`, only where the current agent
 actually supports that convention. Schema 1 requires literal
 `loom-calibration:v1` in at least one regular, readable, non-symlink root file;

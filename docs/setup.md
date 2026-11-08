@@ -6,7 +6,7 @@ There is nothing to build and no service to run.
 
 For agent-assisted setup, paste [bootstrap.txt](bootstrap.txt). It discovers
 existing choices before asking and preserves user files. See
-[the session-entry checklist](../templates/LOOM_SESSION.md) for continuity.
+[the session-entry checklist](https://github.com/RedKnight13/loom/blob/main/templates/LOOM_SESSION.md) for continuity.
 
 ## 1. Requirements
 
@@ -198,7 +198,7 @@ run and stop dependent delegation until an approved implementation is available.
 The selftest composes the shipped session bridge with record/check fixtures;
 actual harness loading and real worker acceptance still need separate evidence.
 
-Install the [session bridge](../templates/LOOM_SESSION.md) only after inspecting
+Install the [session bridge](https://github.com/RedKnight13/loom/blob/main/templates/LOOM_SESSION.md) only after inspecting
 the agent's project loading convention and existing content. Schema 1 requires
 literal `loom-calibration:v1` in root `AGENTS.md` or `CLAUDE.md` (regular,
 readable, non-symlink); both are fingerprinted if present. Preserve existing
