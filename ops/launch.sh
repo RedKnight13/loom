@@ -18,11 +18,9 @@ loom_id "$id"
 loom_init
 loom_lock
 file=$(loom_record "$id")
-# Owner, 2026-11-07: workers "only start or stop through orcacli" (#25, #26).
+# Dispatch pins the executor. Native assignments never consult unrelated Orca
+# installations; LOOM_ALLOW_LOCAL is retained as an ignored legacy variable.
 [[ $(loom_executor "$file") == local ]] || loom_error "$id is an Orca assignment: start it with ops/orca.sh start $id"
-if [[ ${LOOM_ALLOW_LOCAL:-0} != 1 ]] && loom_orca_ready >/dev/null; then
-    loom_error 'the Orca CLI is available: workers start only through it (re-dispatch with the orca executor, or set LOOM_ALLOW_LOCAL=1 to override)'
-fi
 ! loom_alive "$file" || loom_error 'assignment already has a live worker'
 workdir=$(jq -r '.workdir' "$file")
 [[ -d $workdir && ! -L $workdir ]] || loom_error "workdir missing: $workdir"
