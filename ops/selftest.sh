@@ -783,6 +783,9 @@ case "$1" in
                 if [[ ${ORCA_STUB_RELEASE:-ok} == fail ]]; then echo '{"ok":false}'; exit 1; fi
                 echo '{"ok":true,"result":{"released":true}}' ;;
             worker-show)
+                if [[ -f $GH_STATE/compact-$4 && " $* " != *' --full '* ]]; then
+                    cat "$GH_STATE/compact-$4"; exit 0
+                fi
                 st='settled'
                 [[ -f $GH_STATE/show-$4 ]] && st=$(cat "$GH_STATE/show-$4")
                 [[ $st != notfound ]] || { echo '{"ok":false,"error":{"code":"dispatch_not_found"}}'; exit 1; }
@@ -901,6 +904,29 @@ EOF
     bash "$ops/orca.sh" release "$ido" >/dev/null 2>&1 && fail 'double release accepted'
 
     # Follow-up lifecycle: already settled/released assignment, new dispatch.
+    # BSD/macOS substitutes only trailing Xs. A suffixed template instead
+    # creates a literal name once, then fails rather than replacing evidence.
+    mkdir -p "$scratch/bsd-bin"
+    export LOOM_TEST_MKTEMP
+    LOOM_TEST_MKTEMP=$(command -v mktemp)
+    cat > "$scratch/bsd-bin/mktemp" <<'EOF'
+#!/usr/bin/env bash
+set -eu
+if [[ $# == 1 && $1 != *XXXXXX ]]; then
+    (umask 077; set -C; : > "$1") || exit 1
+    printf '%s\n' "$1"
+else
+    exec "$LOOM_TEST_MKTEMP" "$@"
+fi
+EOF
+    chmod +x "$scratch/bsd-bin/mktemp"
+    receipt_path=$PATH
+    export PATH="$scratch/bsd-bin:$PATH"
+    # Preserve both fixed legacy receipts and the literal macOS failure name.
+    printf 'legacy observation\n' > "$LOOM_STATE/$ido.orca-show.receipt"
+    printf 'legacy suffixed observation\n' > "$LOOM_STATE/$ido.orca-ancestor.XXXXXX.receipt"
+    mkdir -p "$scratch/old-receipts"
+    cp "$LOOM_STATE/$ido.orca-"*.receipt "$scratch/old-receipts/"
     # Fixtures use full worker-show envelopes with deliberately distracting metadata.
     fixture_view() {
         jq -n --arg d "$1" --arg p "$2" --arg s "$3" --arg l "$4" --arg w "repo-stub::$ws" '
@@ -929,6 +955,10 @@ EOF
         .report_offset == 1 and .collected_sha == null and .executor.released == null and (.reports | length) == 2' "$(rec "$ido")" >/dev/null || fail "follow-up not tracked or old completion reused: $(jq -c . "$(rec "$ido")")"
     archive=$(jq -r '.executor.history[-1].archive' "$(rec "$ido")")
     [[ -s $LOOM_STATE/$archive/$ido.evidence/discovery.log ]] || fail 'old evidence lost on continuation'
+    for old in "$scratch/old-receipts/"*; do
+        cmp -s "$old" "$LOOM_STATE/${old##*/}" || fail 'continuation overwrote a legacy receipt'
+        cmp -s "$old" "$LOOM_STATE/$archive/${old##*/}" || fail 'legacy receipt missing from history'
+    done
     cp "$(rec "$ido")" "$scratch/before-denial"
     oldhead=$(git -C "$ws" rev-parse HEAD)
     printf 'follow-up change\n' >> "$ws/notes.txt"
@@ -1033,7 +1063,9 @@ EOF
       .result.projection.liveness.reason = "stale_status"
     ' > "$scratch/durable-view"
     cp "$scratch/durable-view" "$GH_STATE/view-follow-durable"
+    printf '%s\n' '{"ok":true,"result":{"dispatchId":"follow-durable","state":"succeeded","stage":"settled","liveness":"unverifiable"}}' > "$GH_STATE/compact-follow-durable"
     bash "$ops/loom" reconcile "$ido" --dispatch follow-durable >/dev/null || fail 'durable completed review reconcile failed'
+    [[ $(bash "$ops/orca.sh" show "$ido") == *'show: settled '* ]] || fail 'show did not request full durable completion proof'
     printf 'durable review change\n' >> "$ws/notes.txt"
     printf 'state: ready — durable review finished\n' >> "$ws/REPORT.md"
     cp "$(rec "$ido")" "$scratch/before-durable-denial"
@@ -1059,6 +1091,112 @@ EOF
     bash "$ops/loom" harvest "$ido" >/dev/null || fail 'durable exact-dispatch success rejected for stale telemetry'
     jq -e '.executor.state == "settled" and .reports[-1].fact == "durable review finished"' "$(rec "$ido")" >/dev/null || fail 'durable completed review not harvested'
     pass 'durable completed success survives stale telemetry; all incomplete or contradictory proofs fail closed'
+    # A multi-hop recovery needs two ancestor receipts in the same call. Repeat
+    # show/send as well, then archive all receipts and compare their bytes.
+    fixture_view portable-middle follow-durable completed idle > "$GH_STATE/view-portable-middle"
+    fixture_view portable-last portable-middle dispatched live > "$GH_STATE/view-portable-last"
+    bash "$ops/loom" reconcile "$ido" --dispatch portable-last >/dev/null || fail 'repeated BSD ancestor receipts failed'
+    mkdir -p "$scratch/portable-receipts"
+    for _ in 1 2; do
+        bash "$ops/orca.sh" show "$ido" >/dev/null || fail 'repeated BSD show receipts failed'
+        bash "$ops/loom" send "$ido" --subject guidance >/dev/null || fail 'repeated BSD send receipts failed'
+        # Previously captured receipts must still exist with their old bytes.
+        for old in "$scratch/portable-receipts/"*; do
+            [[ -f $old ]] || continue
+            cmp -s "$old" "$LOOM_STATE/${old##*/}" || fail 'repeated receipt creation overwrote evidence'
+        done
+        cp "$LOOM_STATE/$ido.orca-"*.receipt* "$scratch/portable-receipts/"
+    done
+    for operation in ancestor show send; do
+        receipts=("$LOOM_STATE/$ido.orca-$operation.receipt."*)
+        [[ ${#receipts[@]} -ge 2 ]] || fail "no unique BSD $operation receipts"
+        for receipt in "${receipts[@]}"; do
+            [[ -f $receipt && ! -L $receipt ]] || fail 'receipt is not a regular private file'
+            mode=$(LC_ALL=C ls -ld "$receipt")
+            [[ ${mode:0:10} == '-rw-------' ]] || fail 'receipt permissions are not private'
+        done
+    done
+    fixture_view portable-next portable-last dispatched live > "$GH_STATE/view-portable-next"
+    bash "$ops/loom" reconcile "$ido" --dispatch portable-next >/dev/null || fail 'portable receipt history adoption failed'
+    archive=$(jq -r '.executor.history[-1].archive' "$(rec "$ido")")
+    for old in "$scratch/portable-receipts/"*; do
+        cmp -s "$old" "$LOOM_STATE/${old##*/}" || fail 'history adoption changed an original receipt'
+        cmp -s "$old" "$LOOM_STATE/$archive/${old##*/}" || fail 'portable receipt missing or changed in history'
+    done
+    [[ -s $LOOM_STATE/$archive/$ido.evidence/discovery.log && -f $LOOM_STATE/$archive/$ido.commit.log ]] || fail 'portable receipt adoption lost old evidence or commit log'
+    fixture_view portable-next portable-last completed idle > "$GH_STATE/view-portable-next"
+    bash "$ops/loom" harvest "$ido" >/dev/null || fail 'portable continuation completion failed'
+    export PATH=$receipt_path
+    pass 'BSD mktemp: repeated ancestor/show/send receipts are unique, private and preserved in history'
+
+    # A successful task can finish while its terminal stays live at the prompt.
+    # Only a full envelope with every positive proof field permits this case.
+    fixture_view follow-live portable-next completed live | jq '
+      .result.dispatch.completedAt = "2026-01-01T00:00:00Z" |
+      .result.worker = {dispatchId:"follow-live",state:"succeeded"} |
+      .result.projection.dispatchId = "follow-live" |
+      .result.projection.outcome = "succeeded" |
+      .result.projection.evidence = {durable:true,liveStatus:"fresh"}
+    ' > "$scratch/live-view"
+    cp "$scratch/live-view" "$GH_STATE/view-follow-live"
+    bash "$ops/loom" reconcile "$ido" --dispatch follow-live >/dev/null || fail 'live completed review reconcile failed'
+    printf 'live completed review change\n' >> "$ws/notes.txt"
+    printf 'state: ready — live completed review finished\n' >> "$ws/REPORT.md"
+    cp "$(rec "$ido")" "$scratch/before-live-denial"
+    cp -R "$LOOM_STATE/$ido.evidence" "$scratch/before-live-evidence"
+    oldhead=$(git -C "$ws" rev-parse HEAD)
+    oldindex=$(git -C "$ws" write-tree)
+    for filter in \
+        'del(.result.dispatch.status)' \
+        '.result.dispatch.status = "failed"' \
+        '.result.dispatch.status = "running"' \
+        '.result.dispatch.id = "unrelated"' \
+        'del(.result.dispatch.completedAt)' \
+        '.result.dispatch.completedAt = ""' \
+        '.result.dispatch.completedAt = 0' \
+        '.result.dispatch.completedAt = false' \
+        'del(.result.worker.dispatchId)' \
+        '.result.worker.dispatchId = "unrelated"' \
+        'del(.result.worker.state)' \
+        '.result.worker.state = "failed"' \
+        '.result.worker.state = "working"' \
+        '.result.worker.state = "running"' \
+        '.result.worker.state = "ready"' \
+        'del(.result.projection.dispatchId)' \
+        '.result.projection.dispatchId = "unrelated"' \
+        'del(.result.projection.outcome)' \
+        '.result.projection.outcome = "failed"' \
+        '.result.projection.outcome = "completed"' \
+        'del(.result.projection.evidence.durable)' \
+        '.result.projection.evidence.durable = false' \
+        '.result.projection.evidence.durable = "true"' \
+        'del(.result.projection.evidence.liveStatus)' \
+        '.result.projection.evidence.liveStatus = "stale"' \
+        '.result.projection.evidence.liveStatus = "unknown"' \
+        '.result.projection.liveness.verdict = "working"' \
+        '.result.projection.liveness.verdict = "running"' \
+        '.result.projection.liveness.verdict = "unverifiable"' \
+        '.result = {dispatchId:"follow-live",state:"succeeded",stage:"settled",liveness:"live",terminalState:"retained"}' \
+        '.result = {dispatchId:"follow-live",state:"completed",liveness:"live",terminalState:"retained"}'; do
+        jq "$filter" "$scratch/live-view" > "$GH_STATE/view-follow-live"
+        rc=0
+        bash "$ops/loom" harvest "$ido" > "$scratch/live-denied" || rc=$?
+        [[ $rc != 0 ]] || fail "unsafe live completion accepted: $filter"
+        jq -e '.ok == false' "$scratch/live-denied" >/dev/null || fail 'live refusal lost JSON envelope'
+        cmp -s "$(rec "$ido")" "$scratch/before-live-denial" || fail 'rejected live completion changed assignment'
+        [[ $(git -C "$ws" rev-parse HEAD) == "$oldhead" && $(git -C "$ws" write-tree) == "$oldindex" ]] || fail 'rejected live completion touched git'
+        diff -r "$scratch/before-live-evidence" "$LOOM_STATE/$ido.evidence" >/dev/null || fail 'rejected live completion changed evidence'
+    done
+    cp "$scratch/live-view" "$GH_STATE/view-follow-live"
+    bash "$ops/loom" harvest "$ido" >/dev/null || fail 'fresh durable completed success rejected for retained live terminal'
+    [[ $(bash "$ops/orca.sh" show "$ido") == *'show: settled '* ]] || fail 'show rejected fresh durable completion'
+    # Numeric completion timestamps are also supported by the full envelope.
+    jq '.result.dispatch.completedAt = 1' "$scratch/live-view" > "$GH_STATE/view-follow-live"
+    [[ $(bash "$ops/orca.sh" show "$ido") == *'show: settled '* ]] || fail 'numeric completed timestamp rejected'
+    jq -e '.executor.state == "settled" and .reports[-1].fact == "live completed review finished"' "$(rec "$ido")" >/dev/null || fail 'live completed review not harvested'
+    [[ $(git -C "$ws" rev-list --count "$oldhead..HEAD") == 1 ]] || fail 'live completed harvest did not commit exactly once'
+    bash "$ops/loom" harvest "$ido" >/dev/null 2>&1 && fail 'duplicate live completion harvested'
+    pass 'fresh durable exact-dispatch completion survives retained live terminal; incomplete, failed, working and compact proof refused'
     pass 'follow-up tracking, fail-closed harvest, identity-bound recovery and evidence preservation'
 
     # Unversioned configs inside a repo must produce usable records (gap #68).

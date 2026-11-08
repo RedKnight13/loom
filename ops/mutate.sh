@@ -158,6 +158,20 @@ run orca.sh 's/id=${matches\[0\]%.json}/:/' "legacy dispatch selector is not map
 run orca.sh 's/elif \[\[ \$xstate == running \]\] \&\& jq/elif jq/' "settled queue-only receipt clears continuation fence" mlife9
 run orca.sh 's/(.liveness == "unverifiable" and/(false and/' "durable success rejected after telemetry expires" mlife10
 run orca.sh 's/\.durable == true/true/' "stale completion accepted without durable evidence" mlife11
+run orca.sh 's/\.receipt\.XXXXXX/\.XXXXXX.receipt/' "receipt template has a suffix after the random field" mportable1
+run orca.sh 's/ "\$LOOM_STATE\/\$id.orca-"\*\.receipt\.\*//' "history omits portable receipt names" mportable2
+run orca.sh '/orca_call "\$receipt" orchestration worker-show/s/ --full//' "show requests compact completion without durable proof" mportable3
+
+run orca.sh 's/elif live_completion then/elif false then/' "durable success rejected while completed terminal remains live" mproof1
+run orca.sh '/def live_completion:/,/;$/s/\.state == "completed"/true/' "live proof accepts incomplete or failed dispatch" mproof2
+run orca.sh '/def live_completion:/,/;$/s/\.worker_dispatch == \$d/true/' "live proof accepts missing worker identity" mproof3
+run orca.sh '/def live_completion:/,/;$/s/\.worker_state == "succeeded"/true/' "live proof accepts failed or working worker" mproof4
+run orca.sh '/def live_completion:/,/;$/s/\.projection_dispatch == \$d/true/' "live proof accepts missing projection identity" mproof5
+run orca.sh '/def live_completion:/,/;$/s/\.outcome == "succeeded"/true/' "live proof accepts missing or failed outcome" mproof6
+run orca.sh '/def live_completion:/,/;$/s/\.durable == true/true/' "live proof accepts nondurable completion" mproof7
+run orca.sh '/def live_completion:/,/;$/s/\.live_status == "fresh"/true/' "live proof accepts missing or stale freshness" mproof8
+run orca.sh '/def live_completion:/,/;$/s/(\.completed_at |.*);/true;/' "live proof accepts missing completion timestamp" mproof9
+run orca.sh '/def live_completion:/,/;$/s/\.liveness == "live"/(.liveness | IN("live", "working", "running"))/' "live proof accepts explicitly working liveness" mproof10
 
 wait
 [[ ${#order[@]} -gt 0 ]] || { echo "HARNESS BROKEN: no mutants match the selected prefix"; exit 2; }

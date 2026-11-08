@@ -35,8 +35,8 @@
 # consumer checkout, which must be registered in Orca once) and supervises
 # it. Loom never signals an Orca worker; a stale one is surfaced by status.sh
 # for the owner. Orca wakes the conductor when a worker finishes: do not poll.
-# Raw receipts are kept as $LOOM_STATE/<id>.orca-*.receipt (never *.json: that
-# suffix is reserved for assignment records).
+# Raw receipts use <id>.orca-*.receipt[.<random>] in $LOOM_STATE (never
+# *.json: that suffix is reserved for assignment records).
 set -euo pipefail
 # shellcheck source=ops/lib.sh
 source "${BASH_SOURCE[0]%/*}/lib.sh"
@@ -77,16 +77,23 @@ worker_view() {
     ' "$1"
 }
 
-# A retained terminal is resource accounting, not completion. A positive
-# completed Dispatch is required; live/failed observations veto it. Expired
-# telemetry is accepted only with exact, durable successful completion evidence.
+# A retained terminal is resource accounting, not active work. Fresh live
+# telemetry needs full, exact durable success before bypassing the live veto.
+# Keep ordinary completion and the existing stale_status exception unchanged.
 dispatch_state() {  # receipt, expected dispatch
     local view
     view=$(worker_view "$1" 2>/dev/null) || { printf unknown; return; }
     jq -r --arg d "$2" '
+      def live_completion:
+        .liveness == "live" and .state == "completed" and
+        .worker_dispatch == $d and .worker_state == "succeeded" and
+        .projection_dispatch == $d and .outcome == "succeeded" and
+        .durable == true and .live_status == "fresh" and
+        (.completed_at | (type == "string" and length > 0) or (type == "number" and . > 0));
       if .dispatch != $d then "unknown"
       elif (.worker_dispatch != null and .worker_dispatch != $d) or
            (.projection_dispatch != null and .projection_dispatch != $d) then "unknown"
+      elif live_completion then "settled"
       elif (.liveness | IN("live", "working", "running")) or
            (.state | IN("active", "running", "starting", "ready", "dispatched")) then "active"
       elif .state == "completed" and
@@ -101,8 +108,9 @@ dispatch_state() {  # receipt, expected dispatch
     ' <<< "$view"
 }
 
-# Every read/send gets a new receipt. Old observations remain reviewable.
-new_receipt() { mktemp "$LOOM_STATE/$id.orca-$1.XXXXXX.receipt"; }
+# Every read/send gets a private, atomically created receipt. The random suffix
+# must end the template for BSD/macOS mktemp; never rename or reuse old receipts.
+new_receipt() { mktemp "$LOOM_STATE/$id.orca-$1.receipt.XXXXXX"; }
 
 # Check a bounded, direct follow-up link. A follow-up has its own task, but
 # must stay in the same Run and exact workspace as the recorded parent.
@@ -122,7 +130,7 @@ adopt_followup() {  # file, child-view, receipt, report boundary
     local file=$1 view=$2 receipt=$3 boundary=$4 archive old
     archive=$(mktemp -d "$LOOM_STATE/$id.history.XXXXXX")
     cp "$file" "$archive/assignment.receipt"
-    for old in "$LOOM_STATE/$id.evidence" "$LOOM_STATE/$id.commit.log" "$LOOM_STATE/$id.orca-"*.receipt; do
+    for old in "$LOOM_STATE/$id.evidence" "$LOOM_STATE/$id.commit.log" "$LOOM_STATE/$id.orca-"*.receipt "$LOOM_STATE/$id.orca-"*.receipt.*; do
         [[ ! -e $old ]] || cp -R "$old" "$archive/"
     done
     loom_write "$file" '
@@ -416,7 +424,7 @@ show)
     dispatch=$(jq -r '.executor.dispatch // empty' "$file")
     [[ -n $dispatch ]] || loom_error "$id has no Orca dispatch"
     receipt=$(new_receipt show)
-    orca_call "$receipt" orchestration worker-show --dispatch "$dispatch" --json ||
+    orca_call "$receipt" orchestration worker-show --dispatch "$dispatch" --full --json ||
         { printf '%s: worker-show failed: see %s\n' "$id" "${receipt##*/}" >&2; exit 1; }
     state=$(dispatch_state "$receipt" "$dispatch")
     printf '%s show: %s (dispatch %s)\n' "$id" "$state" "$dispatch"
