@@ -27,6 +27,9 @@ if [[ ${1:-} == --on ]]; then
 fi
 
 base=$(mktemp -d "${TMPDIR:-/tmp}/loom-mutants.XXXXXX")
+# Calibration refuses symlink ancestors; on macOS TMPDIR is /var/... and /var
+# is a symlink to /private/var, so copy into the resolved path.
+base=$(cd "$base" && pwd -P)
 trap 'rm -rf "$base"' EXIT
 jobs_max=${LOOM_MUTATE_JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)}
 order=()
