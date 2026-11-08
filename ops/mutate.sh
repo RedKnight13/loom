@@ -27,6 +27,9 @@ if [[ ${1:-} == --on ]]; then
 fi
 
 base=$(mktemp -d "${TMPDIR:-/tmp}/loom-mutants.XXXXXX")
+# Calibration refuses symlink ancestors; on macOS TMPDIR is /var/... and /var
+# is a symlink to /private/var, so copy into the resolved path.
+base=$(cd "$base" && pwd -P)
 trap 'rm -rf "$base"' EXIT
 jobs_max=${LOOM_MUTATE_JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)}
 order=()
@@ -172,6 +175,7 @@ run orca.sh '/def live_completion:/,/;$/s/\.durable == true/true/' "live proof a
 run orca.sh '/def live_completion:/,/;$/s/\.live_status == "fresh"/true/' "live proof accepts missing or stale freshness" mproof8
 run orca.sh '/def live_completion:/,/;$/s/(\.completed_at |.*);/true;/' "live proof accepts missing completion timestamp" mproof9
 run orca.sh '/def live_completion:/,/;$/s/\.liveness == "live"/(.liveness | IN("live", "working", "running"))/' "live proof accepts explicitly working liveness" mproof10
+run orca.sh 's/\[\[ -n \$agent \]\] || agent=\$(jq -r /agent=\$(jq -r /' "CLI agent override ignored" m68
 
 wait
 [[ ${#order[@]} -gt 0 ]] || { echo "HARNESS BROKEN: no mutants match the selected prefix"; exit 2; }

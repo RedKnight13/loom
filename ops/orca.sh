@@ -169,13 +169,16 @@ hosts)
 start)
     [[ $# == 1 || ( $# == 3 && $2 == --agent ) ]] || loom_error "$usage"
     id=$1
-    agent=${3:-codex}
+    want_agent=${3:-}
     loom_id "$id"
-    [[ $agent =~ ^[a-z0-9-]+$ ]] || loom_error 'invalid agent id'
+    [[ -z $want_agent || $want_agent =~ ^[a-z0-9-]+$ ]] || loom_error 'invalid agent id'
     loom_init
     runtime=$(loom_orca_ready) || loom_error 'the Orca CLI/runtime is not ready (orca status); nothing started'
     file=$(loom_record "$id")
     [[ $(loom_executor "$file") == orca ]] || loom_error "$id is not an Orca assignment"
+    agent=$want_agent
+    [[ -n $agent ]] || agent=$(jq -r '.agent // "codex"' "$file")
+    [[ $agent =~ ^[a-z0-9-]+$ ]] || loom_error 'invalid agent id'
     # Placement (#37): a declared compute host must exist in Orca and be
     # connected. Loom never falls back to the conductor's machine.
     hosts=$(jq -c '.compute // []' "$file")

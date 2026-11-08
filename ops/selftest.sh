@@ -98,6 +98,7 @@ export PATH="$scratch/bin:$PATH"
 cat > "$scratch/consumer.toml" <<EOF
 repo = "example/fixture" # test comments
 checks = "true"
+agent = "claude"
 worktrees = "$scratch/work dirs"
 laws = [
   "Workers never push.",
@@ -867,6 +868,7 @@ EOF
     out=$(dispatch); ido=${out##*$'\n'}
     [[ $out == orca:* ]] || fail "auto with Orca ready must use the orca executor: $out"
     jq -e '.executor == {kind: "orca", state: "pending", runtime: "stub-runtime-1"} and .workdir == ""' "$(rec "$ido")" >/dev/null || fail 'orca record shape'
+    jq -e '.agent == "claude"' "$(rec "$ido")" >/dev/null || fail 'configured agent not recorded'
     [[ -f $LOOM_STATE/$ido.WORK.md ]] || fail 'orca WORK.md not kept in state'
 
     # nothing starts outside Orca
@@ -880,6 +882,7 @@ EOF
     jq -e '.executor.state == "pending"' "$(rec "$ido")" >/dev/null || fail 'a refused start changed state'
     export ORCA_STUB_WORKER="$scratch/bin/w-slow"
     bash "$ops/orca.sh" start "$ido" >/dev/null || fail 'orca start failed'
+    grep -q -- '--agent claude' "$GH_STATE/start-$ido.args" || fail 'start ignored the configured agent'
     bash "$ops/verify.sh" "$ido" --baseline >/dev/null || fail 'baseline refused while the worker runs (gap #32)'
     bash "$ops/verify.sh" "$ido" >/dev/null 2>&1 && fail 'branch verify allowed while the worker runs'
     ws="$GH_STATE/orca-ws/$ido"
@@ -1307,7 +1310,8 @@ EOF
     sed 's/^checks = "true"$/checks = "true"\nexecutor = "orca"\ncompute = "orca-host"/' "$scratch/consumer.toml" > "$scratch/placement.toml"
     out=$(bash "$ops/dispatch.sh" "$scratch/placement.toml" 7); idp=${out##*$'\n'}
     export ORCA_STUB_WORKER="$scratch/bin/w-slow"
-    bash "$ops/orca.sh" start "$idp" >/dev/null || fail 'start on a connected compute host'
+    bash "$ops/orca.sh" start "$idp" --agent opencode >/dev/null || fail 'start on a connected compute host'
+    grep -q -- '--agent opencode' "$GH_STATE/start-$idp.args" || fail 'start ignored the CLI agent override'
     grep -q -- '--on orca-host' "$GH_STATE/start-$idp.args" || fail 'worker not placed on the compute host'
     grep -q -- "--repo path:$ORCA_STUB_REMOTE_REPO " "$GH_STATE/start-$idp.args" || fail 'remote worker given the conductor checkout, not the host clone (#47)'
     jq -e '.ws_host == "orca-host"' "$(rec "$idp")" >/dev/null || fail 'workspace host not recorded (#47)'

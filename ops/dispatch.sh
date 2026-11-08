@@ -132,12 +132,13 @@ jq -n --argjson ticket "$2" --arg repo "$repo" --arg short "$short" \
       --argjson model "$(jq '.model // null' <<< "$config")" \
       --argjson effort "$(jq '.effort // null' <<< "$config")" \
       --argjson timeout "$(jq '.start_timeout_ms // null' <<< "$config")" \
-      --argjson workers "$(jq '.workers // null' <<< "$config")" '
+      --argjson workers "$(jq '.workers // null' <<< "$config")" \
+      --argjson agent "$(jq '.agent // null' <<< "$config")" '
   {ticket: $ticket, repo: $repo, short_name: $short, attempt: $attempt,
    workdir: $workdir, checkout: $checkout, base_sha: $base,
    checks: $checks, compute: $compute, compute_setup: $compute_setup,
    compute_selector: $compute_selector, model: $model, effort: $effort,
-   start_timeout_ms: $timeout, workers: $workers, config_commit: $config_commit, limit_min: $limit, worker_pid: null, worker_start: null,
+   start_timeout_ms: $timeout, workers: $workers, agent: $agent, config_commit: $config_commit, limit_min: $limit, worker_pid: null, worker_start: null,
    executor: (if $executor == "orca" then {kind: "orca", state: "pending", runtime: $runtime} else {kind: "local"} end),
    started_at: (now | todateiso8601), reports: []}
 ' > "$LOOM_STATE/.pending"
