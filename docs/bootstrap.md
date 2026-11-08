@@ -5,6 +5,12 @@ It discovers existing choices, configures within granted authorization and
 reports evidence with explicit limits. It does not make an agent fully
 dependable merely by being pasted.
 
+Before the gates, it updates the Loom tools checkout: fetch `origin`, stop on a
+dirty tree, a non-main `HEAD` or any commit ahead of `origin/main`, and
+fast-forward only when cleanly behind. The prompt is written for the latest
+`main`, so a checkout that cannot move safely stops setup instead of testing
+stale code.
+
 ## Capability paths
 
 | Session capability | What the prompt can establish |
