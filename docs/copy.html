@@ -30,11 +30,11 @@ layout: null
       <li><strong>Offline evidence:</strong> selftest and ShellCheck exits are reported separately from the fixed calibration drill. None proves live consumer acceptance.</li>
       <li><strong>Live workflow proof:</strong> an authorized real ticket, worker, harvest, and verification sequence has produced evidence and passed your project’s checks. Otherwise, report not run. Human review still follows.</li>
     </ul>
-    <p>Run <code>loom calibrate --consumer FILE --check</code> first. Reuse current evidence; review missing or drifted evidence before explicitly recording with <code>loom calibrate --consumer FILE</code>, then check again. Recheck at session entry and before delegation. If the installed CLI lacks calibration, report it as not run and block dependent delegation.</p>
+    <p>Using the paths defined in the <a href="setup.html#2-get-the-tools">manual setup reference</a>, run <code>bash "$LOOM_TOOLS/ops/loom" calibrate --consumer "$FILE" --check</code> first. Reuse current evidence; review missing or drifted evidence before explicitly recording with <code>bash "$LOOM_TOOLS/ops/loom" calibrate --consumer "$FILE"</code>, then check again. Recheck at session entry and before delegation. If the installed CLI lacks calibration, report it as not run and block dependent delegation.</p>
     <p>The agent must enforce these checks; dispatch and launch are not automatically guarded. Setup checks and an offline drill do not establish that real project work has succeeded. Treat a level that was not run as unverified.</p>
   </section>
   <section aria-labelledby="prompt-title"><div class="prompt-heading"><h2 id="prompt-title">The full prompt</h2><button class="button secondary" data-select-prompt hidden>Select prompt text</button></div><label class="fine" for="bootstrap-prompt">Read-only prompt. You can also select and copy this text manually.</label><textarea id="bootstrap-prompt" readonly spellcheck="false" aria-describedby="prompt-load-status">Open bootstrap.txt above to read the setup prompt.</textarea><p class="fine" id="prompt-load-status" role="status"></p></section>
-  <p class="next">After setup, follow the <a href="setup.html">executor-specific daily loop</a>. Start with a small task and keep review in your hands.</p>
+  <p class="next">After setup, follow the <a href="setup.html#5-local-executor">local daily loop</a>. For Orca, use the <a href="setup.html#6-orca-executor">Orca executor reference</a>. Start with a small task and keep review in your hands.</p>
 </main>
 <footer class="wrap site-footer"><span>Loom · MIT</span><nav aria-label="Resources"><a href="index.html">Overview</a><a href="setup.html">Setup</a><a href="support.html">Support</a></nav></footer>
 </body>

@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ page.title }} — Loom</title>
+  <meta name="description" content="Set up Loom with your coding agent, or follow the manual reference for configuration, executors and calibration.">
+  <link rel="stylesheet" href="{{ '/assets/site.css' | relative_url }}">
+  <script src="{{ '/assets/site.js' | relative_url }}" defer></script>
+</head>
+<body class="setup-page">
+<a class="skip" href="#main">Skip to content</a>
+<header class="site-header wrap">
+  <a class="brand" href="{{ '/index.html' | relative_url }}" aria-label="Loom home"><span class="mark" aria-hidden="true">▥</span> loom</a>
+  <nav aria-label="Main navigation"><a href="{{ '/index.html' | relative_url }}">Overview</a><a href="{{ '/setup.html' | relative_url }}" aria-current="page">Setup</a><a href="https://github.com/RedKnight13/loom">GitHub</a></nav>
+</header>
+<main id="main" class="wrap" tabindex="-1">
+  {{ content }}
+</main>
+<footer class="wrap site-footer"><span>Loom · MIT</span><nav aria-label="Resources"><a href="{{ '/index.html' | relative_url }}">Overview</a><a href="{{ '/copy.html' | relative_url }}">Bootstrap prompt</a><a href="{{ '/support.html' | relative_url }}">Support</a></nav></footer>
+</body>
+</html>
