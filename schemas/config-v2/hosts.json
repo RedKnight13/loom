@@ -1,0 +1,118 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:loom:config-v2:hosts",
+  "title": "Loom v2 hosts",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "const": 2
+    },
+    "hosts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 128,
+            "pattern": "^[^\\u0000]*$",
+            "x-loom-maxUtf8Bytes": 128,
+            "minLength": 1
+          },
+          "transport": {
+            "enum": [
+              "process",
+              "ssh"
+            ]
+          },
+          "destination": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_.@:-]{0,254}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "workspace_root": {
+            "type": "string",
+            "pattern": "^/(?!.*(?:/\\.{1,2}(?:/|$)|//))[^\\u0000-\\u001f\\u007f]+(?<!/)$",
+            "maxLength": 65536
+          },
+          "identity": {
+            "type": "string",
+            "maxLength": 128,
+            "pattern": "^[^\\u0000]*$",
+            "x-loom-maxUtf8Bytes": 128,
+            "minLength": 1
+          },
+          "helper": {
+            "type": "object",
+            "properties": {
+              "version": {
+                "type": "string",
+                "maxLength": 128,
+                "pattern": "^[^\\u0000]*$",
+                "x-loom-maxUtf8Bytes": 128,
+                "minLength": 1
+              },
+              "digest": {
+                "type": "string",
+                "pattern": "^git-blob-sha1-v1:[0-9a-f]{40}$"
+              }
+            },
+            "required": [
+              "version",
+              "digest"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "id",
+          "transport",
+          "destination",
+          "workspace_root",
+          "identity",
+          "helper"
+        ],
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "transport": {
+                  "const": "process"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "destination": {
+                  "type": "null"
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "destination": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "minItems": 1,
+      "maxItems": 256
+    }
+  },
+  "required": [
+    "schema",
+    "hosts"
+  ],
+  "additionalProperties": false,
+  "$comment": "Runtime validate.jq also checks UTF-8 byte bounds, unique registry IDs, selected host membership and canonical paths. policy.sh rejects duplicate keys, NUL and non-integer numeric tokens."
+}

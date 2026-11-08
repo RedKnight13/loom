@@ -1,0 +1,190 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:loom:config-v2:profiles",
+  "title": "Loom v2 profiles",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "const": 2
+    },
+    "agents": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 128,
+            "pattern": "^[^\\u0000]*$",
+            "x-loom-maxUtf8Bytes": 128,
+            "minLength": 1
+          },
+          "executable": {
+            "type": "string",
+            "pattern": "^/(?!.*(?:/\\.{1,2}(?:/|$)|//))[^\\u0000-\\u001f\\u007f]+(?<!/)$",
+            "maxLength": 65536
+          },
+          "argv": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 65536,
+              "pattern": "^[^\\u0000]*$",
+              "x-loom-maxUtf8Bytes": 65536
+            },
+            "minItems": 0,
+            "maxItems": 253
+          },
+          "prompt_ingress": {
+            "enum": [
+              "stdin",
+              "file"
+            ]
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "argv": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "maxLength": 65536,
+                      "pattern": "^[^\\u0000]*$",
+                      "x-loom-maxUtf8Bytes": 65536
+                    },
+                    "minItems": 1,
+                    "maxItems": 256
+                  },
+                  "values": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "maxLength": 128,
+                      "pattern": "^[^\\u0000]*$",
+                      "x-loom-maxUtf8Bytes": 128,
+                      "minLength": 1
+                    },
+                    "minItems": 1,
+                    "maxItems": 256,
+                    "uniqueItems": true
+                  }
+                },
+                "required": [
+                  "argv",
+                  "values"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "effort": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "argv": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "maxLength": 65536,
+                      "pattern": "^[^\\u0000]*$",
+                      "x-loom-maxUtf8Bytes": 65536
+                    },
+                    "minItems": 1,
+                    "maxItems": 256
+                  },
+                  "values": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "maxLength": 128,
+                      "pattern": "^[^\\u0000]*$",
+                      "x-loom-maxUtf8Bytes": 128,
+                      "minLength": 1
+                    },
+                    "minItems": 1,
+                    "maxItems": 256,
+                    "uniqueItems": true
+                  }
+                },
+                "required": [
+                  "argv",
+                  "values"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "executable",
+          "argv",
+          "prompt_ingress",
+          "model",
+          "effort"
+        ],
+        "additionalProperties": false
+      },
+      "minItems": 1,
+      "maxItems": 256
+    },
+    "adapters": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 128,
+            "pattern": "^[^\\u0000]*$",
+            "x-loom-maxUtf8Bytes": 128,
+            "minLength": 1,
+            "not": {
+              "const": "native"
+            }
+          },
+          "executable": {
+            "type": "string",
+            "pattern": "^/(?!.*(?:/\\.{1,2}(?:/|$)|//))[^\\u0000-\\u001f\\u007f]+(?<!/)$",
+            "maxLength": 65536
+          },
+          "argv": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 65536,
+              "pattern": "^[^\\u0000]*$",
+              "x-loom-maxUtf8Bytes": 65536
+            },
+            "minItems": 0,
+            "maxItems": 256
+          }
+        },
+        "required": [
+          "id",
+          "executable",
+          "argv"
+        ],
+        "additionalProperties": false
+      },
+      "minItems": 0,
+      "maxItems": 256
+    }
+  },
+  "required": [
+    "schema",
+    "agents",
+    "adapters"
+  ],
+  "additionalProperties": false,
+  "$comment": "Runtime validate.jq also checks UTF-8 byte bounds, unique registry IDs, selected host membership and canonical paths. policy.sh rejects duplicate keys, NUL and non-integer numeric tokens."
+}
