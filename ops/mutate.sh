@@ -98,7 +98,21 @@ run launch.sh 's/ \&\& umask "$LOOM_CALLER_UMASK"//' "worker inherits loom's uma
 run verify.sh 's/ \&\& umask "$LOOM_CALLER_UMASK"//' "checks inherit loom's umask" m15
 run dispatch.sh '/consumer config has uncommitted changes/d' "dispatch accepts an uncommitted config" m16
 run lib.sh 's/for try in 1 2; do/for try in 2; do/' "no retry after a fixer hook" m17
-run launch.sh "s/^    loom_error 'the Orca CLI is available: workers start only through it.*/    :/" "launch.sh starts workers while Orca is available" m18
+# Native policy regressions replace the superseded Orca-presence veto mutant.
+run launch.sh '/^! loom_alive/i\
+if loom_orca_ready >/dev/null; then loom_error "Orca veto"; fi
+' "local launch vetoed by installed Orca" mnative1
+run launch.sh '/^! loom_alive/i\
+loom_orca_ready >/dev/null || :
+' "local launch probes unrelated Orca" mnative2
+run launch.sh '/^! loom_alive/i\
+[[ ${LOOM_ALLOW_LOCAL:-0} == 1 ]] || loom_error "legacy override required"
+' "local launch requires obsolete override" mnative3
+run launch.sh '/is an Orca assignment/d' "native launcher accepts an Orca assignment" mnative4
+run calibrate.sh 's/if \[\[ \$policy != local \]\]; then/if true; then/' "local calibration discovers unrelated Orca" mnative5
+run calibrate.sh "s/orca_selector=''/orca_selector=\${LOOM_ORCA:-orca}/" "local calibration fingerprints unrelated selector" mnative6
+run calibrate.sh '/^    if \[\[ \$policy != local/,/^    fi/s/\$(cal_file_hash "\$resolved")/constant/' "calibration ignores Orca bytes" mnative7
+run calibrate.sh '/Required Orca runtime is unavailable/s/\[\[.*\]\]/true/' "required Orca calibration silently falls back" mnative8
 run orca.sh "s/if \[\[ \$rc != 0 \]\] || grep -q 'stop_unknown' \"\$receipt\"; then/if false; then/" "stop claimed without Orca's confirmation" m19
 run status.sh 's/select($last <= (now - $limit \* 60))/select(false)/' "stale Orca worker never surfaced" m20
 run dispatch.sh "s#\[\[ -n \$orca_runtime \]\] || loom_error 'executor orca required[^;]*; ##" "required Orca not enforced" m21

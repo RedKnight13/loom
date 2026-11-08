@@ -57,10 +57,64 @@ delegation. If shell execution is unavailable, report **unwired; calibration
 not run** and move to a capable project session. Confirm you read this bridge;
 if loading is uncertain, open it explicitly rather than assuming persistence.
 
+Read the approved coordination choice below if present. Reuse it only while
+its task fit, capabilities, budget and authorization still hold. If absent or
+deferred, continue only existing authorized scope without adding workers; never
+infer a selection. Show changed advice separately, preserve the approved text
+until explicitly replaced, and stop work that depends on an infeasible choice.
+Manual choice opens the full maintained catalog; unsupported recipes remain
+informational. No response or timeout selects or launches anything.
+
+Model-role recommendations are advice, not applied settings. Inspect current
+inventory for available local/custom harnesses or the optional Orca adapter on
+the authorized execution host and respect pinned consumer settings;
+unknown access/quota stays unknown. Missing discovery can use user-supplied
+observed inventory and does not block advice. Loom Orca start exposes only `--agent`, with
+consumer model/effort pinned at dispatch. Never silently override them or use
+invented per-role flags. Local launch uses its authorized command/harness settings.
+Selection grants no installation, model/cap/placement
+change or launch permission. Before separately authorized execution, confirm
+context isolation and effective model/effort/host fields; report unknowns.
+
 Real acceptance requires separately authorized verification of the actual
 revision with captured exits. Installation, configuration, offline drill and
 prior acceptance do not substitute for that verification or authorize a worker.
 <!-- loom-session:end -->
+
+## Optional approved coordination choice
+
+Only after explicit user selection, insert ONE section with the following fields
+inside the root bridge above. This example is a fill-in guide, not a selection;
+do not copy unfilled placeholders as approved instructions. Check both root
+entry files for duplicate/conflicting sections, reconcile first, and preserve
+surrounding instructions and user customizations. Do not add a second section
+on reruns. A changed recommendation remains a proposal until accepted.
+
+```markdown
+<!-- loom-pattern:start -->
+### Approved coordination choice
+- Recipe and catalog reference: <chosen family; trusted docs/patterns.md>
+- Task/fit: <scope and reason; when to reconsider>
+- Roles and context: <responsibilities; permitted input per role; isolation>
+- Bounds: <worker total and peak concurrency; review/retry rounds; time/token budget>
+- Stop: <checks/acceptance, exhausted bounds, drift, missing capability, owner decision>
+- Model-role advice: <each role's observed agent/provider/model or unknown;
+  effort if supported; private authorized-host reference; rationale;
+  installed/configured/launch-verified evidence; cost basis and confidence>
+- Applied configuration: <existing approved consumer settings or unknown;
+  advice not applied; no per-role routing implied>
+- Approval scope: <user's explicit selection and constraints; no new permissions>
+<!-- loom-pattern:end -->
+```
+
+Keep private paths, host names, identities and account details out of shared
+instructions; resolve private references at entry. Save the operative choice in
+this root section. Schema 1 fingerprints root entry bytes, including the choice,
+but not linked checklist or separate pattern artifact bytes. Review linked
+content separately. On an approved edit, run `--check`, review the named drift,
+explicitly record if appropriate, then check again before delegation. Do not
+refresh the baseline merely to accept new advice. The markers add no parser,
+TOML keys, model calls, scheduler, telemetry or automatic enforcement.
 
 ## Evidence and limits
 

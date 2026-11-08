@@ -194,18 +194,21 @@ cal_observe() {
         digest=$(jq -nc --arg path "$resolved" --arg bytes "$(cal_file_hash "$resolved")" '[$path,$bytes]' | cal_json_hash)
         tools_json=$(jq -c --arg name "$tool" --arg digest "$digest" '. + {($name):$digest}' <<< "$tools_json")
     done
-    resolved=$(command -v "${LOOM_ORCA:-orca}" 2>/dev/null || :)
-    digest=absent
-    if [[ -n $resolved && -f $resolved && -x $resolved ]]; then
-        digest=$(jq -nc --arg path "$resolved" --arg bytes "$(cal_file_hash "$resolved")" '[$path,$bytes]' | cal_json_hash)
-    fi
-    tools_json=$(jq -c --arg digest "$digest" '. + {orca:$digest}' <<< "$tools_json")
     # Exercise safe local capabilities rather than equating PATH presence with proof.
     BASH_ENV=/dev/null bash -c '[[ ${BASH_VERSINFO[0]} -gt 3 || ( ${BASH_VERSINFO[0]} -eq 3 && ${BASH_VERSINFO[1]} -ge 2 ) ]]' || cal_refuse environment 'Bash 3.2 or newer is required.'
     jq -ne '([1]|any(. == 1)) and ("2020-01-01T00:00:00Z"|fromdateiso8601 > 0)' >/dev/null || cal_refuse environment 'A compatible jq is required.'
     policy=$(jq -r '.executor // "auto"' <<< "$config")
     availability=not_probed
+    orca_selector=''
+    # Only effective orchestrator policy participates in discovery/fingerprints.
     if [[ $policy != local ]]; then
+        orca_selector=${LOOM_ORCA:-orca}
+        resolved=$(command -v "${LOOM_ORCA:-orca}" 2>/dev/null || :)
+        digest=absent
+        if [[ -n $resolved && -f $resolved && -x $resolved ]]; then
+            digest=$(jq -nc --arg path "$resolved" --arg bytes "$(cal_file_hash "$resolved")" '[$path,$bytes]' | cal_json_hash)
+        fi
+        tools_json=$(jq -c --arg digest "$digest" '. + {orca:$digest}' <<< "$tools_json")
         availability=unavailable
         if probe=$(cal_bounded 5 "${LOOM_ORCA:-orca}" status 2>/dev/null); then
             if grep -qx 'runtimeReachable: true' <<< "$probe" && grep -qx 'runtimeState: ready' <<< "$probe" &&
@@ -234,7 +237,7 @@ cal_observe() {
         --arg consumer "$(cal_file_hash "$cpath")" \
         --arg checkout "$(jq -nc --arg root "$checkout" --arg common "$common" --arg origin "$origin" --arg override "${LOOM_ALLOW_ANY_CHECKOUT:-0}" '[$root,$common,$origin,$override]' | cal_json_hash)" \
         --arg bridge "$(printf '%s\n' "$bridge" | cal_json_hash)" \
-        --arg tools "$(jq -nc --argjson tools "$tools_json" --arg orca "${LOOM_ORCA:-orca}" --arg availability "$availability" '[$tools,$orca,$availability]' | cal_json_hash)" \
+        --arg tools "$(jq -nc --argjson tools "$tools_json" --arg orca "$orca_selector" --arg availability "$availability" '[$tools,$orca,$availability]' | cal_json_hash)" \
         --arg executor "$executor" \
         '{algorithm:"git-blob-sha1-v1",loom_version:$loom_version,loom_code:$loom_code,consumer:$consumer,
           checkout:$checkout,bridge:$bridge,tools:$tools,executor:$executor}')
@@ -267,7 +270,7 @@ cal_valid_record() {
 loom_calibrate() {
     local consumer='' mode=record fingerprint=null stages='{"installation":"not_run","configuration":"not_run","connectivity":"not_run","instructions":"not_run","drill":"not_run"}'  drift='[]' items
     local config checkout cpath key state_dir proof origin repo want slug worktrees policy executor
-    local code bridge tools_json tool resolved availability digest marker=false name value old
+    local code bridge tools_json tool resolved availability orca_selector digest marker=false name value old
     local temp='' drill_dir='' recorded common probe
     export LC_ALL=C GIT_OPTIONAL_LOCKS=0
     trap 'cal_finish incomplete "Calibration observation failed; repair the local toolchain or storage and retry." failed' ERR

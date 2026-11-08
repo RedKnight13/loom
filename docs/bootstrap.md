@@ -30,6 +30,33 @@ Missing tools are installed only within granted authorization. Existing files,
 consumer choices and global instructions are preserved. Only consequential
 unresolved choices require questions.
 
+## Three choices, grounded in this project
+
+After inspecting the task, checks and capacity, bootstrap offers exactly three
+coordination candidates, marks one recommended and compares each with a single
+scoped worker baseline. Compare cost assumptions, elapsed time, accepted work
+per human hour and defects/rework separately; no measured gains are promised.
+Each candidate also gets role-by-role agent/model advice from the authorized
+host's observed inventory. Local/custom harnesses work without Orca; if discovery
+is unavailable, use user-supplied observed inventory or explicit unknowns without
+blocking advice. Unknown access, rates or quota stay unknown.
+
+Choose a candidate, keep the simple baseline, defer, or request the
+[full maintained pattern catalog](patterns.html#catalog). Manual choice lists
+all maintained families with capability limits; it does not claim to enumerate
+all possible patterns. Unavailable recipes remain informational. Selection
+never installs a plugin, changes models, raises caps, moves work or launches it.
+Loom capacity counts hosts, not model availability or safe concurrency.
+
+An approved choice is reused. Changed advice is a proposal until explicitly
+accepted; silence never selects anything. Existing authorized work without a
+choice can continue safely without adding workers. The reviewed choice lives
+in one marked section of the supported root session-entry file, so existing
+schema-1 calibration detects edits. Linked artifacts are not fingerprinted.
+Advice is not runtime routing: Loom Orca start exposes only `--agent`; consumer
+model/effort are pinned at dispatch. See [model-role matching](patterns.html#models)
+for inventory evidence and configuration limits.
+
 ## Session continuity
 
 The prompt uses [LOOM_SESSION.md](https://github.com/RedKnight13/loom/blob/main/templates/LOOM_SESSION.md) to add a small,
