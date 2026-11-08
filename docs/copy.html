@@ -1,93 +1,41 @@
 ---
-layout: default
-title: Bootstrap Loom
+layout: null
 ---
-
-<style>
-  .main-content { max-width: 900px; }
-  .copy { display:inline-block; margin:.4rem 0 1rem; padding:.5rem 1rem; border:1px solid #1f6feb;
-          border-radius:6px; background:#fff; color:#1f6feb; font:inherit; cursor:pointer; }
-  .copy:hover { background:#1f6feb; color:#fff; }
-  .copy.copied { border-color:#1a7f37; background:#1a7f37; color:#fff; }
-  .copy.failed { border-color:#cf222e; background:#cf222e; color:#fff; }
-  pre { background:#f6f8fa; border:1px solid #d0d7de; border-radius:6px; padding:1rem;
-        overflow:auto; font-size:.85rem; line-height:1.45; max-height:70vh; }
-</style>
-
-<p><strong>One prompt, one setup.</strong> Paste it into Claude Code, Codex, or any agent that can
-run shell commands. It installs Loom, proves the checkout, asks for your repository, and stops
-before creating an issue.</p>
-
-<button class="copy" data-copy-file="bootstrap.txt">Copy the bootstrap prompt</button>
-<p><a href="bootstrap.txt">Open the raw prompt</a> · <a href="index.html">back to Loom</a></p>
-
-<pre id="bootstrap-prompt">Loading the prompt…</pre>
-
-<h2>What it will do</h2>
-<ol>
-  <li>Check prerequisites and report versions.</li>
-  <li>Clone Loom to <code>~/loom</code>, refusing a dirty checkout.</li>
-  <li>Run selftest and <code>shellcheck</code>; stop on either non-zero exit.
-      The long, macOS-only <code>ops/mutate.sh</code> is the contributor and CI gate, not a setup requirement.</li>
-  <li>Ask for the consumer repo, its checks command, the worktrees directory, the executor, and the
-      default number of workers — suggesting what <code>loom capacity</code> detects from Orca.
-      Create a local, untracked config inside the Loom checkout; do not commit it.
-      Commit a config only when it lives in the consumer repo, as a separate task outside this bootstrap.</li>
-  <li>Verify <code>gh</code> and, for Orca, the runtime and the 1.4.246 floor.</li>
-  <li>Render a ticket with <code>--dry-run</code> and stop before opening it.</li>
-</ol>
-<p>It never pushes, merges, or writes credentials to a file, and it does not claim success without
-a captured exit code. The final summary reports the two setup gate exit codes: selftest and shellcheck.</p>
-
-<h2>After it finishes</h2>
-<pre id="after">loom accept --consumer consumers/myrepo.toml --short first-check \
-  --title "First check" --scope "one file or area" --out "everything else" \
-  --done "make check exits 0"
-
-LOOM_REPO=/path/to/repo loom dispatch --consumer consumers/myrepo.toml --issue 42</pre>
-<button class="copy" data-copy="#after">Copy these commands</button>
-
-<p>Next: <a href="setup.html">setup</a> for the daily loop, Orca, and the compute host.</p>
-
-<script>
-(function () {
-  function flash(el, cls, text) {
-    var old = el.dataset.label || el.textContent;
-    el.dataset.label = old; el.textContent = text; el.classList.add(cls);
-    setTimeout(function () { el.textContent = old; el.classList.remove(cls); }, 1800);
-  }
-  async function write(text) {
-    try { await navigator.clipboard.writeText(text); return true; }
-    catch (e) {
-      var ta = document.createElement('textarea'); ta.value = text;
-      ta.style.position = 'fixed'; ta.style.opacity = '0'; document.body.appendChild(ta);
-      ta.select(); var ok = false; try { ok = document.execCommand('copy'); } catch (e2) {}
-      document.body.removeChild(ta); return ok;
-    }
-  }
-  async function load() {
-    try {
-      var r = await fetch('bootstrap.txt', { cache: 'no-store' });
-      document.getElementById('bootstrap-prompt').textContent = await r.text();
-    } catch (e) {
-      document.getElementById('bootstrap-prompt').textContent =
-        'Could not load bootstrap.txt — open it directly.';
-    }
-  }
-  document.querySelectorAll('button.copy').forEach(function (btn) {
-    btn.addEventListener('click', async function () {
-      var text = '';
-      if (btn.dataset.copyFile) {
-        try { var r = await fetch(btn.dataset.copyFile, { cache: 'no-store' });
-              text = await r.text(); } catch (e) { text = ''; }
-      } else if (btn.dataset.copy) {
-        var node = document.querySelector(btn.dataset.copy); text = node ? node.innerText : '';
-      }
-      if (!text) { flash(btn, 'failed', 'Could not copy — open the raw file'); return; }
-      if (await write(text)) flash(btn, 'copied', 'Copied');
-      else flash(btn, 'failed', 'Copy failed — select the text');
-    });
-  });
-  load();
-})();
-</script>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bootstrap prompt — Loom</title>
+  <meta name="description" content="Inspect and copy the Loom setup prompt for your coding agent.">
+  <link rel="stylesheet" href="assets/site.css">
+  <script src="assets/site.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="site-header wrap"><a class="brand" href="index.html" aria-label="Loom home"><span class="mark" aria-hidden="true">▥</span> loom</a><nav aria-label="Main navigation"><a href="index.html">Overview</a><a href="setup.html">Setup</a><a href="https://github.com/RedKnight13/loom">GitHub</a></nav></header>
+<main id="main" class="wrap prompt-page">
+  <p class="intro">Your first handoff</p>
+  <h1>Inspect. Copy.<br>Set up with your agent.</h1>
+  <p class="lead">This is the setup prompt from <a href="bootstrap.txt">bootstrap.txt</a>. Read it, then paste it into a project session with file access and execution tools: a CLI agent or tool-enabled chat.</p>
+  <div class="actions"><button class="button primary" data-copy-bootstrap hidden>Copy bootstrap prompt</button><a class="button secondary" href="bootstrap.txt">Open raw prompt</a></div>
+  <p class="copy-status" role="status" aria-live="polite" data-copy-status></p>
+  <noscript><p>JavaScript is off. Open the raw prompt above, select all its text, and copy it manually.</p></noscript>
+  <section class="expectations" aria-labelledby="expect-title"><h2 id="expect-title">What to expect</h2><ol><li>Discover existing tools and configuration, then run the checkout’s selftest and ShellCheck gates.</li><li>Reuse established choices for repository, trusted checks, workspace location, executor, and worker cap. Ask only about unresolved choices.</li><li>Review a rendered mandate. Opening an issue or starting workers requires task-specific authorization; reuse it if already granted, otherwise ask for approval of the proposed action.</li></ol><p>Install missing tools within granted authorization; ask only for missing permission. Plain chat without project access and execution tools remains unwired: nothing is installed or persisted. A session without shell access reports command checks as not run.</p></section>
+  <section aria-labelledby="readiness-title">
+    <h2 id="readiness-title">Read setup results in stages</h2>
+    <p>Setup reports each level separately:</p>
+    <ul>
+      <li><strong>Structural wiring:</strong> configuration and session-entry instructions are inspected. A file’s presence does not prove a fresh agent loads it.</li>
+      <li><strong>Offline evidence:</strong> selftest and ShellCheck exits are reported separately from the fixed calibration drill. None proves live consumer acceptance.</li>
+      <li><strong>Live workflow proof:</strong> an authorized real ticket, worker, harvest, and verification sequence has produced evidence and passed your project’s checks. Otherwise, report not run. Human review still follows.</li>
+    </ul>
+    <p>Run <code>loom calibrate --consumer FILE --check</code> first. Reuse current evidence; review missing or drifted evidence before explicitly recording with <code>loom calibrate --consumer FILE</code>, then check again. Recheck at session entry and before delegation. If the installed CLI lacks calibration, report it as not run and block dependent delegation.</p>
+    <p>The agent must enforce these checks; dispatch and launch are not automatically guarded. Setup checks and an offline drill do not establish that real project work has succeeded. Treat a level that was not run as unverified.</p>
+  </section>
+  <section aria-labelledby="prompt-title"><div class="prompt-heading"><h2 id="prompt-title">The full prompt</h2><button class="button secondary" data-select-prompt hidden>Select prompt text</button></div><label class="fine" for="bootstrap-prompt">Read-only prompt. You can also select and copy this text manually.</label><textarea id="bootstrap-prompt" readonly spellcheck="false" aria-describedby="prompt-load-status">Open bootstrap.txt above to read the setup prompt.</textarea><p class="fine" id="prompt-load-status" role="status"></p></section>
+  <p class="next">After setup, follow the <a href="setup.html">executor-specific daily loop</a>. Start with a small task and keep review in your hands.</p>
+</main>
+<footer class="wrap site-footer"><span>Loom · MIT</span><nav aria-label="Resources"><a href="index.html">Overview</a><a href="setup.html">Setup</a><a href="support.html">Support</a></nav></footer>
+</body>
+</html>

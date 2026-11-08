@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC2030,SC2031  # subshell-scoped env/pids are intentional
+# shellcheck disable=SC2030,SC2031,SC2016 # subshell env; literal sed        #
 # Offline self-test: a throwaway consumer repo, a stubbed gh, disposable
 # fake workers. No network, no pushes, no real worker is signalled.
 set -euo pipefail
 ops=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
 scratch=$(mktemp -d "${TMPDIR:-/tmp}/loom-selftest.XXXXXX")
+scratch=$(cd "$scratch" && pwd -P)
 pids=()
 cleanup() {
     local p
@@ -130,6 +131,309 @@ await_pid() {
     done
     fail "worker pid never recorded for $1"
 }
+
+# --- calibration: proof is private, explicit, and never consumer execution ---
+(
+    export LOOM_STATE="$scratch/calibration-state"
+    cp "$scratch/consumer.toml" "$scratch/calibration.toml"
+    printf '\nexecutor = "local"\n' >> "$scratch/calibration.toml"
+    # A declared check/setup is data, never an implicit calibration action.
+    sed 's/checks = "true"/checks = "touch SHOULD_NOT_EXIST"/' "$scratch/calibration.toml" > "$scratch/calibration-next"
+    mv "$scratch/calibration-next" "$scratch/calibration.toml"
+    printf 'compute_setup = "touch SHOULD_NOT_EXIST"\n' >> "$scratch/calibration.toml"
+    sed -n '/<!-- loom-session:start -->/,/<!-- loom-session:end -->/p' "$ops/../templates/LOOM_SESSION.md" > "$repo/AGENTS.md"
+    [[ -s $repo/AGENTS.md ]] || fail 'bootstrap bridge template is missing'
+    cp "$repo/AGENTS.md" "$scratch/bootstrap-bridge"
+    rc=0; obj=$(bash "$ops/loom" calibrate --consumer "$scratch/not-a-config" --check) || rc=$?
+    [[ $rc == 1 ]] || fail 'missing config calibration status'
+    jq -se 'length == 1 and .[0].ok == false and .[0].items[0].readiness == "incomplete"' <<< "$obj" >/dev/null || fail 'missing config emitted multiple envelopes'
+    printf 'private-invalid-value\n' > "$scratch/invalid-calibration.toml"
+    rc=0; obj=$(bash "$ops/loom" calibrate --consumer "$scratch/invalid-calibration.toml" --check) || rc=$?
+    [[ $rc == 1 && $obj != *private-invalid-value* ]] || fail 'invalid config was accepted or exposed'
+    jq -se 'length == 1 and .[0].ok == false' <<< "$obj" >/dev/null || fail 'invalid config emitted multiple envelopes'
+    calops=$ops
+    cal() { bash "$calops/loom" calibrate --consumer "$scratch/calibration.toml" "$@"; }
+    rc=0; obj=$(cal --check) || rc=$?
+    [[ $rc == 1 ]] || fail 'calibration accepted missing proof'
+    jq -e '.ok == false and .items[0].readiness == "incomplete"' <<< "$obj" >/dev/null || fail 'missing proof contract'
+    [[ ! -e $LOOM_STATE ]] || fail 'check created state'
+    obj=$(cal) || fail "calibration fixture failed: $obj"
+    jq -e '.ok and .state == "ready" and .items[0].schema == 1 and .items[0].acceptance == "not_run"' <<< "$obj" >/dev/null || fail 'calibration readiness contract'
+    proofs=("$LOOM_STATE"/calibration/*.json)
+    [[ ${#proofs[@]} == 1 && -f ${proofs[0]} ]] || fail 'calibration proof missing'
+    proof=${proofs[0]}
+    cp "$proof" "$scratch/proof-good"
+    obj=$(cal --check) || fail 'unchanged calibration rejected'
+    cmp -s "$proof" "$scratch/proof-good" || fail 'check rewrote evidence'
+    [[ $(printf '%s\n' "$obj" | wc -l | tr -d ' ') == 1 ]] || fail 'calibration emitted multiple objects'
+    if grep -F -e "$scratch" -e 'example/fixture' -e 'SHOULD_NOT_EXIST' "$proof"; then fail 'calibration retained private input'; fi
+    [[ ! -e SHOULD_NOT_EXIST && ! -e $repo/SHOULD_NOT_EXIST ]] || fail 'calibration executed consumer commands'
+    # The format is SHA-1 regardless of caller repository/config/environment.
+    expected=$(jq -nc --arg c "$scratch/calibration.toml" --arg r "$repo" '[$c,$r]' | git hash-object --stdin)
+    [[ ${proof##*/} == "$expected.json" ]] || fail 'calibration key is not canonical JSON with a trailing newline'
+    bridge_digest=$(git hash-object --no-filters "$repo/AGENTS.md")
+    expected=$(printf '[["AGENTS.md","%s"],["CLAUDE.md",null]]\n' "$bridge_digest" | git hash-object --stdin)
+    [[ $(jq -r '.fingerprint.bridge' "$proof") == "$expected" ]] || fail 'bridge serialization is not canonical'
+    expected=$(
+        for source in "$ops/../VERSION" "$ops/loom" "$ops"/*.sh; do
+            case $source in */VERSION) relative=VERSION ;; *) relative=ops/${source##*/} ;; esac
+            jq -nc --arg n "$relative" --arg d "$(git hash-object --no-filters "$source")" '[$n,$d]'
+        done | jq -Scs 'sort_by(.[0])' | git hash-object --stdin
+    )
+    [[ $(jq -r '.fingerprint.loom_code' "$proof") == "$expected" ]] || fail 'source fingerprint omits VERSION or canonical source names'
+    mkdir "$scratch/hash-caller"
+    if git -C "$scratch/hash-caller" init -q --object-format=sha256 2>/dev/null; then
+        (
+            cd "$scratch/hash-caller"
+            export GIT_DEFAULT_HASH=sha256
+            obj=$(cal) || fail 'record from SHA-256 caller failed'
+            jq -e '.items[0].fingerprint | [.loom_code,.consumer,.checkout,.bridge,.tools] | all(.[]; test("^[0-9a-f]{40}$"))' <<< "$obj" >/dev/null || fail 'SHA-256 caller changed digest format'
+            cal --check >/dev/null || fail 'check from SHA-256 caller failed'
+        )
+        [[ $(jq -c '.fingerprint' "$proof") == "$(jq -c '.fingerprint' "$scratch/proof-good")" ]] || fail 'caller object format changed fingerprint'
+        (
+            export LOOM_REPO="$scratch/hash-caller" LOOM_STATE="$scratch/sha256-state"
+            git -C "$LOOM_REPO" remote add origin https://github.com/example/fixture
+            git -C "$LOOM_REPO" -c user.name=Fixture -c user.email=fixture@example.invalid -c commit.gpgsign=false commit -q --allow-empty -m fixture
+            cp "$repo/AGENTS.md" "$LOOM_REPO/AGENTS.md"
+            cal >/dev/null || fail 'SHA-256 consumer checkout could not record'
+            cal --check >/dev/null || fail 'SHA-256 consumer checkout could not check'
+        )
+    else
+        pass 'SHA-256 caller fixture not run: Git lacks SHA-256 repository support'
+    fi
+    # Relative paths resolve against invocation cwd, including spaces, without
+    # creating missing state during check or rewriting a successful baseline.
+    (
+        cd "$scratch"
+        export LOOM_STATE='relative state'
+        rc=0; cal --check >/dev/null || rc=$?
+        [[ $rc == 1 && ! -e $LOOM_STATE ]] || fail 'relative missing-state check wrote state or succeeded'
+        cal >/dev/null || fail 'relative state record failed'
+        relative_proof=("$LOOM_STATE"/calibration/*.json)
+        cp "${relative_proof[0]}" "$scratch/relative-proof"
+        cal --check >/dev/null || fail 'relative state check failed'
+        LOOM_STATE="$scratch/relative state" cal --check >/dev/null || fail 'absolute alias of relative state failed'
+        cmp -s "${relative_proof[0]}" "$scratch/relative-proof" || fail 'relative state check rewrote proof'
+    )
+    # Reject nonregular/symlink inputs before parsing/hashing. The watchdog
+    # makes a regression to a FIFO read fail promptly instead of hanging CI.
+    refuse_input() {
+        local got status=0 timed=$scratch/input-timed-out child timer
+        rm -f "$timed"
+        bash "$calops/loom" calibrate --consumer "$1" > "$scratch/input-result" 2> "$scratch/input-error" & child=$!
+        (sleep 4; if kill -0 "$child" 2>/dev/null; then : > "$timed"; kill -KILL "$child" 2>/dev/null || :; fi) & timer=$!
+        wait "$child" || status=$?
+        kill "$timer" 2>/dev/null || :
+        wait "$timer" 2>/dev/null || :
+        [[ ! -e $timed && $status == 1 ]] || fail "unsafe input was accepted or blocked: $2"
+        got=$(cat "$scratch/input-result")
+        jq -se 'length == 1 and .[0].ok == false and .[0].state == "failed" and .[0].items[0].readiness == "incomplete"' <<< "$got" >/dev/null || fail "unsafe input envelope: $2"
+        [[ ! -s $scratch/input-error && $got != *"$scratch"* ]] || fail 'unsafe input leaked diagnostics'
+    }
+    mkdir "$scratch/config-dir"
+    cp "$scratch/calibration.toml" "$scratch/config-dir/consumer.toml"
+    ln -s "$scratch/config-dir" "$scratch/config-link"
+    refuse_input "$scratch/config-link/consumer.toml" 'config ancestor symlink'
+    ln -s "$scratch/calibration.toml" "$scratch/config-symlink"
+    refuse_input "$scratch/config-symlink" 'config symlink'
+    mkfifo "$scratch/config-fifo"
+    refuse_input "$scratch/config-fifo" 'config FIFO'
+    refuse_input "$scratch/config-dir" 'config directory'
+    cp "$scratch/calibration.toml" "$scratch/"$'control\tconfig'
+    refuse_input "$scratch/"$'control\tconfig' 'config control character'
+    mkdir "$scratch/safety-install"
+    cp -R "$ops" "$scratch/safety-install/ops"
+    cp "$ops/../VERSION" "$scratch/safety-install/VERSION"
+    calops=$scratch/safety-install/ops
+    for unsafe in symlink fifo directory; do
+        case $unsafe in
+            symlink) ln -s "$ops/lib.sh" "$calops/extra.sh" ;;
+            fifo) mkfifo "$calops/extra.sh" ;;
+            directory) mkdir "$calops/extra.sh" ;;
+        esac
+        refuse_input "$scratch/calibration.toml" "source $unsafe"
+        if [[ $unsafe == directory ]]; then rmdir "$calops/extra.sh"; else rm "$calops/extra.sh"; fi
+    done
+    # VERSION and lib are consumed by the entry point before the module runs.
+    for source in "$scratch/safety-install/VERSION" "$calops/lib.sh"; do
+        mv "$source" "$source.safe"
+        mkfifo "$source"
+        refuse_input "$scratch/calibration.toml" 'early source FIFO'
+        rm "$source"; mv "$source.safe" "$source"
+    done
+    calops=$ops
+    (
+        export LOOM_STATE="$scratch/state-file"
+        : > "$LOOM_STATE"; chmod 600 "$LOOM_STATE"
+        refuse_input "$scratch/calibration.toml" 'nondirectory state'
+        rm "$LOOM_STATE"
+        ln -s "$scratch/calibration-state" "$LOOM_STATE"
+        refuse_input "$scratch/calibration.toml" 'symlink state'
+    )
+    # Deterministic races use fixture-installed tools, not timing assumptions.
+    # The check changes a bridge only after the initial fingerprint comparison.
+    real_jq=$(command -v jq)
+    cat > "$scratch/bin/jq" <<EOF_JQ
+#!/usr/bin/env bash
+if [[ \${1:-} == -c && \${2:-} == .stages && -n \${CAL_RACE_TARGET:-} ]]; then
+    printf '# concurrent check change\\n' >> "\$CAL_RACE_TARGET"
+fi
+exec "$real_jq" "\$@"
+EOF_JQ
+    chmod +x "$scratch/bin/jq"
+    cal >/dev/null || fail 'race fixture baseline failed'
+    cp "$proof" "$scratch/race-proof"
+    cp "$repo/AGENTS.md" "$scratch/race-bridge"
+    rc=0; obj=$(CAL_RACE_TARGET="$repo/AGENTS.md" cal --check) || rc=$?
+    [[ $rc == 1 ]] || fail 'check accepted a concurrent fingerprint change'
+    jq -e '.items[0].readiness == "drifted" and .items[0].drift == ["bridge"]' <<< "$obj" >/dev/null || fail 'check did not name concurrent bridge drift'
+    cmp -s "$proof" "$scratch/race-proof" || fail 'concurrent check replaced evidence'
+    cp "$scratch/race-bridge" "$repo/AGENTS.md"
+    rm "$scratch/bin/jq"
+    calops=$scratch/safety-install/ops
+    sed '/^exit "\$rc"/i\
+[[ -z ${CAL_RACE_TARGET:-} ]] || printf "# concurrent drill change\\n" >> "$CAL_RACE_TARGET"' "$ops/verify.sh" > "$calops/verify.sh"
+    cal >/dev/null || fail 'record race fixture baseline failed'
+    cp "$proof" "$scratch/race-proof"
+    rc=0; obj=$(CAL_RACE_TARGET="$repo/AGENTS.md" cal) || rc=$?
+    [[ $rc == 1 ]] || fail 'record published evidence after concurrent fingerprint change'
+    jq -e '.items[0].readiness == "drifted" and .items[0].drift == ["bridge"]' <<< "$obj" >/dev/null || fail 'record did not name concurrent bridge drift'
+    cmp -s "$proof" "$scratch/race-proof" || fail 'concurrent record replaced prior evidence'
+    [[ ! -e $LOOM_STATE/calibration/.record-lock ]] || fail 'concurrent record leaked its lock'
+    cp "$scratch/race-bridge" "$repo/AGENTS.md"
+    # A late source mutation must also invalidate the record.
+    rc=0; obj=$(CAL_RACE_TARGET="$calops/lib.sh" cal) || rc=$?
+    [[ $rc == 1 ]] || fail 'record accepted a concurrent source change'
+    jq -e '.items[0].drift == ["loom_code"]' <<< "$obj" >/dev/null || fail 'record did not name concurrent source drift'
+    cmp -s "$proof" "$scratch/race-proof" || fail 'source race replaced prior evidence'
+    calops=$ops
+    cp "$scratch/proof-good" "$proof"
+    # Each independently changed input must name its own drift field.
+    expect_drift() {
+        local got status=0
+        got=$(cal --check) || status=$?
+        [[ $status == 1 ]] || fail "calibration missed $1 drift"
+        jq -e --arg field "$1" '.items[0].readiness == "drifted" and (.items[0].drift | index($field) != null)' <<< "$got" >/dev/null || fail "calibration omitted $1 drift"
+    }
+    printf '# bridge change\n' >> "$repo/AGENTS.md"
+    expect_drift bridge
+    cp "$scratch/bootstrap-bridge" "$repo/AGENTS.md"
+    cp "$scratch/bin/gh" "$scratch/gh-original"
+    printf '# tool change\n' >> "$scratch/bin/gh"
+    expect_drift tools
+    cp "$scratch/gh-original" "$scratch/bin/gh"
+    git -C "$repo" remote set-url origin git@github.com:example/fixture.git
+    expect_drift checkout
+    git -C "$repo" remote set-url origin https://github.com/example/fixture
+    # A separate installation lets the fixture change source bytes and version.
+    mkdir "$scratch/install"
+    cp -R "$ops" "$scratch/install/ops"
+    cp "$ops/../VERSION" "$scratch/install/VERSION"
+    calops=$scratch/install/ops
+    printf '# dirty source\n' >> "$calops/lib.sh"
+    expect_drift loom_code
+    cp "$ops/lib.sh" "$calops/lib.sh"
+    printf '0.0.0\n' > "$scratch/install/VERSION"
+    expect_drift loom_version
+    calops=$ops
+    cal --check >/dev/null || fail 'restored inputs did not restore proof'
+    # Failed recording cannot replace prior evidence, including a failed drill.
+    cp "$repo/AGENTS.md" "$scratch/bridge-original"
+    rm "$repo/AGENTS.md"
+    cal >/dev/null && fail 'missing bridge passed'
+    cmp -s "$proof" "$scratch/proof-good" || fail 'failed record replaced proof'
+    ln -s "$scratch/bridge-original" "$repo/AGENTS.md"
+    cal >/dev/null && fail 'symlink bridge passed'
+    rm "$repo/AGENTS.md"; cp "$scratch/bridge-original" "$repo/AGENTS.md"
+    calops=$scratch/install/ops
+    # Valid Bash, but broken envelope semantics make the fixed drill fail.
+    sed 's/state:$state/state:"ready"/' "$ops/loom" > "$calops/loom"
+    rc=0; obj=$(cal) || rc=$?
+    [[ $rc == 1 ]] || fail 'broken report envelope passed the offline drill'
+    cmp -s "$proof" "$scratch/proof-good" || fail 'failed drill replaced proof'
+    # A consumed report must be followed by a newly appended line; the drill
+    # must distinguish blocked from failed, not merely refuse ready.
+    sed 's/state:$state/state:(if $state == "blocked" then "failed" else $state end)/' "$ops/loom" > "$calops/loom"
+    cal >/dev/null && fail 'drill accepted failed in place of blocked'
+    cmp -s "$proof" "$scratch/proof-good" || fail 'misclassified blocked drill replaced proof'
+    sed 's/state:$state/state:(if $state == "failed" then "blocked" else $state end)/' "$ops/loom" > "$calops/loom"
+    cal >/dev/null && fail 'drill accepted blocked in place of failed'
+    cmp -s "$proof" "$scratch/proof-good" || fail 'misclassified missing drill replaced proof'
+    calops=$ops
+    mkdir "$LOOM_STATE/calibration/.record-lock"
+    cal >/dev/null && fail 'concurrent calibration ignored record lock'
+    cal --check >/dev/null || fail 'readonly check took a record lock'
+    rmdir "$LOOM_STATE/calibration/.record-lock"
+    chmod 755 "$LOOM_STATE/calibration"
+    cal --check >/dev/null && fail 'unsafe evidence directory permissions accepted'
+    chmod 700 "$LOOM_STATE/calibration"
+    printf '\n# reviewed later\n' >> "$scratch/calibration.toml"
+    rc=0; obj=$(cal --check) || rc=$?
+    [[ $rc == 1 ]] || fail 'calibration accepted consumer drift'
+    jq -e '.items[0].readiness == "drifted"' <<< "$obj" >/dev/null || fail 'drift not identified'
+    cmp -s "$proof" "$scratch/proof-good" || fail 'drift check refreshed proof'
+    cal >/dev/null || fail 'explicit recalibration failed'
+    printf '{' > "$proof"
+    rc=0; obj=$(cal --check) || rc=$?
+    [[ $rc == 1 ]] || fail 'calibration accepted corrupt proof'
+    [[ $(cat "$proof") == '{' ]] || fail 'check repaired corrupt proof'
+    cp "$scratch/proof-good" "$proof"
+    jq 'del(.stages)' "$proof" > "$scratch/proof-incomplete"
+    mv "$scratch/proof-incomplete" "$proof"
+    chmod 600 "$proof"
+    cal --check >/dev/null && fail 'calibration accepted incomplete proof'
+    cp "$scratch/proof-good" "$proof"
+    jq '.schema = 99' "$proof" > "$scratch/proof-version"
+    cat "$scratch/proof-version" > "$proof"
+    cal --check >/dev/null && fail 'unknown proof schema accepted'
+    head -c 65537 /dev/zero > "$proof"
+    cal --check >/dev/null && fail 'oversized proof accepted'
+    rm "$proof"; ln -s "$scratch/proof-good" "$proof"
+    cal >/dev/null && fail 'calibration followed evidence symlink'
+    cmp -s "$scratch/proof-good" "$proof" || fail 'calibration changed symlink target'
+    rm "$proof"
+    cp "$scratch/proof-good" "$proof"
+    cat "$scratch/proof-good" >> "$proof"
+    cal --check >/dev/null && fail 'multiple proof objects accepted'
+    cp "$scratch/calibration.toml" "$scratch/calibration-local"
+    printf 'compute = "-oProxyCommand=forbidden"\n' >> "$scratch/calibration.toml"
+    cal >/dev/null && fail 'option-shaped compute host accepted'
+    cp "$scratch/calibration-local" "$scratch/calibration.toml"
+    printf '%s\n' 'compute = "safe\nunsafe"' >> "$scratch/calibration.toml"
+    cal >/dev/null && fail 'multiline compute host accepted';
+    cp "$scratch/calibration-local" "$scratch/calibration.toml"
+    sed 's/executor = "local"/executor = "orca"/' "$scratch/calibration-local" > "$scratch/calibration.toml"
+    rc=0; obj=$(cal) || rc=$?
+    [[ $rc == 1 ]] || fail 'missing required Orca passed'
+    jq -e '.items[0].readiness == "unwired"' <<< "$obj" >/dev/null || fail 'missing Orca not unwired'
+    export LOOM_ORCA="$scratch/bin/cal-orca"
+    printf '#!/bin/sh\nexec /bin/sleep 30\n' > "$LOOM_ORCA"
+    chmod +x "$LOOM_ORCA"
+    started=$(date +%s)
+    rc=0; obj=$(cal) || rc=$?
+    [[ $rc == 1 && $(( $(date +%s) - started )) -lt 12 ]] || fail 'Orca status timeout was not bounded'
+    jq -e '.items[0].readiness == "unwired"' <<< "$obj" >/dev/null || fail 'Orca timeout not unwired'
+    printf '#!/bin/sh\nprintf "runtimeReachable: true\\nruntimeState: ready\\n"\n' > "$LOOM_ORCA"
+    rc=0; obj=$(cal) || rc=$?
+    [[ $rc == 1 ]] || fail 'Orca status without runtime identity passed'
+    jq -e '.items[0].readiness == "unwired"' <<< "$obj" >/dev/null || fail 'incomplete Orca status not unwired'
+    printf '#!/bin/sh\nprintf "runtimeReachable: true\\nruntimeState: ready\\nruntimeId: fixture-runtime\\n"\n' > "$LOOM_ORCA"
+    sed 's/executor = "local"/executor = "auto"/' "$scratch/calibration-local" > "$scratch/calibration.toml"
+    cal >/dev/null || fail 'available Orca structural calibration failed'
+    printf '#!/bin/sh\nexit 1\n' > "$LOOM_ORCA"
+    expect_drift executor
+    cp "$scratch/calibration-local" "$scratch/calibration.toml"
+    # Exercise system Bash as well (Bash 3.2 on supported macOS installations).
+    if [[ -x /bin/bash ]]; then
+        obj=$(/bin/bash "$calops/loom" calibrate --consumer "$scratch/calibration.toml") || fail 'system Bash calibration cleanup failed'
+        jq -e '.ok and .state == "ready"' <<< "$obj" >/dev/null || fail 'system Bash calibration envelope'
+    fi
+    rc=0; obj=$(cal --unknown) || rc=$?
+    [[ $rc == 2 ]] || fail 'calibration usage status'
+)
+pass 'calibration refuses absent/corrupt/drifted proof without implicit execution'
+[[ ${LOOM_SELFTEST_CALIBRATION_ONLY:-0} != 1 ]] || exit 0
 
 # --- dispatch: a private clone on the ticket branch, at the default branch ---
 out=$(dispatch)
@@ -479,10 +783,17 @@ case "$1" in
                 if [[ ${ORCA_STUB_RELEASE:-ok} == fail ]]; then echo '{"ok":false}'; exit 1; fi
                 echo '{"ok":true,"result":{"released":true}}' ;;
             worker-show)
+                if [[ -f $GH_STATE/compact-$4 && " $* " != *' --full '* ]]; then
+                    cat "$GH_STATE/compact-$4"; exit 0
+                fi
                 st='settled'
                 [[ -f $GH_STATE/show-$4 ]] && st=$(cat "$GH_STATE/show-$4")
                 [[ $st != notfound ]] || { echo '{"ok":false,"error":{"code":"dispatch_not_found"}}'; exit 1; }
-                jq -n --arg d "$4" --arg s "$st" '{ok: true, result: {dispatchId: $d, status: $s}}' ;;
+                if [[ -f $GH_STATE/view-$4 ]]; then cat "$GH_STATE/view-$4"; exit "${ORCA_SHOW_EXIT:-0}"; fi
+                state=completed; live=idle
+                if [[ $st == active ]]; then state=dispatched; live=live; fi
+                jq -n --arg d "$4" --arg s "$state" --arg l "$live" --arg w "repo-stub::$GH_STATE/orca-ws/${4#disp-}" \
+                    '{ok: true, result: {dispatch: {id: $d, taskId: "task-1", runId: "run-1", status: $s}, worker: {state: "ready"}, projection: {workspace: {id: $w}, liveness: {verdict: $l}, resource: {terminalState: "retained"}}}}' ;;
             worker-read)
                 echo '{"ok":true,"result":{"source":"transcript","text":"worker transcript"}}' ;;
             worker-abandon)
@@ -498,7 +809,11 @@ case "$1" in
                 echo '{"ok":true,"result":{"messages":[]}}' ;;
             inbox)
                 echo '{"ok":true,"result":{"messages":[]}}' ;;
-            send|ask|reply)
+            send)
+                printf '%s\n' "$*" > "$GH_STATE/send.args"
+                if [[ -n ${ORCA_SEND_RECEIPT:-} ]]; then cat "$ORCA_SEND_RECEIPT"; exit "${ORCA_SEND_EXIT:-0}"; fi
+                jq -n --arg d "${4#dispatch:}" '{ok:true,result:{messageId:"message-stub",dispatchId:$d,queuedFor:"worker"}}' ;;
+            ask|reply)
                 shift 2
                 echo "{\"ok\":true,\"result\":{\"args\":\"$*\"}}" ;;
             gate-create|gate-resolve|gate-list)
@@ -587,6 +902,302 @@ EOF
     jq -e '.executor.released == true' "$(rec "$ido")" >/dev/null || fail 'release not recorded'
     ! grep -q "^$ido"$'\t'"release"$'\t' <<< "$(bash "$ops/status.sh")" || fail 'released workspace still in status'
     bash "$ops/orca.sh" release "$ido" >/dev/null 2>&1 && fail 'double release accepted'
+
+    # Follow-up lifecycle: already settled/released assignment, new dispatch.
+    # BSD/macOS substitutes only trailing Xs. A suffixed template instead
+    # creates a literal name once, then fails rather than replacing evidence.
+    mkdir -p "$scratch/bsd-bin"
+    export LOOM_TEST_MKTEMP
+    LOOM_TEST_MKTEMP=$(command -v mktemp)
+    cat > "$scratch/bsd-bin/mktemp" <<'EOF'
+#!/usr/bin/env bash
+set -eu
+if [[ $# == 1 && $1 != *XXXXXX ]]; then
+    (umask 077; set -C; : > "$1") || exit 1
+    printf '%s\n' "$1"
+else
+    exec "$LOOM_TEST_MKTEMP" "$@"
+fi
+EOF
+    chmod +x "$scratch/bsd-bin/mktemp"
+    receipt_path=$PATH
+    export PATH="$scratch/bsd-bin:$PATH"
+    # Preserve both fixed legacy receipts and the literal macOS failure name.
+    printf 'legacy observation\n' > "$LOOM_STATE/$ido.orca-show.receipt"
+    printf 'legacy suffixed observation\n' > "$LOOM_STATE/$ido.orca-ancestor.XXXXXX.receipt"
+    mkdir -p "$scratch/old-receipts"
+    cp "$LOOM_STATE/$ido.orca-"*.receipt "$scratch/old-receipts/"
+    # Fixtures use full worker-show envelopes with deliberately distracting metadata.
+    fixture_view() {
+        jq -n --arg d "$1" --arg p "$2" --arg s "$3" --arg l "$4" --arg w "repo-stub::$ws" '
+          {ok:true,result:{dispatch:{id:$d,taskId:("task-"+$d),runId:"run-1",followUpOf:$p,status:$s},
+           worker:{state:"ready"},projection:{workspace:{id:$w},liveness:{verdict:$l},resource:{terminalState:"retained"}},
+           unrelated:{status:"completed",dispatchId:$d}}}'
+    }
+    fixture_view follow-one "disp-$ido" dispatched live > "$GH_STATE/view-follow-one"
+    jq -n --arg p "disp-$ido" '{ok:true,result:{delivery:"resumed",followUpOf:$p,dispatchId:"follow-one",state:"ready"}}' > "$scratch/send.receipt"
+    # Legacy raw dispatch selectors must resolve to exactly one assignment.
+    rm -f "$GH_STATE/send.args"
+    bash "$ops/loom" send unknown-dispatch --subject continue >/dev/null 2>&1 && fail 'unknown raw dispatch sent'
+    [[ ! -f $GH_STATE/send.args ]] || fail 'unknown dispatch had a delivery side effect'
+    cp "$(rec "$ido")" "$LOOM_STATE/duplicate-dispatch.json"
+    bash "$ops/loom" send "disp-$ido" --subject continue >/dev/null 2>&1 && fail 'ambiguous raw dispatch sent'
+    [[ ! -f $GH_STATE/send.args ]] || fail 'ambiguous dispatch had a delivery side effect'
+    rm "$LOOM_STATE/duplicate-dispatch.json"
+    cp "$(rec "$ido")" "$scratch/before-placement"
+    jq '.compute = ["declared-remote"]' "$(rec "$ido")" > "$scratch/wrong-placement"
+    mv "$scratch/wrong-placement" "$(rec "$ido")"
+    bash "$ops/loom" send "$ido" --subject continue >/dev/null 2>&1 && fail 'continuation fell back to a local worker'
+    cp "$scratch/before-placement" "$(rec "$ido")"
+    ORCA_SEND_RECEIPT="$scratch/send.receipt" bash "$ops/loom" send "disp-$ido" --subject continue --body review > "$scratch/send.out" || fail 'follow-up send failed'
+    grep -q -- "--to dispatch:disp-$ido" "$GH_STATE/send.args" || fail 'send used assignment id as dispatch'
+    jq -e '.executor.dispatch == "follow-one" and .executor.task == "task-follow-one" and .executor.state == "running" and
+        .report_offset == 1 and .collected_sha == null and .executor.released == null and (.reports | length) == 2' "$(rec "$ido")" >/dev/null || fail "follow-up not tracked or old completion reused: $(jq -c . "$(rec "$ido")")"
+    archive=$(jq -r '.executor.history[-1].archive' "$(rec "$ido")")
+    [[ -s $LOOM_STATE/$archive/$ido.evidence/discovery.log ]] || fail 'old evidence lost on continuation'
+    for old in "$scratch/old-receipts/"*; do
+        cmp -s "$old" "$LOOM_STATE/${old##*/}" || fail 'continuation overwrote a legacy receipt'
+        cmp -s "$old" "$LOOM_STATE/$archive/${old##*/}" || fail 'legacy receipt missing from history'
+    done
+    cp "$(rec "$ido")" "$scratch/before-denial"
+    oldhead=$(git -C "$ws" rev-parse HEAD)
+    printf 'follow-up change\n' >> "$ws/notes.txt"
+    printf 'state: ready — follow-up finished\n' >> "$ws/REPORT.md"
+    # Every refused read must leave assignment, report offset, index and HEAD alone.
+    for mode in live unknown failed worker-failed nested wrong malformed false transport retained compact-live compact-unknown; do
+        fixture_view follow-one "disp-$ido" completed idle > "$scratch/good-view"
+        case $mode in
+            live) jq '.result.projection.liveness.verdict = "live"' "$scratch/good-view" ;;
+            unknown) jq '.result.projection.liveness.verdict = "unverifiable"' "$scratch/good-view" ;;
+            failed) jq '.result.dispatch.status = "failed"' "$scratch/good-view" ;;
+            worker-failed) jq '.result.worker.state = "failed"' "$scratch/good-view" ;;
+            compact-live) printf '%s\n' '{"ok":true,"result":{"dispatchId":"follow-one","state":"ready","liveness":"live","terminalState":"retained","metadata":{"status":"completed"}}}' ;;
+            compact-unknown) printf '%s\n' '{"ok":true,"result":{"dispatchId":"follow-one","terminalState":"retained","metadata":{"status":"completed"}}}' ;;
+            nested) jq '.result.dispatch.status = "dispatched" | .result.worker.metadata = {state:"completed"}' "$scratch/good-view" ;;
+            wrong) jq '.result.dispatch.id = "another-dispatch"' "$scratch/good-view" ;;
+            malformed) printf 'not json\n' ;;
+            false) jq '.ok = false' "$scratch/good-view" ;;
+            transport) cat "$scratch/good-view" ;;
+            retained) jq '.result.dispatch |= del(.status)' "$scratch/good-view" ;;
+        esac > "$GH_STATE/view-follow-one"
+        rc=0
+        if [[ $mode == transport ]]; then
+            ORCA_SHOW_EXIT=1 bash "$ops/loom" harvest "$ido" > "$scratch/denied" || rc=$?
+        else
+            bash "$ops/loom" harvest "$ido" > "$scratch/denied" || rc=$?
+        fi
+        [[ $rc != 0 ]] || fail "unsafe harvest accepted: $mode"
+        jq -e '.ok == false' "$scratch/denied" >/dev/null || fail 'harvest refusal lost JSON envelope'
+        cmp -s "$(rec "$ido")" "$scratch/before-denial" || fail "refused harvest changed state: $mode"
+        [[ $(git -C "$ws" rev-parse HEAD) == "$oldhead" && -z $(git -C "$ws" diff --cached --name-only) ]] || fail "refused harvest touched git: $mode"
+    done
+    cp "$scratch/good-view" "$GH_STATE/view-follow-one"
+    bash "$ops/loom" harvest "$ido" >/dev/null || fail 'completed follow-up harvest failed'
+    jq -e '.executor.state == "settled" and .reports[-1].fact == "follow-up finished" and (.reports | length) == 3 and .report_offset == 2' "$(rec "$ido")" >/dev/null || fail 'second harvest reused initial report'
+    bash "$ops/loom" harvest "$ido" >/dev/null 2>&1 && fail 'duplicate follow-up harvest accepted'
+    [[ $(git -C "$ws" rev-list --count "$oldhead..HEAD") == 1 ]] || fail 'second harvest did not commit continuation exactly once'
+    # Recovery for old Loom records after an external coordinator send: infer
+    # the boundary from the unique prior report, never from the new last line.
+    jq 'del(.harvest_report_lines) | .report_offset = 0' "$(rec "$ido")" > "$scratch/legacy"
+    mv "$scratch/legacy" "$(rec "$ido")"
+    printf 'recovered change\n' >> "$ws/notes.txt"
+    printf 'state: ready — recovered review\n' >> "$ws/REPORT.md"
+    fixture_view follow-two follow-one completed idle > "$GH_STATE/view-follow-two"
+    cp "$(rec "$ido")" "$scratch/before-reconcile"
+    for mode in parent workspace run task; do
+        case $mode in
+            parent) jq '.result.dispatch.followUpOf = "unrelated"' "$GH_STATE/view-follow-two" ;;
+            workspace) jq '.result.projection.workspace.id = "other::/elsewhere"' "$GH_STATE/view-follow-two" ;;
+            run) jq '.result.dispatch.runId = "another-run"' "$GH_STATE/view-follow-two" ;;
+            task) jq '.result.dispatch.taskId = "task-follow-one"' "$GH_STATE/view-follow-two" ;;
+        esac > "$GH_STATE/view-bad-followup"
+        jq '.result.dispatch.id = "bad-followup"' "$GH_STATE/view-bad-followup" > "$scratch/bad"
+        mv "$scratch/bad" "$GH_STATE/view-bad-followup"
+        bash "$ops/loom" reconcile "$ido" --dispatch bad-followup >/dev/null 2>&1 && fail "reconcile accepted wrong $mode"
+        cmp -s "$(rec "$ido")" "$scratch/before-reconcile" || fail 'rejected reconcile changed record'
+    done
+    cp "$ws/REPORT.md" "$scratch/report-before-ambiguous"
+    printf 'state: ready — follow-up finished\n' >> "$ws/REPORT.md"
+    bash "$ops/loom" reconcile "$ido" --dispatch follow-two >/dev/null 2>&1 && fail 'ambiguous legacy report boundary accepted'
+    cmp -s "$(rec "$ido")" "$scratch/before-reconcile" || fail 'ambiguous boundary changed assignment'
+    cp "$scratch/report-before-ambiguous" "$ws/REPORT.md"
+    bash "$ops/loom" reconcile "$ido" --dispatch follow-two >/dev/null || fail 'legacy completed follow-up recovery failed'
+    jq -e '.executor.dispatch == "follow-two" and .report_offset == 2' "$(rec "$ido")" >/dev/null || fail 'legacy recovery lost report boundary'
+    bash "$ops/loom" harvest "$ido" >/dev/null || fail 'recovered review harvest failed'
+    jq -e '.reports[-1].fact == "recovered review" and (.reports | length) == 4' "$(rec "$ido")" >/dev/null || fail 'recovered review not folded'
+    # Same-dispatch reconcile is idempotent; it never authorizes another harvest.
+    bash "$ops/loom" reconcile "$ido" --dispatch follow-two >/dev/null || fail 'idempotent reconcile failed'
+    bash "$ops/loom" harvest "$ido" >/dev/null 2>&1 && fail 'same-dispatch recovery reopened settled work'
+    fixture_view follow-three follow-two completed idle > "$GH_STATE/view-follow-three"
+    bash "$ops/loom" reconcile "$ido" --dispatch follow-three >/dev/null || fail 'silent continuation reconcile failed'
+    bash "$ops/loom" harvest "$ido" >/dev/null || fail 'silent completed continuation harvest failed'
+    jq -e '.reports[-1].state == "failed" and .reports[-1].fact == "worker_done_without_report (orca)"' "$(rec "$ido")" >/dev/null || fail 'continuation without new report reused old ready'
+    # Failed sends remain fenced, including the old completed dispatch.
+    ORCA_SEND_RECEIPT="$scratch/send.receipt" ORCA_SEND_EXIT=1 bash "$ops/loom" send "$ido" --subject uncertain >/dev/null 2>&1 && fail 'failed send accepted'
+    bash "$ops/loom" reconcile "$ido" --dispatch follow-three >/dev/null 2>&1 && fail 'old completion cleared uncertain send'
+    bash "$ops/loom" collect "$ido" >/dev/null 2>&1 && fail 'uncertain continuation collected'
+    bash "$ops/loom" release "$ido" >/dev/null 2>&1 && fail 'uncertain continuation released'
+    # A verified child resolves the uncertain send, with no duplicate delivery.
+    fixture_view follow-four follow-three completed idle > "$GH_STATE/view-follow-four"
+    bash "$ops/loom" reconcile "$ido" --dispatch follow-four >/dev/null || fail 'uncertain send recovery failed'
+    bash "$ops/loom" harvest "$ido" >/dev/null || fail 'uncertain send recovered harvest failed'
+    # Remote queue acknowledgement on a settled assignment cannot establish
+    # whether a follow-up will be created asynchronously. Keep it fenced.
+    bash "$ops/loom" collect "$ido" >/dev/null || fail 'collect before queued continuation failed'
+    printf '%s\n' '{"ok":true,"result":{"messageId":"queued-message","dispatchId":"follow-four","queuedFor":"worker"}}' > "$scratch/queued.receipt"
+    ORCA_SEND_RECEIPT="$scratch/queued.receipt" bash "$ops/loom" send "$ido" --subject continue >/dev/null 2>&1 && fail 'settled queue-only receipt accepted as resolved'
+    jq -e '.executor.continuation_pending == true and .executor.state == "settled" and .executor.dispatch == "follow-four"' "$(rec "$ido")" >/dev/null || fail 'settled queue-only receipt dropped continuation fence'
+    bash "$ops/loom" collect "$ido" >/dev/null 2>&1 && fail 'queued settled continuation collected stale work'
+    bash "$ops/loom" release "$ido" >/dev/null 2>&1 && fail 'queued settled continuation released stale work'
+    bash "$ops/loom" reconcile "$ido" --dispatch follow-four >/dev/null 2>&1 && fail 'old dispatch resolved queued continuation'
+    fixture_view follow-five follow-four completed idle > "$GH_STATE/view-follow-five"
+    bash "$ops/loom" reconcile "$ido" --dispatch follow-five >/dev/null || fail 'queued continuation child reconcile failed'
+    bash "$ops/loom" harvest "$ido" >/dev/null || fail 'queued continuation child harvest failed'
+    # Real worker-show schema after completion telemetry expires: retained
+    # resources and stale_status cannot erase durable exact-dispatch success.
+    fixture_view follow-durable follow-five completed unverifiable | jq '
+      .result.dispatch.completedAt = "2026-01-01T00:00:00Z" |
+      .result.worker = {dispatchId:"follow-durable",state:"succeeded"} |
+      .result.projection.outcome = "succeeded" |
+      .result.projection.evidence = {durable:true,liveStatus:"stale"} |
+      .result.projection.liveness.reason = "stale_status"
+    ' > "$scratch/durable-view"
+    cp "$scratch/durable-view" "$GH_STATE/view-follow-durable"
+    printf '%s\n' '{"ok":true,"result":{"dispatchId":"follow-durable","state":"succeeded","stage":"settled","liveness":"unverifiable"}}' > "$GH_STATE/compact-follow-durable"
+    bash "$ops/loom" reconcile "$ido" --dispatch follow-durable >/dev/null || fail 'durable completed review reconcile failed'
+    [[ $(bash "$ops/orca.sh" show "$ido") == *'show: settled '* ]] || fail 'show did not request full durable completion proof'
+    printf 'durable review change\n' >> "$ws/notes.txt"
+    printf 'state: ready — durable review finished\n' >> "$ws/REPORT.md"
+    cp "$(rec "$ido")" "$scratch/before-durable-denial"
+    oldhead=$(git -C "$ws" rev-parse HEAD)
+    for mode in timestamp durable live-status reason outcome worker-id projection-id worker-state live failed; do
+        case $mode in
+            timestamp) jq 'del(.result.dispatch.completedAt)' "$scratch/durable-view" ;;
+            durable) jq '.result.projection.evidence.durable = false' "$scratch/durable-view" ;;
+            live-status) jq '.result.projection.evidence.liveStatus = "unknown"' "$scratch/durable-view" ;;
+            reason) jq '.result.projection.liveness.reason = "no_observation"' "$scratch/durable-view" ;;
+            outcome) jq '.result.projection.outcome = "failed"' "$scratch/durable-view" ;;
+            worker-id) jq '.result.worker.dispatchId = "unrelated"' "$scratch/durable-view" ;;
+            projection-id) jq '.result.projection.dispatchId = "unrelated"' "$scratch/durable-view" ;;
+            worker-state) jq '.result.worker.state = "failed"' "$scratch/durable-view" ;;
+            live) jq '.result.projection.liveness.verdict = "live"' "$scratch/durable-view" ;;
+            failed) jq '.result.dispatch.status = "failed"' "$scratch/durable-view" ;;
+        esac > "$GH_STATE/view-follow-durable"
+        bash "$ops/loom" harvest "$ido" >/dev/null 2>&1 && fail "unsafe durable completion accepted: $mode"
+        cmp -s "$(rec "$ido")" "$scratch/before-durable-denial" || fail 'rejected durable completion changed assignment'
+        [[ $(git -C "$ws" rev-parse HEAD) == "$oldhead" && -z $(git -C "$ws" diff --cached --name-only) ]] || fail 'rejected durable completion touched git'
+    done
+    cp "$scratch/durable-view" "$GH_STATE/view-follow-durable"
+    bash "$ops/loom" harvest "$ido" >/dev/null || fail 'durable exact-dispatch success rejected for stale telemetry'
+    jq -e '.executor.state == "settled" and .reports[-1].fact == "durable review finished"' "$(rec "$ido")" >/dev/null || fail 'durable completed review not harvested'
+    pass 'durable completed success survives stale telemetry; all incomplete or contradictory proofs fail closed'
+    # A multi-hop recovery needs two ancestor receipts in the same call. Repeat
+    # show/send as well, then archive all receipts and compare their bytes.
+    fixture_view portable-middle follow-durable completed idle > "$GH_STATE/view-portable-middle"
+    fixture_view portable-last portable-middle dispatched live > "$GH_STATE/view-portable-last"
+    bash "$ops/loom" reconcile "$ido" --dispatch portable-last >/dev/null || fail 'repeated BSD ancestor receipts failed'
+    mkdir -p "$scratch/portable-receipts"
+    for _ in 1 2; do
+        bash "$ops/orca.sh" show "$ido" >/dev/null || fail 'repeated BSD show receipts failed'
+        bash "$ops/loom" send "$ido" --subject guidance >/dev/null || fail 'repeated BSD send receipts failed'
+        # Previously captured receipts must still exist with their old bytes.
+        for old in "$scratch/portable-receipts/"*; do
+            [[ -f $old ]] || continue
+            cmp -s "$old" "$LOOM_STATE/${old##*/}" || fail 'repeated receipt creation overwrote evidence'
+        done
+        cp "$LOOM_STATE/$ido.orca-"*.receipt* "$scratch/portable-receipts/"
+    done
+    for operation in ancestor show send; do
+        receipts=("$LOOM_STATE/$ido.orca-$operation.receipt."*)
+        [[ ${#receipts[@]} -ge 2 ]] || fail "no unique BSD $operation receipts"
+        for receipt in "${receipts[@]}"; do
+            [[ -f $receipt && ! -L $receipt ]] || fail 'receipt is not a regular private file'
+            mode=$(LC_ALL=C ls -ld "$receipt")
+            [[ ${mode:0:10} == '-rw-------' ]] || fail 'receipt permissions are not private'
+        done
+    done
+    fixture_view portable-next portable-last dispatched live > "$GH_STATE/view-portable-next"
+    bash "$ops/loom" reconcile "$ido" --dispatch portable-next >/dev/null || fail 'portable receipt history adoption failed'
+    archive=$(jq -r '.executor.history[-1].archive' "$(rec "$ido")")
+    for old in "$scratch/portable-receipts/"*; do
+        cmp -s "$old" "$LOOM_STATE/${old##*/}" || fail 'history adoption changed an original receipt'
+        cmp -s "$old" "$LOOM_STATE/$archive/${old##*/}" || fail 'portable receipt missing or changed in history'
+    done
+    [[ -s $LOOM_STATE/$archive/$ido.evidence/discovery.log && -f $LOOM_STATE/$archive/$ido.commit.log ]] || fail 'portable receipt adoption lost old evidence or commit log'
+    fixture_view portable-next portable-last completed idle > "$GH_STATE/view-portable-next"
+    bash "$ops/loom" harvest "$ido" >/dev/null || fail 'portable continuation completion failed'
+    export PATH=$receipt_path
+    pass 'BSD mktemp: repeated ancestor/show/send receipts are unique, private and preserved in history'
+
+    # A successful task can finish while its terminal stays live at the prompt.
+    # Only a full envelope with every positive proof field permits this case.
+    fixture_view follow-live portable-next completed live | jq '
+      .result.dispatch.completedAt = "2026-01-01T00:00:00Z" |
+      .result.worker = {dispatchId:"follow-live",state:"succeeded"} |
+      .result.projection.dispatchId = "follow-live" |
+      .result.projection.outcome = "succeeded" |
+      .result.projection.evidence = {durable:true,liveStatus:"fresh"}
+    ' > "$scratch/live-view"
+    cp "$scratch/live-view" "$GH_STATE/view-follow-live"
+    bash "$ops/loom" reconcile "$ido" --dispatch follow-live >/dev/null || fail 'live completed review reconcile failed'
+    printf 'live completed review change\n' >> "$ws/notes.txt"
+    printf 'state: ready — live completed review finished\n' >> "$ws/REPORT.md"
+    cp "$(rec "$ido")" "$scratch/before-live-denial"
+    cp -R "$LOOM_STATE/$ido.evidence" "$scratch/before-live-evidence"
+    oldhead=$(git -C "$ws" rev-parse HEAD)
+    oldindex=$(git -C "$ws" write-tree)
+    for filter in \
+        'del(.result.dispatch.status)' \
+        '.result.dispatch.status = "failed"' \
+        '.result.dispatch.status = "running"' \
+        '.result.dispatch.id = "unrelated"' \
+        'del(.result.dispatch.completedAt)' \
+        '.result.dispatch.completedAt = ""' \
+        '.result.dispatch.completedAt = 0' \
+        '.result.dispatch.completedAt = false' \
+        'del(.result.worker.dispatchId)' \
+        '.result.worker.dispatchId = "unrelated"' \
+        'del(.result.worker.state)' \
+        '.result.worker.state = "failed"' \
+        '.result.worker.state = "working"' \
+        '.result.worker.state = "running"' \
+        '.result.worker.state = "ready"' \
+        'del(.result.projection.dispatchId)' \
+        '.result.projection.dispatchId = "unrelated"' \
+        'del(.result.projection.outcome)' \
+        '.result.projection.outcome = "failed"' \
+        '.result.projection.outcome = "completed"' \
+        'del(.result.projection.evidence.durable)' \
+        '.result.projection.evidence.durable = false' \
+        '.result.projection.evidence.durable = "true"' \
+        'del(.result.projection.evidence.liveStatus)' \
+        '.result.projection.evidence.liveStatus = "stale"' \
+        '.result.projection.evidence.liveStatus = "unknown"' \
+        '.result.projection.liveness.verdict = "working"' \
+        '.result.projection.liveness.verdict = "running"' \
+        '.result.projection.liveness.verdict = "unverifiable"' \
+        '.result = {dispatchId:"follow-live",state:"succeeded",stage:"settled",liveness:"live",terminalState:"retained"}' \
+        '.result = {dispatchId:"follow-live",state:"completed",liveness:"live",terminalState:"retained"}'; do
+        jq "$filter" "$scratch/live-view" > "$GH_STATE/view-follow-live"
+        rc=0
+        bash "$ops/loom" harvest "$ido" > "$scratch/live-denied" || rc=$?
+        [[ $rc != 0 ]] || fail "unsafe live completion accepted: $filter"
+        jq -e '.ok == false' "$scratch/live-denied" >/dev/null || fail 'live refusal lost JSON envelope'
+        cmp -s "$(rec "$ido")" "$scratch/before-live-denial" || fail 'rejected live completion changed assignment'
+        [[ $(git -C "$ws" rev-parse HEAD) == "$oldhead" && $(git -C "$ws" write-tree) == "$oldindex" ]] || fail 'rejected live completion touched git'
+        diff -r "$scratch/before-live-evidence" "$LOOM_STATE/$ido.evidence" >/dev/null || fail 'rejected live completion changed evidence'
+    done
+    cp "$scratch/live-view" "$GH_STATE/view-follow-live"
+    bash "$ops/loom" harvest "$ido" >/dev/null || fail 'fresh durable completed success rejected for retained live terminal'
+    [[ $(bash "$ops/orca.sh" show "$ido") == *'show: settled '* ]] || fail 'show rejected fresh durable completion'
+    # Numeric completion timestamps are also supported by the full envelope.
+    jq '.result.dispatch.completedAt = 1' "$scratch/live-view" > "$GH_STATE/view-follow-live"
+    [[ $(bash "$ops/orca.sh" show "$ido") == *'show: settled '* ]] || fail 'numeric completed timestamp rejected'
+    jq -e '.executor.state == "settled" and .reports[-1].fact == "live completed review finished"' "$(rec "$ido")" >/dev/null || fail 'live completed review not harvested'
+    [[ $(git -C "$ws" rev-list --count "$oldhead..HEAD") == 1 ]] || fail 'live completed harvest did not commit exactly once'
+    bash "$ops/loom" harvest "$ido" >/dev/null 2>&1 && fail 'duplicate live completion harvested'
+    pass 'fresh durable exact-dispatch completion survives retained live terminal; incomplete, failed, working and compact proof refused'
+    pass 'follow-up tracking, fail-closed harvest, identity-bound recovery and evidence preservation'
 
     # Unversioned configs inside a repo must produce usable records (gap #68).
     mkdir -p "$scratch/cfg/local"
@@ -731,6 +1342,7 @@ EOF
     bash "$ops/orca.sh" list | grep -q 'disp-' || fail 'worker-list empty'
     bash "$ops/orca.sh" peek | jq -e '.ok == true' >/dev/null || fail 'peek'
     bash "$ops/orca.sh" send "$idp" --subject hi --body there | jq -e '.ok == true' >/dev/null || fail 'send'
+    jq -e '.executor.state == "running" and .executor.continuation_pending == null' "$(rec "$idp")" >/dev/null || fail 'active queue-only delivery remained fenced'
     bash "$ops/orca.sh" ask "$idp" --question 'why?' | jq -e '.ok == true' >/dev/null || fail 'ask'
     bash "$ops/orca.sh" reply --id m1 --body 'because' | jq -e '.ok == true' >/dev/null || fail 'reply'
     bash "$ops/orca.sh" gate list | jq -e '.ok == true' >/dev/null || fail 'gate list'
