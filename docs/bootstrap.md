@@ -14,7 +14,8 @@ dependable merely by being pasted.
 | Plain chat without project tools | Unwired; reopen in a capable project session |
 
 Setup runs `bash ops/selftest.sh` and `shellcheck -x ops/*.sh ops/loom`.
-`ops/mutate.sh` is the long macOS contributor/CI gate, not a setup requirement.
+`ops/mutate.sh` is the longer contributor/CI gate, not a setup requirement.
+It can run locally or on a compute host with `bash ops/mutate.sh --on HOST`.
 Missing tools are installed only within granted authorization. Existing files,
 consumer choices and global instructions are preserved. Only consequential
 unresolved choices require questions.
@@ -54,12 +55,14 @@ inspect the complete envelope: exit 0 means ready prerequisites/offline drill,
 1 means blocked/failed, 2 means usage error. Calibration acceptance is always
 `not_run`. Review drift before explicitly recording again; checking never
 refreshes a baseline. Records are private, sanitized data under
-`${LOOM_STATE:-$HOME/.loom}/calibration/<key>.json`.
+`${LOOM_STATE:-$HOME/.loom}/calibration/<key>.json`. Relative `LOOM_STATE`
+is resolved against invocation cwd. Existing state directories require mode
+0700 and proof files mode 0600; calibration never repairs permissions.
 
-Runtime integration is still in progress for this documentation revision;
-command execution and cross-branch validation are **not run** here. Verify the
-installed CLI supports the interface before using it. An unavailable command
-blocks calibration and delegation; the contract is not evidence of availability.
+The command ships in `ops/loom`. Verify the installed checkout supports it;
+an older installation may lack it. An unavailable command blocks calibration
+and delegation. The hermetic selftest records and checks the shipped bridge
+with fixture data; it does not prove fresh-session loading by a real harness.
 
 The bridge instructs execution at every session entry and immediately before
 delegation, including after context loss or a tool reconnect. Schema 1 does not

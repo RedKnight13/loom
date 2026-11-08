@@ -38,7 +38,8 @@ prompt is not proof of dependable operation.
      shellcheck -x ops/*.sh ops/loom
    Capture SELFTEST and LINT separately; both must be 0. These are offline
    implementation checks, not live consumer proof. Do not run ops/mutate.sh
-   during setup: it is the long macOS contributor/CI mutation gate.
+   during setup: it is the longer contributor/CI mutation gate, runnable locally
+   or on a compute host with `bash ops/mutate.sh --on HOST`.
 
 4. Resolve consumer configuration.
    Reuse an existing config when correct. Infer candidates from repository
@@ -87,10 +88,10 @@ prompt is not proof of dependable operation.
    within existing authorization; never silently refresh away the difference.
 
 7. Establish calibration through this session's shell tool.
-   The schema-1 interface is confirmed, but runtime integration may still be in
-   progress. Inspect the installed CLI first. If calibrate is unavailable, report
-   calibration not run and delegation blocked; use an approved implementation
-   when available. A specification alone does not establish command availability.
+   The schema-1 command ships in ops/loom. Inspect the installed CLI first;
+   older installations may lack it. If calibrate is unavailable, report
+   calibration not run and delegation blocked; use an approved implementation.
+   A specification alone does not establish installed command availability.
    Bind LOOM_REPO to the intended consumer checkout (otherwise cwd is used).
    Resolve FILE to the existing consumer config and first compare:
      loom calibrate --consumer FILE --check

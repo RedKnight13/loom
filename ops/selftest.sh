@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC2030,SC2031  # subshell-scoped env/pids are intentional
+# shellcheck disable=SC2030,SC2031,SC2016 # subshell env; literal sed        #
 # Offline self-test: a throwaway consumer repo, a stubbed gh, disposable
 # fake workers. No network, no pushes, no real worker is signalled.
 set -euo pipefail
 ops=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
 scratch=$(mktemp -d "${TMPDIR:-/tmp}/loom-selftest.XXXXXX")
+scratch=$(cd "$scratch" && pwd -P)
 pids=()
 cleanup() {
     local p
@@ -130,6 +131,309 @@ await_pid() {
     done
     fail "worker pid never recorded for $1"
 }
+
+# --- calibration: proof is private, explicit, and never consumer execution ---
+(
+    export LOOM_STATE="$scratch/calibration-state"
+    cp "$scratch/consumer.toml" "$scratch/calibration.toml"
+    printf '\nexecutor = "local"\n' >> "$scratch/calibration.toml"
+    # A declared check/setup is data, never an implicit calibration action.
+    sed 's/checks = "true"/checks = "touch SHOULD_NOT_EXIST"/' "$scratch/calibration.toml" > "$scratch/calibration-next"
+    mv "$scratch/calibration-next" "$scratch/calibration.toml"
+    printf 'compute_setup = "touch SHOULD_NOT_EXIST"\n' >> "$scratch/calibration.toml"
+    sed -n '/<!-- loom-session:start -->/,/<!-- loom-session:end -->/p' "$ops/../templates/LOOM_SESSION.md" > "$repo/AGENTS.md"
+    [[ -s $repo/AGENTS.md ]] || fail 'bootstrap bridge template is missing'
+    cp "$repo/AGENTS.md" "$scratch/bootstrap-bridge"
+    rc=0; obj=$(bash "$ops/loom" calibrate --consumer "$scratch/not-a-config" --check) || rc=$?
+    [[ $rc == 1 ]] || fail 'missing config calibration status'
+    jq -se 'length == 1 and .[0].ok == false and .[0].items[0].readiness == "incomplete"' <<< "$obj" >/dev/null || fail 'missing config emitted multiple envelopes'
+    printf 'private-invalid-value\n' > "$scratch/invalid-calibration.toml"
+    rc=0; obj=$(bash "$ops/loom" calibrate --consumer "$scratch/invalid-calibration.toml" --check) || rc=$?
+    [[ $rc == 1 && $obj != *private-invalid-value* ]] || fail 'invalid config was accepted or exposed'
+    jq -se 'length == 1 and .[0].ok == false' <<< "$obj" >/dev/null || fail 'invalid config emitted multiple envelopes'
+    calops=$ops
+    cal() { bash "$calops/loom" calibrate --consumer "$scratch/calibration.toml" "$@"; }
+    rc=0; obj=$(cal --check) || rc=$?
+    [[ $rc == 1 ]] || fail 'calibration accepted missing proof'
+    jq -e '.ok == false and .items[0].readiness == "incomplete"' <<< "$obj" >/dev/null || fail 'missing proof contract'
+    [[ ! -e $LOOM_STATE ]] || fail 'check created state'
+    obj=$(cal) || fail "calibration fixture failed: $obj"
+    jq -e '.ok and .state == "ready" and .items[0].schema == 1 and .items[0].acceptance == "not_run"' <<< "$obj" >/dev/null || fail 'calibration readiness contract'
+    proofs=("$LOOM_STATE"/calibration/*.json)
+    [[ ${#proofs[@]} == 1 && -f ${proofs[0]} ]] || fail 'calibration proof missing'
+    proof=${proofs[0]}
+    cp "$proof" "$scratch/proof-good"
+    obj=$(cal --check) || fail 'unchanged calibration rejected'
+    cmp -s "$proof" "$scratch/proof-good" || fail 'check rewrote evidence'
+    [[ $(printf '%s\n' "$obj" | wc -l | tr -d ' ') == 1 ]] || fail 'calibration emitted multiple objects'
+    if grep -F -e "$scratch" -e 'example/fixture' -e 'SHOULD_NOT_EXIST' "$proof"; then fail 'calibration retained private input'; fi
+    [[ ! -e SHOULD_NOT_EXIST && ! -e $repo/SHOULD_NOT_EXIST ]] || fail 'calibration executed consumer commands'
+    # The format is SHA-1 regardless of caller repository/config/environment.
+    expected=$(jq -nc --arg c "$scratch/calibration.toml" --arg r "$repo" '[$c,$r]' | git hash-object --stdin)
+    [[ ${proof##*/} == "$expected.json" ]] || fail 'calibration key is not canonical JSON with a trailing newline'
+    bridge_digest=$(git hash-object --no-filters "$repo/AGENTS.md")
+    expected=$(printf '[["AGENTS.md","%s"],["CLAUDE.md",null]]\n' "$bridge_digest" | git hash-object --stdin)
+    [[ $(jq -r '.fingerprint.bridge' "$proof") == "$expected" ]] || fail 'bridge serialization is not canonical'
+    expected=$(
+        for source in "$ops/../VERSION" "$ops/loom" "$ops"/*.sh; do
+            case $source in */VERSION) relative=VERSION ;; *) relative=ops/${source##*/} ;; esac
+            jq -nc --arg n "$relative" --arg d "$(git hash-object --no-filters "$source")" '[$n,$d]'
+        done | jq -Scs 'sort_by(.[0])' | git hash-object --stdin
+    )
+    [[ $(jq -r '.fingerprint.loom_code' "$proof") == "$expected" ]] || fail 'source fingerprint omits VERSION or canonical source names'
+    mkdir "$scratch/hash-caller"
+    if git -C "$scratch/hash-caller" init -q --object-format=sha256 2>/dev/null; then
+        (
+            cd "$scratch/hash-caller"
+            export GIT_DEFAULT_HASH=sha256
+            obj=$(cal) || fail 'record from SHA-256 caller failed'
+            jq -e '.items[0].fingerprint | [.loom_code,.consumer,.checkout,.bridge,.tools] | all(.[]; test("^[0-9a-f]{40}$"))' <<< "$obj" >/dev/null || fail 'SHA-256 caller changed digest format'
+            cal --check >/dev/null || fail 'check from SHA-256 caller failed'
+        )
+        [[ $(jq -c '.fingerprint' "$proof") == "$(jq -c '.fingerprint' "$scratch/proof-good")" ]] || fail 'caller object format changed fingerprint'
+        (
+            export LOOM_REPO="$scratch/hash-caller" LOOM_STATE="$scratch/sha256-state"
+            git -C "$LOOM_REPO" remote add origin https://github.com/example/fixture
+            git -C "$LOOM_REPO" -c user.name=Fixture -c user.email=fixture@example.invalid -c commit.gpgsign=false commit -q --allow-empty -m fixture
+            cp "$repo/AGENTS.md" "$LOOM_REPO/AGENTS.md"
+            cal >/dev/null || fail 'SHA-256 consumer checkout could not record'
+            cal --check >/dev/null || fail 'SHA-256 consumer checkout could not check'
+        )
+    else
+        pass 'SHA-256 caller fixture not run: Git lacks SHA-256 repository support'
+    fi
+    # Relative paths resolve against invocation cwd, including spaces, without
+    # creating missing state during check or rewriting a successful baseline.
+    (
+        cd "$scratch"
+        export LOOM_STATE='relative state'
+        rc=0; cal --check >/dev/null || rc=$?
+        [[ $rc == 1 && ! -e $LOOM_STATE ]] || fail 'relative missing-state check wrote state or succeeded'
+        cal >/dev/null || fail 'relative state record failed'
+        relative_proof=("$LOOM_STATE"/calibration/*.json)
+        cp "${relative_proof[0]}" "$scratch/relative-proof"
+        cal --check >/dev/null || fail 'relative state check failed'
+        LOOM_STATE="$scratch/relative state" cal --check >/dev/null || fail 'absolute alias of relative state failed'
+        cmp -s "${relative_proof[0]}" "$scratch/relative-proof" || fail 'relative state check rewrote proof'
+    )
+    # Reject nonregular/symlink inputs before parsing/hashing. The watchdog
+    # makes a regression to a FIFO read fail promptly instead of hanging CI.
+    refuse_input() {
+        local got status=0 timed=$scratch/input-timed-out child timer
+        rm -f "$timed"
+        bash "$calops/loom" calibrate --consumer "$1" > "$scratch/input-result" 2> "$scratch/input-error" & child=$!
+        (sleep 4; if kill -0 "$child" 2>/dev/null; then : > "$timed"; kill -KILL "$child" 2>/dev/null || :; fi) & timer=$!
+        wait "$child" || status=$?
+        kill "$timer" 2>/dev/null || :
+        wait "$timer" 2>/dev/null || :
+        [[ ! -e $timed && $status == 1 ]] || fail "unsafe input was accepted or blocked: $2"
+        got=$(cat "$scratch/input-result")
+        jq -se 'length == 1 and .[0].ok == false and .[0].state == "failed" and .[0].items[0].readiness == "incomplete"' <<< "$got" >/dev/null || fail "unsafe input envelope: $2"
+        [[ ! -s $scratch/input-error && $got != *"$scratch"* ]] || fail 'unsafe input leaked diagnostics'
+    }
+    mkdir "$scratch/config-dir"
+    cp "$scratch/calibration.toml" "$scratch/config-dir/consumer.toml"
+    ln -s "$scratch/config-dir" "$scratch/config-link"
+    refuse_input "$scratch/config-link/consumer.toml" 'config ancestor symlink'
+    ln -s "$scratch/calibration.toml" "$scratch/config-symlink"
+    refuse_input "$scratch/config-symlink" 'config symlink'
+    mkfifo "$scratch/config-fifo"
+    refuse_input "$scratch/config-fifo" 'config FIFO'
+    refuse_input "$scratch/config-dir" 'config directory'
+    cp "$scratch/calibration.toml" "$scratch/"$'control\tconfig'
+    refuse_input "$scratch/"$'control\tconfig' 'config control character'
+    mkdir "$scratch/safety-install"
+    cp -R "$ops" "$scratch/safety-install/ops"
+    cp "$ops/../VERSION" "$scratch/safety-install/VERSION"
+    calops=$scratch/safety-install/ops
+    for unsafe in symlink fifo directory; do
+        case $unsafe in
+            symlink) ln -s "$ops/lib.sh" "$calops/extra.sh" ;;
+            fifo) mkfifo "$calops/extra.sh" ;;
+            directory) mkdir "$calops/extra.sh" ;;
+        esac
+        refuse_input "$scratch/calibration.toml" "source $unsafe"
+        if [[ $unsafe == directory ]]; then rmdir "$calops/extra.sh"; else rm "$calops/extra.sh"; fi
+    done
+    # VERSION and lib are consumed by the entry point before the module runs.
+    for source in "$scratch/safety-install/VERSION" "$calops/lib.sh"; do
+        mv "$source" "$source.safe"
+        mkfifo "$source"
+        refuse_input "$scratch/calibration.toml" 'early source FIFO'
+        rm "$source"; mv "$source.safe" "$source"
+    done
+    calops=$ops
+    (
+        export LOOM_STATE="$scratch/state-file"
+        : > "$LOOM_STATE"; chmod 600 "$LOOM_STATE"
+        refuse_input "$scratch/calibration.toml" 'nondirectory state'
+        rm "$LOOM_STATE"
+        ln -s "$scratch/calibration-state" "$LOOM_STATE"
+        refuse_input "$scratch/calibration.toml" 'symlink state'
+    )
+    # Deterministic races use fixture-installed tools, not timing assumptions.
+    # The check changes a bridge only after the initial fingerprint comparison.
+    real_jq=$(command -v jq)
+    cat > "$scratch/bin/jq" <<EOF_JQ
+#!/usr/bin/env bash
+if [[ \${1:-} == -c && \${2:-} == .stages && -n \${CAL_RACE_TARGET:-} ]]; then
+    printf '# concurrent check change\\n' >> "\$CAL_RACE_TARGET"
+fi
+exec "$real_jq" "\$@"
+EOF_JQ
+    chmod +x "$scratch/bin/jq"
+    cal >/dev/null || fail 'race fixture baseline failed'
+    cp "$proof" "$scratch/race-proof"
+    cp "$repo/AGENTS.md" "$scratch/race-bridge"
+    rc=0; obj=$(CAL_RACE_TARGET="$repo/AGENTS.md" cal --check) || rc=$?
+    [[ $rc == 1 ]] || fail 'check accepted a concurrent fingerprint change'
+    jq -e '.items[0].readiness == "drifted" and .items[0].drift == ["bridge"]' <<< "$obj" >/dev/null || fail 'check did not name concurrent bridge drift'
+    cmp -s "$proof" "$scratch/race-proof" || fail 'concurrent check replaced evidence'
+    cp "$scratch/race-bridge" "$repo/AGENTS.md"
+    rm "$scratch/bin/jq"
+    calops=$scratch/safety-install/ops
+    sed '/^exit "\$rc"/i\
+[[ -z ${CAL_RACE_TARGET:-} ]] || printf "# concurrent drill change\\n" >> "$CAL_RACE_TARGET"' "$ops/verify.sh" > "$calops/verify.sh"
+    cal >/dev/null || fail 'record race fixture baseline failed'
+    cp "$proof" "$scratch/race-proof"
+    rc=0; obj=$(CAL_RACE_TARGET="$repo/AGENTS.md" cal) || rc=$?
+    [[ $rc == 1 ]] || fail 'record published evidence after concurrent fingerprint change'
+    jq -e '.items[0].readiness == "drifted" and .items[0].drift == ["bridge"]' <<< "$obj" >/dev/null || fail 'record did not name concurrent bridge drift'
+    cmp -s "$proof" "$scratch/race-proof" || fail 'concurrent record replaced prior evidence'
+    [[ ! -e $LOOM_STATE/calibration/.record-lock ]] || fail 'concurrent record leaked its lock'
+    cp "$scratch/race-bridge" "$repo/AGENTS.md"
+    # A late source mutation must also invalidate the record.
+    rc=0; obj=$(CAL_RACE_TARGET="$calops/lib.sh" cal) || rc=$?
+    [[ $rc == 1 ]] || fail 'record accepted a concurrent source change'
+    jq -e '.items[0].drift == ["loom_code"]' <<< "$obj" >/dev/null || fail 'record did not name concurrent source drift'
+    cmp -s "$proof" "$scratch/race-proof" || fail 'source race replaced prior evidence'
+    calops=$ops
+    cp "$scratch/proof-good" "$proof"
+    # Each independently changed input must name its own drift field.
+    expect_drift() {
+        local got status=0
+        got=$(cal --check) || status=$?
+        [[ $status == 1 ]] || fail "calibration missed $1 drift"
+        jq -e --arg field "$1" '.items[0].readiness == "drifted" and (.items[0].drift | index($field) != null)' <<< "$got" >/dev/null || fail "calibration omitted $1 drift"
+    }
+    printf '# bridge change\n' >> "$repo/AGENTS.md"
+    expect_drift bridge
+    cp "$scratch/bootstrap-bridge" "$repo/AGENTS.md"
+    cp "$scratch/bin/gh" "$scratch/gh-original"
+    printf '# tool change\n' >> "$scratch/bin/gh"
+    expect_drift tools
+    cp "$scratch/gh-original" "$scratch/bin/gh"
+    git -C "$repo" remote set-url origin git@github.com:example/fixture.git
+    expect_drift checkout
+    git -C "$repo" remote set-url origin https://github.com/example/fixture
+    # A separate installation lets the fixture change source bytes and version.
+    mkdir "$scratch/install"
+    cp -R "$ops" "$scratch/install/ops"
+    cp "$ops/../VERSION" "$scratch/install/VERSION"
+    calops=$scratch/install/ops
+    printf '# dirty source\n' >> "$calops/lib.sh"
+    expect_drift loom_code
+    cp "$ops/lib.sh" "$calops/lib.sh"
+    printf '0.0.0\n' > "$scratch/install/VERSION"
+    expect_drift loom_version
+    calops=$ops
+    cal --check >/dev/null || fail 'restored inputs did not restore proof'
+    # Failed recording cannot replace prior evidence, including a failed drill.
+    cp "$repo/AGENTS.md" "$scratch/bridge-original"
+    rm "$repo/AGENTS.md"
+    cal >/dev/null && fail 'missing bridge passed'
+    cmp -s "$proof" "$scratch/proof-good" || fail 'failed record replaced proof'
+    ln -s "$scratch/bridge-original" "$repo/AGENTS.md"
+    cal >/dev/null && fail 'symlink bridge passed'
+    rm "$repo/AGENTS.md"; cp "$scratch/bridge-original" "$repo/AGENTS.md"
+    calops=$scratch/install/ops
+    # Valid Bash, but broken envelope semantics make the fixed drill fail.
+    sed 's/state:$state/state:"ready"/' "$ops/loom" > "$calops/loom"
+    rc=0; obj=$(cal) || rc=$?
+    [[ $rc == 1 ]] || fail 'broken report envelope passed the offline drill'
+    cmp -s "$proof" "$scratch/proof-good" || fail 'failed drill replaced proof'
+    # A consumed report must be followed by a newly appended line; the drill
+    # must distinguish blocked from failed, not merely refuse ready.
+    sed 's/state:$state/state:(if $state == "blocked" then "failed" else $state end)/' "$ops/loom" > "$calops/loom"
+    cal >/dev/null && fail 'drill accepted failed in place of blocked'
+    cmp -s "$proof" "$scratch/proof-good" || fail 'misclassified blocked drill replaced proof'
+    sed 's/state:$state/state:(if $state == "failed" then "blocked" else $state end)/' "$ops/loom" > "$calops/loom"
+    cal >/dev/null && fail 'drill accepted blocked in place of failed'
+    cmp -s "$proof" "$scratch/proof-good" || fail 'misclassified missing drill replaced proof'
+    calops=$ops
+    mkdir "$LOOM_STATE/calibration/.record-lock"
+    cal >/dev/null && fail 'concurrent calibration ignored record lock'
+    cal --check >/dev/null || fail 'readonly check took a record lock'
+    rmdir "$LOOM_STATE/calibration/.record-lock"
+    chmod 755 "$LOOM_STATE/calibration"
+    cal --check >/dev/null && fail 'unsafe evidence directory permissions accepted'
+    chmod 700 "$LOOM_STATE/calibration"
+    printf '\n# reviewed later\n' >> "$scratch/calibration.toml"
+    rc=0; obj=$(cal --check) || rc=$?
+    [[ $rc == 1 ]] || fail 'calibration accepted consumer drift'
+    jq -e '.items[0].readiness == "drifted"' <<< "$obj" >/dev/null || fail 'drift not identified'
+    cmp -s "$proof" "$scratch/proof-good" || fail 'drift check refreshed proof'
+    cal >/dev/null || fail 'explicit recalibration failed'
+    printf '{' > "$proof"
+    rc=0; obj=$(cal --check) || rc=$?
+    [[ $rc == 1 ]] || fail 'calibration accepted corrupt proof'
+    [[ $(cat "$proof") == '{' ]] || fail 'check repaired corrupt proof'
+    cp "$scratch/proof-good" "$proof"
+    jq 'del(.stages)' "$proof" > "$scratch/proof-incomplete"
+    mv "$scratch/proof-incomplete" "$proof"
+    chmod 600 "$proof"
+    cal --check >/dev/null && fail 'calibration accepted incomplete proof'
+    cp "$scratch/proof-good" "$proof"
+    jq '.schema = 99' "$proof" > "$scratch/proof-version"
+    cat "$scratch/proof-version" > "$proof"
+    cal --check >/dev/null && fail 'unknown proof schema accepted'
+    head -c 65537 /dev/zero > "$proof"
+    cal --check >/dev/null && fail 'oversized proof accepted'
+    rm "$proof"; ln -s "$scratch/proof-good" "$proof"
+    cal >/dev/null && fail 'calibration followed evidence symlink'
+    cmp -s "$scratch/proof-good" "$proof" || fail 'calibration changed symlink target'
+    rm "$proof"
+    cp "$scratch/proof-good" "$proof"
+    cat "$scratch/proof-good" >> "$proof"
+    cal --check >/dev/null && fail 'multiple proof objects accepted'
+    cp "$scratch/calibration.toml" "$scratch/calibration-local"
+    printf 'compute = "-oProxyCommand=forbidden"\n' >> "$scratch/calibration.toml"
+    cal >/dev/null && fail 'option-shaped compute host accepted'
+    cp "$scratch/calibration-local" "$scratch/calibration.toml"
+    printf '%s\n' 'compute = "safe\nunsafe"' >> "$scratch/calibration.toml"
+    cal >/dev/null && fail 'multiline compute host accepted';
+    cp "$scratch/calibration-local" "$scratch/calibration.toml"
+    sed 's/executor = "local"/executor = "orca"/' "$scratch/calibration-local" > "$scratch/calibration.toml"
+    rc=0; obj=$(cal) || rc=$?
+    [[ $rc == 1 ]] || fail 'missing required Orca passed'
+    jq -e '.items[0].readiness == "unwired"' <<< "$obj" >/dev/null || fail 'missing Orca not unwired'
+    export LOOM_ORCA="$scratch/bin/cal-orca"
+    printf '#!/bin/sh\nexec /bin/sleep 30\n' > "$LOOM_ORCA"
+    chmod +x "$LOOM_ORCA"
+    started=$(date +%s)
+    rc=0; obj=$(cal) || rc=$?
+    [[ $rc == 1 && $(( $(date +%s) - started )) -lt 12 ]] || fail 'Orca status timeout was not bounded'
+    jq -e '.items[0].readiness == "unwired"' <<< "$obj" >/dev/null || fail 'Orca timeout not unwired'
+    printf '#!/bin/sh\nprintf "runtimeReachable: true\\nruntimeState: ready\\n"\n' > "$LOOM_ORCA"
+    rc=0; obj=$(cal) || rc=$?
+    [[ $rc == 1 ]] || fail 'Orca status without runtime identity passed'
+    jq -e '.items[0].readiness == "unwired"' <<< "$obj" >/dev/null || fail 'incomplete Orca status not unwired'
+    printf '#!/bin/sh\nprintf "runtimeReachable: true\\nruntimeState: ready\\nruntimeId: fixture-runtime\\n"\n' > "$LOOM_ORCA"
+    sed 's/executor = "local"/executor = "auto"/' "$scratch/calibration-local" > "$scratch/calibration.toml"
+    cal >/dev/null || fail 'available Orca structural calibration failed'
+    printf '#!/bin/sh\nexit 1\n' > "$LOOM_ORCA"
+    expect_drift executor
+    cp "$scratch/calibration-local" "$scratch/calibration.toml"
+    # Exercise system Bash as well (Bash 3.2 on supported macOS installations).
+    if [[ -x /bin/bash ]]; then
+        obj=$(/bin/bash "$calops/loom" calibrate --consumer "$scratch/calibration.toml") || fail 'system Bash calibration cleanup failed'
+        jq -e '.ok and .state == "ready"' <<< "$obj" >/dev/null || fail 'system Bash calibration envelope'
+    fi
+    rc=0; obj=$(cal --unknown) || rc=$?
+    [[ $rc == 2 ]] || fail 'calibration usage status'
+)
+pass 'calibration refuses absent/corrupt/drifted proof without implicit execution'
+[[ ${LOOM_SELFTEST_CALIBRATION_ONLY:-0} != 1 ]] || exit 0
 
 # --- dispatch: a private clone on the ticket branch, at the default branch ---
 out=$(dispatch)

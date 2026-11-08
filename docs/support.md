@@ -21,6 +21,7 @@ What works today, what does not, and what it was tested on. Version **0.6.0**.
 | Release after collect | ✅ | confirmed by Orca; never deletes worktrees |
 | Structured report harvest | ✅ | one state line per turn |
 | Consumer commit hooks | ✅ | fixers retried once; rejections logged |
+| Calibration and read-only drift check | ✅ | fixed offline drill; acceptance remains `not_run` |
 | The one-call JSON envelope | ✅ | every verb |
 | Orca read/write verbs (`send ask reply gate task run reference worktree repo base-ref automation`) | ✅ (thin) | pass-through; behaviour is Orca's, smoke-tested |
 | Orca task-DAG start (`--task --deps`) | ❌ | mapped, not wired |
@@ -48,16 +49,21 @@ an agent instruction, not guaranteed runtime enforcement or background repair.
 
 The confirmed schema-1 contract provides `loom calibrate --consumer FILE`
 (explicit record plus fixed offline drill) and `loom calibrate --consumer FILE
---check` (comparison without writes, locks or drill rerun). Runtime implementation
-is still in progress for this documentation revision; runtime calibration tests
-and integrated bootstrap validation are **not run** here. Do not infer command
-availability from this contract. No additional TOML keys are required.
+--check` (comparison without writes, locks or drill rerun). Both ship in
+`ops/loom`; older installations must be checked for command availability.
+Hermetic regressions compose the shipped bridge with record/check, including
+concurrent input changes, SHA-256 caller repositories and relative state paths.
+This does not prove actual fresh-session instruction loading or live worker
+execution. No additional TOML keys are required.
 
 Ready means current prerequisites and offline drill only; acceptance is always
 `not_run`. Exit 0 is ready, 1 is blocked/failed and 2 is usage failure. Sanitized
 private baselines are under `${LOOM_STATE:-$HOME/.loom}/calibration/<key>.json`.
 Fingerprint changes require review before explicit re-recording; check never
-refreshes evidence. A failed record preserves the previous baseline. No model,
+refreshes evidence. A failed record preserves the previous baseline. Observable changes during
+record/check are refused; adversarial filesystem races remain outside the
+contract. Relative `LOOM_STATE` resolves from invocation cwd; existing state
+directories require mode 0700 and proof files mode 0600. No model,
 provider authentication, real worker, consumer checks or remote compute is
 proved by calibration. The tools' byte hashes detect accidental change; they
 are not cryptographic attestation or proof that an executable is trustworthy.
@@ -68,7 +74,8 @@ and stop delegation on failure. The comparison-to-delegation gap remains.
 Structural wiring, offline selftest/lint and live ticket-to-verification proof are separate
 evidence levels. The first two never imply the third. A prompt cannot establish
 universal security, automatic monitoring or full dependability. Setup uses
-selftest/lint; contributors and CI also use the macOS mutation gate.
+selftest/lint; contributors and CI also use the longer portable mutation gate, locally or
+on a compute host with `bash ops/mutate.sh --on HOST`.
 
 ## Platform
 
@@ -100,7 +107,7 @@ Tracked as issues on the repository. At 0.6.0:
 - `dispatch` checks checkout origin against the ticket repository; the explicit
   `LOOM_ALLOW_ANY_CHECKOUT=1` override relaxes it and must not be enabled by
   bootstrap merely to bypass a mismatch.
-- No CI. The gate is `selftest` + `shellcheck` + `mutate` on the conductor's machine.
+- No CI. The gate is `selftest` + `shellcheck` + `mutate`, run by the conductor locally or on a compute host.
 
 ## Getting help
 

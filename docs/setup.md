@@ -41,7 +41,8 @@ shellcheck -x ops/*.sh ops/loom
 `gh`, `orca`, `ssh` and `ps`. If it fails, stop dependent setup work and retain the captured exit code.
 Capture the selftest and lint exits separately; both must be 0.
 These offline gates do not prove live consumer operation. `ops/mutate.sh` is
-the long macOS contributor/CI gate, not a setup requirement.
+the longer portable contributor/CI gate, not a setup requirement. It can run
+locally or on a compute host with `bash ops/mutate.sh --on HOST`.
 
 ## 3. State
 
@@ -191,10 +192,11 @@ falls back to the conductor's machine. A failing `compute_setup` is reported as
 
 ### Calibration and session entry (schema 1)
 
-Runtime integration is in progress for this documentation revision; runtime
-calibration tests are **not run** here. Confirm command availability in the
-installed checkout first. If absent, report calibration not run and stop
-dependent delegation until an approved implementation is available.
+The schema-1 command ships in `ops/loom`. Confirm availability in the installed
+checkout; older installations may lack it. If absent, report calibration not
+run and stop dependent delegation until an approved implementation is available.
+The selftest composes the shipped session bridge with record/check fixtures;
+actual harness loading and real worker acceptance still need separate evidence.
 
 Install the [session bridge](../templates/LOOM_SESSION.md) only after inspecting
 the agent's project loading convention and existing content. Schema 1 requires
@@ -229,7 +231,10 @@ work; exit 2 reports usage errors. A passed drill in check mode is recorded
 proof, not a new execution. `ready` never means project acceptance.
 
 Private sanitized records live at
-`${LOOM_STATE:-$HOME/.loom}/calibration/<key>.json`. Missing baseline blocks;
+`${LOOM_STATE:-$HOME/.loom}/calibration/<key>.json`. Relative `LOOM_STATE`
+resolves against invocation cwd; spaces are allowed, control characters and
+`.`/`..` path components are refused. Existing state/calibration directories
+require owner-only mode 0700 and proof files mode 0600. Missing baseline blocks;
 corrupt/unknown schema, unsafe state or symlinks fail closed. Do not delete
 locks or change permissions as an automatic repair. Failed recording preserves
 the prior baseline. Keep separately redacted setup evidence under `.loom/`
@@ -240,7 +245,11 @@ after context loss, tool reconnect or dependency changes. Read the bridge
 explicitly if loading is uncertain and confirm it was read. Review drift before
 explicit recording; comparison never accepts changes. Fingerprints cover Loom
 source/version, consumer and bridge bytes, checkout identity, tools and executor.
-A new checkout/config location needs a new baseline; branch/HEAD changes alone
+Recording reobserves inputs after the drill, and checking reobserves before
+success; observable concurrent changes fail without replacing evidence. These
+checks do not prevent adversarial filesystem races. SHA-1 fingerprints are
+independent of the caller repository object format. A new checkout/config
+location needs a new baseline; branch/HEAD changes alone
 do not imply bootstrap drift or project acceptance.
 
 Tool-enabled sessions with shell execution follow the same protocol as CLI
