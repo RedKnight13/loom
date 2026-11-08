@@ -31,6 +31,30 @@ What works today, what does not, and what it was tested on. Version **0.6.0**.
 | Multi-conductor coordination | ❌ | one state dir, one conductor at a time |
 | Windows native | ❌ | bash 3.2+/POSIX shell expected; WSL untested |
 
+## Native execution policy
+
+Explicit `executor = "local"` (or `--executor local` where the consumer permits
+it) works independently of Orca installation or runtime readiness. Dispatch
+records the selected executor; a local assignment stays local if Orca later
+appears. The native launcher never probes Orca, including for older local
+records without an executor field. `LOOM_ALLOW_LOCAL` remains accepted but is
+ignored; it grants no authority and is no longer needed. PID/start-time checks,
+process groups, report harvesting and watchdog behavior are unchanged.
+
+Required `executor = "orca"` still refuses an unavailable runtime and never
+falls back to native execution. `auto` selection is unchanged: ready Orca wins
+at dispatch, otherwise local is selected. This slice adds no remote native
+executor or general orchestrator adapter.
+
+Explicit-local calibration excludes Orca discovery, executable path/bytes and
+`LOOM_ORCA` from the effective tools fingerprint. Installing, changing or
+removing Orca cannot drift that local baseline. `auto` and `orca` still track
+Orca's selector, executable and readiness, including when auto currently picks
+local. This source/fingerprint update can invalidate existing baselines once:
+review the drift, then explicitly run `loom calibrate --consumer FILE` and
+verify with `--check`. Do not edit the stored ledger or silently rebaseline;
+checks and failed recording preserve the existing evidence.
+
 ## Bootstrap and continuity limits
 
 The [bootstrap prompt](bootstrap.txt) supports capability-based setup: shell

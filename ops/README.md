@@ -130,8 +130,10 @@ routes through it.
 | `orca` | Orca required; refused while Orca is not ready — never a silent fallback |
 | `local` | the local launcher (`launch.sh`) |
 
-While Orca is detected, `launch.sh` refuses to start anything unless
-`LOOM_ALLOW_LOCAL=1` is set explicitly.
+Native assignments launch independently of Orca presence. `LOOM_ALLOW_LOCAL` is
+an ignored legacy variable. Explicit local calibration also ignores unrelated
+Orca binaries and selectors; auto/required-Orca policies retain their discovery
+and no-fallback behavior. Follow the approved placement policy separately.
 
 The Orca lifecycle:
 

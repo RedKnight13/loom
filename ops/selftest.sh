@@ -133,6 +133,65 @@ await_pid() {
     fail "worker pid never recorded for $1"
 }
 
+# Explicit native selection and recorded local assignments ignore Orca entirely.
+if [[ ${LOOM_SELFTEST_CALIBRATION_ONLY:-0} != 1 ]]; then
+(
+    export LOOM_STATE="$scratch/native-state" LOOM_ORCA="$scratch/bin/native-orca"
+    export NATIVE_ORCA_CALLS="$scratch/native-orca-calls"
+    unset LOOM_ALLOW_LOCAL
+    cat > "$LOOM_ORCA" <<'EOF'
+#!/usr/bin/env bash
+printf 'called\n' >> "$NATIVE_ORCA_CALLS"
+case $NATIVE_ORCA_MODE in
+    ready) printf 'runtimeReachable: true\nruntimeState: ready\nruntimeId: native-fixture\n' ;;
+    down) exit 1 ;;
+    malformed) printf 'not a runtime status\n' ;;
+    hang) exec sleep 30 ;;
+esac
+EOF
+    chmod +x "$LOOM_ORCA"
+    sed "s|^worktrees = .*|worktrees = \"$scratch/native work dirs\"|" "$scratch/consumer.toml" > "$scratch/native-auto.toml"
+    cp "$scratch/native-auto.toml" "$scratch/native.toml"
+    printf 'executor = "local"\n' >> "$scratch/native.toml"
+    for selection in config flag; do
+        for mode in ready down malformed hang; do
+            export NATIVE_ORCA_MODE=$mode
+            rm -f "$NATIVE_ORCA_CALLS"
+            if [[ $selection == config ]]; then
+                out=$(within 5 bash "$ops/dispatch.sh" "$scratch/native.toml" 7)
+            else
+                out=$(within 5 bash "$ops/dispatch.sh" "$scratch/native-auto.toml" 7 --executor local)
+            fi
+            id=${out##*$'\n'}
+            within 5 bash "$ops/launch.sh" "$id" -- bash "$scratch/bin/w-files" >/dev/null || fail "native launch refused: $selection/$mode"
+            [[ ! -e $NATIVE_ORCA_CALLS ]] || fail "native selection probed Orca: $selection/$mode"
+            jq -e '.executor.kind == "local" and .reports[-1].state == "ready" and .worker_pid == null' "$(rec "$id")" >/dev/null || fail 'native launch did not settle'
+        done
+    done
+    # Auto still selects local when unavailable; a later ready runtime cannot
+    # change that assignment. Legacy records without executor remain local too.
+    for compatibility in unset zero one legacy; do
+        export NATIVE_ORCA_MODE=down
+        out=$(bash "$ops/dispatch.sh" "$scratch/native-auto.toml" 7); id=${out##*$'\n'}
+        jq -e '.executor.kind == "local"' "$(rec "$id")" >/dev/null || fail 'auto unavailable did not choose local'
+        case $compatibility in
+            unset) unset LOOM_ALLOW_LOCAL ;;
+            zero) export LOOM_ALLOW_LOCAL=0 ;;
+            one) export LOOM_ALLOW_LOCAL=1 ;;
+            legacy)
+                export LOOM_ALLOW_LOCAL=ignored
+                jq 'del(.executor)' "$(rec "$id")" > "$scratch/native-legacy"
+                mv "$scratch/native-legacy" "$(rec "$id")" ;;
+        esac
+        export NATIVE_ORCA_MODE=ready
+        rm -f "$NATIVE_ORCA_CALLS"
+        within 5 bash "$ops/launch.sh" "$id" -- bash "$scratch/bin/w-files" >/dev/null || fail "recorded local assignment changed executor: $compatibility"
+        [[ ! -e $NATIVE_ORCA_CALLS ]] || fail 'recorded local launch probed Orca'
+    done
+)
+pass 'native selection and pinned local assignments never consult Orca'
+fi
+
 # --- calibration: proof is private, explicit, and never consumer execution ---
 (
     export LOOM_STATE="$scratch/calibration-state"
@@ -169,6 +228,48 @@ await_pid() {
     [[ $(printf '%s\n' "$obj" | wc -l | tr -d ' ') == 1 ]] || fail 'calibration emitted multiple objects'
     if grep -F -e "$scratch" -e 'example/fixture' -e 'SHOULD_NOT_EXIST' "$proof"; then fail 'calibration retained private input'; fi
     [[ ! -e SHOULD_NOT_EXIST && ! -e $repo/SHOULD_NOT_EXIST ]] || fail 'calibration executed consumer commands'
+    # Local tools exclude every Orca selector, discovery and byte change.
+    (
+        export NATIVE_ORCA_CALLS="$scratch/cal-orca-calls"
+        # Observe resolution as well as execution; no real tool is replaced.
+        # shellcheck disable=SC2317,SC2329  # exported override invoked by calibration
+        command() {
+            if [[ ${1:-} == -v && ${2:-} == "${LOOM_ORCA:-orca}" ]]; then
+                printf 'resolved\n' >> "$NATIVE_ORCA_CALLS"
+            fi
+            builtin command "$@"
+        }
+        export -f command
+        local_unchanged() {
+            obj=$(within 8 cal --check) || fail 'local calibration drifted with unrelated Orca'
+            jq -e '.ok and .items[0].fingerprint.executor == "local" and .items[0].drift == []' <<< "$obj" >/dev/null || fail 'local calibration changed executor'
+            cmp -s "$proof" "$scratch/proof-good" || fail 'local check rewrote proof'
+            [[ ! -e $NATIVE_ORCA_CALLS ]] || fail 'local calibration resolved or probed Orca'
+        }
+        export LOOM_ORCA="$scratch/absent-orca"
+        local_unchanged
+        unset LOOM_ORCA
+        cat > "$scratch/bin/orca" <<'EOF'
+#!/bin/sh
+printf 'called\n' >> "$NATIVE_ORCA_CALLS"
+printf 'runtimeReachable: true\nruntimeState: ready\nruntimeId: calibration-fixture\n'
+EOF
+        chmod +x "$scratch/bin/orca"
+        local_unchanged
+        cp "$scratch/bin/orca" "$scratch/bin/other-orca"
+        export LOOM_ORCA="$scratch/bin/other-orca"
+        local_unchanged
+        printf '# different bytes\n' >> "$LOOM_ORCA"
+        local_unchanged
+        printf '#!/bin/sh\nprintf "called\\n" >> "$NATIVE_ORCA_CALLS"\nexec sleep 30\n' > "$LOOM_ORCA"
+        local_unchanged
+        # Explicit recording with a hanging installation must also avoid it.
+        obj=$(within 10 cal) || fail 'local record consulted unrelated Orca'
+        [[ $(jq -c '.fingerprint' "$proof") == "$(jq -c '.fingerprint' "$scratch/proof-good")" && ! -e $NATIVE_ORCA_CALLS ]] || fail 'local recording changed fingerprint or consulted Orca'
+        rm "$LOOM_ORCA" "$scratch/bin/orca"
+        cp "$proof" "$scratch/proof-good"
+        local_unchanged
+    )
     # The format is SHA-1 regardless of caller repository/config/environment.
     expected=$(jq -nc --arg c "$scratch/calibration.toml" --arg r "$repo" '[$c,$r]' | git hash-object --stdin)
     [[ ${proof##*/} == "$expected.json" ]] || fail 'calibration key is not canonical JSON with a trailing newline'
@@ -177,7 +278,8 @@ await_pid() {
     [[ $(jq -r '.fingerprint.bridge' "$proof") == "$expected" ]] || fail 'bridge serialization is not canonical'
     expected=$(
         for source in "$ops/../VERSION" "$ops/loom" "$ops"/*.sh; do
-            case $source in */VERSION) relative=VERSION ;; *) relative=ops/${source##*/} ;; esac
+            # Balance case-pattern parentheses for Bash 3.2 command substitution.
+            case $source in (*/VERSION) relative=VERSION ;; (*) relative=ops/${source##*/} ;; esac
             jq -nc --arg n "$relative" --arg d "$(git hash-object --no-filters "$source")" '[$n,$d]'
         done | jq -Scs 'sort_by(.[0])' | git hash-object --stdin
     )
@@ -424,10 +526,49 @@ EOF_JQ
     [[ $rc == 1 ]] || fail 'Orca status without runtime identity passed'
     jq -e '.items[0].readiness == "unwired"' <<< "$obj" >/dev/null || fail 'incomplete Orca status not unwired'
     printf '#!/bin/sh\nprintf "runtimeReachable: true\\nruntimeState: ready\\nruntimeId: fixture-runtime\\n"\n' > "$LOOM_ORCA"
-    sed 's/executor = "local"/executor = "auto"/' "$scratch/calibration-local" > "$scratch/calibration.toml"
-    cal >/dev/null || fail 'available Orca structural calibration failed'
+    cp "$LOOM_ORCA" "$scratch/cal-orca-ready"
+    for policy in auto orca; do
+        sed "s/executor = \"local\"/executor = \"$policy\"/" "$scratch/calibration-local" > "$scratch/calibration.toml"
+        cp "$scratch/cal-orca-ready" "$LOOM_ORCA"
+        obj=$(cal) || fail "available Orca calibration failed: $policy"
+        jq -e '.items[0].fingerprint.executor == "orca"' <<< "$obj" >/dev/null || fail 'available Orca not selected'
+        cp "$proof" "$scratch/orca-proof-good"
+        printf '# changed tool bytes\n' >> "$LOOM_ORCA"
+        expect_drift tools
+        cp "$scratch/cal-orca-ready" "$LOOM_ORCA"
+        cp "$LOOM_ORCA" "$scratch/bin/cal-orca-copy"
+        LOOM_ORCA="$scratch/bin/cal-orca-copy" expect_drift tools
+        # Different selectors resolving to the same file remain relevant here.
+        LOOM_ORCA=cal-orca expect_drift tools
+        cal --check >/dev/null || fail 'restored Orca did not restore baseline'
+        for unavailable in down malformed missing; do
+            case $unavailable in
+                down) printf '#!/bin/sh\nexit 1\n' > "$LOOM_ORCA" ;;
+                malformed) printf '#!/bin/sh\nprintf "incomplete status\\n"\n' > "$LOOM_ORCA" ;;
+                missing) rm "$LOOM_ORCA" ;;
+            esac
+            if [[ $policy == auto ]]; then
+                expect_drift executor
+                expect_drift tools
+            else
+                rc=0; obj=$(cal --check) || rc=$?
+                [[ $rc == 1 ]] || fail "required Orca check accepted $unavailable"
+                jq -e '.ok == false and .items[0].readiness == "unwired"' <<< "$obj" >/dev/null || fail 'required Orca check fell back'
+                rc=0; obj=$(cal) || rc=$?
+                [[ $rc == 1 ]] || fail "required Orca record accepted $unavailable"
+            fi
+            cmp -s "$proof" "$scratch/orca-proof-good" || fail 'Orca drift or refusal replaced baseline'
+        done
+        cp "$scratch/cal-orca-ready" "$LOOM_ORCA"
+        chmod +x "$LOOM_ORCA"
+    done
+    # Auto also fingerprints installation changes while still selecting local.
     printf '#!/bin/sh\nexit 1\n' > "$LOOM_ORCA"
-    expect_drift executor
+    sed 's/executor = "local"/executor = "auto"/' "$scratch/calibration-local" > "$scratch/calibration.toml"
+    obj=$(cal) || fail 'auto unavailable calibration failed'
+    jq -e '.items[0].fingerprint.executor == "local"' <<< "$obj" >/dev/null || fail 'auto unavailable did not select local'
+    printf '# changed unavailable installation\n' >> "$LOOM_ORCA"
+    expect_drift tools
     cp "$scratch/calibration-local" "$scratch/calibration.toml"
     # Exercise system Bash as well (Bash 3.2 on supported macOS installations).
     if [[ -x /bin/bash ]]; then
@@ -871,11 +1012,10 @@ EOF
     jq -e '.agent == "claude"' "$(rec "$ido")" >/dev/null || fail 'configured agent not recorded'
     [[ -f $LOOM_STATE/$ido.WORK.md ]] || fail 'orca WORK.md not kept in state'
 
-    # nothing starts outside Orca
+    # Orca assignments cannot use the native launcher; local ones need no override
     bash "$ops/launch.sh" "$ido" -- bash "$scratch/bin/w-files" >/dev/null 2>&1 && fail 'launch.sh started an Orca assignment'
     out=$(bash "$ops/dispatch.sh" "$scratch/consumer.toml" 7 --executor local); idl=${out##*$'\n'}
-    bash "$ops/launch.sh" "$idl" -- bash "$scratch/bin/w-files" >/dev/null 2>&1 && fail 'launch.sh started a local worker while Orca is available'
-    LOOM_ALLOW_LOCAL=1 bash "$ops/launch.sh" "$idl" -- bash "$scratch/bin/w-files" >/dev/null || fail 'explicit LOOM_ALLOW_LOCAL override refused'
+    bash "$ops/launch.sh" "$idl" -- bash "$scratch/bin/w-files" >/dev/null || fail 'explicit local launch refused while Orca is available'
 
     # start: refused when Orca is down; otherwise Orca's worktree is adopted
     ORCA_STUB_MODE=down bash "$ops/orca.sh" start "$ido" >/dev/null 2>&1 && fail 'start with Orca down'
@@ -895,6 +1035,15 @@ EOF
     # Start already excluded .loom/. Strip it so harvest's own exclude is what is under test.
     sed -i.orig '/^\.loom\/$/d' "$(git -C "$ws" rev-parse --git-common-dir)/info/exclude"
     [[ $(bash "$ops/orca.sh" harvest "$ido") == "$ido ready (harvested from orca dispatch disp-$ido)" ]] || fail 'harvest outcome'
+    # A settled Orca record has a valid workdir: the executor guard itself
+    # must reject native launch, even with the legacy override and Orca down.
+    cp "$(rec "$ido")" "$scratch/orca-before-native"
+    for mode in ready down; do
+        rc=0
+        ORCA_STUB_MODE=$mode LOOM_ALLOW_LOCAL=1 bash "$ops/launch.sh" "$ido" -- bash "$scratch/bin/w-files" >/dev/null 2>&1 || rc=$?
+        [[ $rc != 0 ]] || fail 'native launcher accepted a settled Orca assignment'
+        cmp -s "$(rec "$ido")" "$scratch/orca-before-native" || fail 'refused native launch changed Orca record'
+    done
     [[ $(git -C "$ws" log -1 --format=%s) == "loom($ido): ready — wrote notes.txt" ]] || fail 'orca worker files not committed'
     ! git -C "$ws" ls-files | grep -qE '^(WORK|REPORT)\.md$' || fail 'loom files committed from an Orca worktree'
     [[ -f $LOOM_STATE/$ido.evidence/discovery.log ]] || fail 'evidence not copied out of the workspace'
