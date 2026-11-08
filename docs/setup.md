@@ -9,6 +9,7 @@ title: Setup
     <p class="lead">Give your coding agent the bootstrap prompt. It updates the tools checkout to the latest <code>main</code>, inspects your project, reuses existing choices, and guides you through configuration and offline checks.</p>
     <div class="actions"><button class="button primary" data-copy-bootstrap hidden>Copy bootstrap prompt</button><a class="button secondary" href="copy.html">Read the prompt</a></div>
     <p class="copy-status" role="status" aria-live="polite" data-copy-status></p>
+    <p><a href="patterns.html">Compare coordination patterns and model roles</a>: bootstrap offers three task-appropriate choices; you can keep the simple baseline or defer.</p>
     <p class="fine"><a href="bootstrap.txt">Open raw prompt</a> to select and copy manually. Prefer hands-on setup? <a href="#manual-reference">Jump to the manual reference.</a></p>
     <noscript><p>JavaScript is off. Open the raw prompt, select all its text, and copy it into your coding agent.</p></noscript>
   </div>
@@ -48,6 +49,7 @@ title: Setup
     <a href="#3-state">3. State</a>
     <a href="#4-register-a-consumer">4. Register a consumer</a>
     <p>Choose your executor</p>
+    <a href="patterns.html#catalog">Pattern catalog &amp; model advice</a>
     <a href="#5-local-executor">5. Local executor</a>
     <a href="#6-orca-executor">6. Orca executor</a>
     <a href="#7-compute-host">7. Compute host</a>
@@ -233,6 +235,29 @@ choice is unresolved. A capacity suggestion is not authorization to launch.
 Declaring `executor = "local"` selects local dispatch. If Orca is installed
 and ready, `launch` still requires `LOOM_ALLOW_LOCAL=1`; the config alone
 does not bypass that guard.
+
+### Coordination choice before delegation
+
+Use the [pattern catalog](patterns.html#catalog) for three task-appropriate
+recommendations and [model-role matching](patterns.html#models). Each candidate
+compares cost against one scoped worker, time, human productivity and quality;
+unavailable alternatives must be labelled. Read-only host inventory informs
+advice, not an automatic model router. Local/custom harnesses need no Orca;
+missing discovery can use user-supplied observed inventory or explicit unknowns.
+`capacity` counts connected hosts only.
+
+Choose explicitly, browse the full maintained catalog, keep the baseline or
+defer. Preserve an existing approved choice until the user replaces it. Save a
+selected recipe in one reviewed `loom-pattern:start` / `loom-pattern:end`
+section inside the supported root session bridge; reuse the
+[template](https://github.com/RedKnight13/loom/blob/main/templates/LOOM_SESSION.md).
+This changes fingerprinted entry bytes: check calibration, review drift before
+recording, then check again. Linked pattern artifacts are not fingerprinted.
+No choice is required for existing authorized work to continue without expansion.
+Selection grants no launch, installation, model, cap or placement permission.
+Loom Orca `start` accepts only `--agent`; model/effort remain pinned at dispatch from
+the reviewed consumer. Per-role advice needs explicitly reviewed consumer
+configs to be applied, and effective launch fields must then be verified.
 
 ## 5. Local executor
 {: id="5-local-executor"}

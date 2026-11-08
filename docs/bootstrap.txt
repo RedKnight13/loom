@@ -66,8 +66,9 @@ prompt is not proof of dependable operation.
    or treat an arbitrary shell command as trusted. Ask only for unresolved
    ticket repository, trusted checks, workspace location, executor and worker
    cap. Run `bash "$LOOM_TOOLS/ops/loom" capacity` when available and offer its
-   suggestion; it is not permission to launch that many workers. Omitted
-   workers = no cap.
+   suggestion; it counts connected hosts, not agents, models, quotas or safe
+   concurrency. It is not permission to launch that many workers. Omitted
+   workers = no cap; recommendations must still propose explicit bounds.
    Create or narrowly update consumers/<name>.toml from consumers/example.toml
    only within authorized scope; preserve unrelated values. Private configs
    there are ignored, except the tracked examples. A tracked consumer config
@@ -92,7 +93,72 @@ prompt is not proof of dependable operation.
    These separately authorized connectivity observations are not probes performed
    by calibration: calibration never calls gh auth, compute probes or a model.
 
-6. Persist a project session-entry bridge where supported.
+6. Offer coordination and model-role advice before persisting a choice.
+   Read docs/patterns.md from the trusted Loom checkout (published catalog:
+   https://redknight13.github.io/loom/patterns.html). It is the full maintained
+   catalog, not every possible pattern. Inspect task size, dependencies, shared
+   files, trusted checks, risk, budget, worker cap, placement and existing choice.
+   If the task is unknown, ask only for its goal and constraints; do not guess.
+   Reuse a still-applicable approved choice. On initial selection or a requested
+   reconsideration, present exactly THREE task-appropriate candidates with ONE
+   marked recommended, plus a single scoped worker baseline reference (even if
+   not shortlisted). Compare fit/rationale; roles and peak concurrency; cost
+   increase vs baseline with assumptions/confidence; expected wall-clock and
+   accepted-work-per-human-hour impact; effectiveness evidence, defects/rework
+   tradeoffs and constraints. Cite the catalog's primary sources. Do not always
+   recommend a team. Mark candidates recommendable, recipe-only or unavailable
+   from observed capabilities; if fewer than three are feasible, label the
+   unavailable candidates and reasons instead of inventing feasibility. Mark
+   the simplest safe route recommended, even if delegation is currently blocked.
+   Never imply an unavailable candidate can be activated by choosing its name.
+   Separate total spend, elapsed time, human productivity and quality. Use token
+   budgets times verified current provider rates, including coordinator, review,
+   retries, tools and compute; otherwise monetary cost is unknown. Subscription
+   quota is not a cash invoice. No invented prices, measured gains or universal
+   percentages: percentages need a task-matched measured baseline and provenance.
+   Label any worked arithmetic illustrative, not a benchmark. No outcome tracking.
+   For EACH candidate also show a role table: role; exact observed agent/provider/
+   model or unknown; authorized host (private reference if sensitive); effort if
+   supported; why suitable; availability evidence; cost basis and confidence.
+   Inspect existing consumer model/effort and user preferences first. Inventory
+   available harnesses/executors on the intended authorized host, including local
+   and custom harnesses. Discover read-only inventory using installed help or
+   available provider tools; Orca is an optional adapter, never a prerequisite.
+   If discovery is unavailable, use user-supplied observed inventory with its
+   provenance or mark unknown; this must not block advisory pattern choice.
+   For Orca, inspect `orca agent-context --json`. Orca has no universal model
+   catalog: do not invent `orca models` or `orca agent list`.
+   Host/account lists are not model inventories. Discover harness inventory
+   commands from help; do not scrape auth/token files, probe with model calls,
+   buy accounts, change login or install anything for this recommendation.
+   Distinguish installed, configured and launch-verified evidence; names, help
+   examples or past launches do not establish current access, quota or capacity.
+   Unknown inventory stays unknown; ask minimally only if needed for the choice.
+   Prefer suitable smaller/cheaper observed models for bounded execution and
+   stronger reasoning for ambiguous design; verify price and fit rather than
+   infer either from a name. Independent review requires isolated context;
+   another model alone does not provide it. Respect existing model choices,
+   budgets, caps and host restrictions; do not silently substitute a model.
+   Explain advice versus applied configuration: Loom Orca start exposes only --agent;
+   model/effort are pinned from the consumer at dispatch. Per-role model routing
+   is unsupported without explicitly reviewed consumer configurations. Do not
+   add per-role flags, edit shared config or assignment records. Local launch
+   uses the authorized command/harness settings; do not assume Orca model fields
+   apply to custom harnesses. When a later launch is separately authorized,
+   verify its effective model/effort/host fields;
+   unknown or mismatched fields are not proof the advice was applied.
+   Offer: choose a candidate, manual catalog, keep simple baseline, or defer.
+   For manual, show ALL maintained families and their capability status, then
+   validate the requested recipe's roles, bounds and context isolation. Selection
+   grants no permission to install, change models/caps/placement or launch.
+   Silence or a timeout never selects or launches anything. Existing work with
+   no choice may continue within its existing authorization and calibration;
+   do not introduce extra workers. Deferral does not save an approved choice.
+   If an approved choice exists, show changed advice as a proposal and retain
+   the original until explicitly replaced. If now infeasible, stop only work
+   depending on it and offer a simpler route; do not silently fall back.
+
+7. Persist a project session-entry bridge where supported.
    Inspect the current agent's actual project instruction loading conventions
    and existing content first. Use templates/LOOM_SESSION.md as the checklist.
    Schema 1 recognizes root AGENTS.md and CLAUDE.md only; at least one must
@@ -108,6 +174,17 @@ prompt is not proof of dependable operation.
    preserve everything outside it and any user customizations. Duplicate or
    malformed markers require reconciliation, not blind appending. Store private
    configuration references outside shared instructions. Add no consumer keys.
+   After explicit selection, save exactly one loom-pattern:start/end section
+   inside that bridge, using the template fields: approved recipe, task/fit,
+   roles/context boundaries, worker/review/time/token bounds, stop conditions,
+   model-role advice versus applied config, evidence/unknowns and approval scope.
+   Check both root entry files for conflicting/duplicate choice sections and
+   reconcile before editing. Keep one authoritative choice; preserve surrounding
+   instructions and customizations. Do not save an unapproved recommendation.
+   Root entry bytes (including this choice) are covered by schema-1 calibration;
+   linked pattern/checklist artifact bytes are not. Keep the operative choice
+   in the root section and review linked artifacts separately. After a reviewed
+   change, compare first, review drift, explicitly record, then check again.
    Read the result back. A file existing is structural wiring, not proof that a
    fresh agent loads it. If no supported entry file can be established, report
    unwired and provide the explicit manual session-start checklist instead.
@@ -116,7 +193,7 @@ prompt is not proof of dependable operation.
    A mismatch or missing evidence blocks dependent delegation until resolved
    within existing authorization; never silently refresh away the difference.
 
-7. Establish calibration through this session's shell tool.
+8. Establish calibration through this session's shell tool.
    The schema-1 command ships in ops/loom. Inspect the installed CLI first;
    older installations may lack it. If calibrate is unavailable, report
    calibration not run and delegation blocked; use an approved implementation.
@@ -154,7 +231,7 @@ prompt is not proof of dependable operation.
    The agent must follow this protocol. Existing dispatch/start/launch commands
    are not automatically guarded; a gap remains between check and delegation.
 
-8. Render a ticket without opening an issue:
+9. Render a ticket without opening an issue:
      bash "$LOOM_TOOLS/ops/ticket.sh" "$FILE" \
        --short first-check --title "First check" \
        --scope "<authorized area>" --out "everything else" \
@@ -172,7 +249,9 @@ prompt is not proof of dependable operation.
    do not continue dependent actions after a failed command or non-ready report.
 
 Finish with changed files/tools, captured gate results, executor, evidence
-location, entry-file loading status and unresolved decisions. Separate:
+location, entry-file loading status and unresolved decisions. Include selected
+pattern (or deferred/absent), model-role advice versus applied settings, unknown
+availability/cost and any proposed change awaiting the user. Separate:
 - Structural wiring: configuration and session entry inspected.
 - Offline evidence: separate selftest/lint exits from the fixed calibration
   drill result; none of these proves live consumer acceptance.
