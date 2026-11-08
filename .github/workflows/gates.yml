@@ -1,23 +1,17 @@
 name: gates
 
-# Portable gates on both platforms. The 2026-11-08 macOS failures -- BSD sed
-# joining an inserted line, and TMPDIR living under the /var symlink -- were
-# both test-harness assumptions that only a macOS run can catch.
+# Own branches run on the owner's machines (agni2 and this Mac); fork pull
+# requests run on GitHub-hosted runners. A public repository must never execute
+# untrusted pull-request code on a self-hosted runner.
 #
-# The self-hosted job is dispatch-only on purpose: this repository is public,
-# and a runner that executes arbitrary pull-request code on a personal machine
-# is not a gate, it is an invitation.
+# The macOS job is the one that catches Darwin-only harness assumptions: BSD
+# sed's inserted-line rule and TMPDIR living under the /var symlink.
 
 on:
   push:
     branches: [main]
   pull_request:
   workflow_dispatch:
-    inputs:
-      self_hosted:
-        description: Also run the gates on the self-hosted runner (label agni)
-        type: boolean
-        default: false
 
 permissions:
   contents: read
@@ -27,13 +21,14 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  gates:
-    name: gates (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
+  self-hosted:
+    name: gates (self-hosted ${{ matrix.label }})
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        label: [agni2, mac]
+    runs-on: [self-hosted, "${{ matrix.label }}"]
     steps:
       - uses: actions/checkout@v4
 
@@ -60,13 +55,33 @@ jobs:
       - name: shellcheck
         run: shellcheck -x ops/*.sh ops/loom
 
-  agni:
-    name: gates (self-hosted agni)
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.self_hosted == true }}
-    runs-on: [self-hosted, agni]
+  fork:
+    name: gates (hosted ${{ matrix.os }})
+    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Toolchain
+        run: |
+          missing=''
+          command -v jq >/dev/null 2>&1 || missing="$missing jq"
+          command -v shellcheck >/dev/null 2>&1 || missing="$missing shellcheck"
+          if [[ -n $missing ]]; then
+            if [[ ${RUNNER_OS:-} == macOS ]]; then
+              brew install $missing
+            else
+              sudo apt-get update -qq
+              sudo apt-get install -y -qq $missing
+            fi
+          fi
+
       - name: selftest
         run: bash ops/selftest.sh
+
       - name: shellcheck
         run: shellcheck -x ops/*.sh ops/loom
