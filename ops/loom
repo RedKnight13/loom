@@ -1,20 +1,19 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2031  # calibration drill environment is isolated in a subshell
 # loom — the only call. One JSON object on stdout. Exit 0 iff ok is true.
 # Claude and Codex (and any later harness) call this. They do not parse the
 # other scripts. See docs/superpowers/specs/2026-11-07-loom-0.5.0-design.md.
 set -euo pipefail
 ops=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
 root=$(cd "$ops/.." && pwd)
-# shellcheck source=ops/lib.sh
-source "$ops/lib.sh"
-v=$(tr -d '[:space:]' < "$root/VERSION")
+v=unknown
 # fd 3 is the caller's stdout: a failure emitted inside $(run_out ...) must not
 # be swallowed by the capture (gap #48).
 exec 3>&1
 cmd=${1:-}
 shift || true
 
-usage='usage: loom version | accept --consumer FILE --short NAME --title T --scope S --out O --done D [--label L]… | ignore --consumer FILE --short NAME --reason TEXT | dispatch --consumer FILE --issue N [--executor auto|local|orca] | launch ID -- CMD... | start ID [--agent NAME] | harvest ID | stop ID | abandon ID | keep-open ID | release ID | show ID | read ID | list [--run R] | request ID | peek | inbox | send ID --subject S [--body B] | ask ID --question Q | reply --id M --body B | gate create|resolve|list | task create|update | run create|use|current|show|list | reference add|find|list | worktree rm|ps|list | repo --path P | base-ref REF | automation create|list|run|remove | watch --until ID|all [--every SEC] [--limit-min N] | status | verify ID [--baseline] [--on HOST] | collect ID | report ID STATE FACT | ack ID FACT | detect | compute --consumer FILE | capacity | hosts'
+usage='usage: loom version | accept --consumer FILE --short NAME --title T --scope S --out O --done D [--label L]… | ignore --consumer FILE --short NAME --reason TEXT | dispatch --consumer FILE --issue N [--executor auto|local|orca] | launch ID -- CMD... | start ID [--agent NAME] | harvest ID | stop ID | abandon ID | keep-open ID | release ID | show ID | read ID | list [--run R] | request ID | peek | inbox | send ID --subject S [--body B] | ask ID --question Q | reply --id M --body B | gate create|resolve|list | task create|update | run create|use|current|show|list | reference add|find|list | worktree rm|ps|list | repo --path P | base-ref REF | automation create|list|run|remove | watch --until ID|all [--every SEC] [--limit-min N] | status | verify ID [--baseline] [--on HOST] | collect ID | report ID STATE FACT | ack ID FACT | detect | compute --consumer FILE | calibrate --consumer FILE [--check] | capacity | hosts'
 
 emit() {  # emit <ok:true|false> <state> <fact> [id] [ticket] [items-json] [actions-json] [exit]
     local ok=$1 state=$2 fact=$3 id=${4:-} ticket=${5:-} items=${6:-[]} actions=${7:-[]} code=${8:-}
@@ -32,7 +31,19 @@ emit() {  # emit <ok:true|false> <state> <fact> [id] [ticket] [items-json] [acti
     if [[ -n $code ]]; then exit "$code"; fi
     [[ $ok == true ]] && exit 0 || exit 1
 }
+if [[ $cmd == calibrate ]]; then
+    source_mode=record
+    for source_arg in "$@"; do [[ $source_arg != --check ]] || source_mode=check; done
+    for source_path in "$root/VERSION" "$ops/loom" "$ops"/*.sh; do
+        [[ -f $source_path && -r $source_path && ! -L $source_path && $source_path != *[[:cntrl:]]* ]] ||
+            emit false failed 'Calibration requires readable regular Loom source files without symlinks.' '' '' \
+                '[{"schema":1,"mode":"'"$source_mode"'","readiness":"incomplete","fingerprint":null,"stages":{"installation":"failed","configuration":"not_run","connectivity":"not_run","instructions":"not_run","drill":"not_run"},"drift":[],"acceptance":"not_run"}]'
+    done
+fi
+# shellcheck source=ops/lib.sh
+source "$ops/lib.sh"
 loom_error() { emit false failed "$*"; }
+v=$(tr -d '[:space:]' < "$root/VERSION")
 
 fail_from() {  # fail_from <rc> <stderr-file> <stdout>
     local rc=$1 err=$2 out=$3 fact
@@ -80,6 +91,10 @@ status_object() {
 }
 
 case $cmd in
+    calibrate)
+        # shellcheck source=ops/calibrate.sh
+        source "$ops/calibrate.sh"
+        ;;
     version)
         [[ $# == 0 ]] || emit false failed "$usage" "" "" "[]" "[]" 2
         emit true waiting "loom $v"

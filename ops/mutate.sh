@@ -10,6 +10,9 @@
 # mutant caught; 1 = a mutant survived, did not apply, or was not valid bash;
 # 2 = the harness itself is broken (the unmutated copy fails its selftest).
 set -u
+if [[ ${LOOM_MUTATE_CALIBRATION_ONLY:-0} == 1 ]]; then
+    export LOOM_SELFTEST_CALIBRATION_ONLY=1
+fi
 cd "$(dirname "${BASH_SOURCE[0]}")/.." || exit 1
 
 if [[ ${1:-} == --on ]]; then
@@ -30,7 +33,16 @@ order=()
 # Each mutant gets the whole tracked tree (ops/loom reads ../VERSION), not just ops/.
 # A shipped tree (--on HOST) has no .git: then every file present is the tree.
 tree_files() {
-    if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then git ls-files -z; else find . -type f ! -path './.git/*' -print0; fi
+    local source
+    if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+        git ls-files -z
+        # Include the new source before Loom harvests it.
+        for source in ops/calibrate.sh templates/LOOM_SESSION.md; do
+            if [[ -f $source ]] && ! git ls-files --error-unmatch "$source" >/dev/null 2>&1; then
+                printf '%s\0' "$source"
+            fi
+        done
+    else find . -type f ! -path './.git/*' -print0; fi
 }
 copy_tree() { mkdir -p "$1" && tree_files | xargs -0 tar cf - | (cd "$1" && tar xf -); }
 
@@ -59,6 +71,7 @@ one() {  # one <file> <sed> <description> <name>: writes $base/<name>/result
     printf '%s\n' "$r" > "$m/result"
 }
 run() {
+    if [[ ${LOOM_MUTATE_CALIBRATION_ONLY:-0} == 1 && $4 != mcal* ]]; then return 0; fi
     while [[ $(jobs -rp | wc -l) -ge $jobs_max ]]; do sleep 0.2; done
     order+=("$4")
     one "$@" &
@@ -120,6 +133,18 @@ run dispatch.sh '/git -C "\$config_dir" ls-files --error-unmatch/c\
     true; then' "ignored config records an empty commit (#68)" m54
 run loom 's/ ${label_args\[@\]+"${label_args\[@\]}"}//' "loom accept drops label pass-through (#67)" m67
 run verify.sh 's/^elif \[\[ -n $collected \]\]; then/elif false; then/' "verify checks the stale worker tip after collect (#74)" m74
+run calibrate.sh '/Calibration proof is missing/s/cal_refuse evidence/cal_finish ready/' "calibration accepts missing proof" mcal1
+run calibrate.sh '/Calibration wiring changed/s/\[\[.*\]\]/true/' "calibration ignores drift" mcal2
+run calibrate.sh '/Calibration proof is corrupt/s/cal_refuse evidence/cal_finish ready/' "calibration ignores corrupt proof" mcal3
+run calibrate.sh '/^        cal_reobserve$/d' "calibration check misses concurrent drift" mcal4
+run calibrate.sh '/^    cal_reobserve$/d' "calibration record publishes stale observation" mcal5
+run calibrate.sh '/export GIT_DIR=\/dev\/null GIT_DEFAULT_HASH=sha1 GIT_CONFIG_COUNT=0/d' "calibration hashes use caller object format" mcal6
+run calibrate.sh '/cal_no_links "\$consumer"/s/! cal_no_links "\$consumer"/false/' "calibration follows config ancestor symlinks" mcal7
+run loom '/\[\[ -f \$source_path/s/\[\[.*\]\]/true/' "calibration reads nonregular early sources" mcal8
+run calibrate.sh 's/cal_json_hash() { jq -Sc ./cal_json_hash() { jq -Scj ./' "calibration canonical JSON loses its trailing newline" mcal9
+run calibrate.sh '/\[\[ \$state_dir == \/\* \]\] || state_dir=/c\
+    [[ $state_dir == /* ]] || cal_refuse evidence "relative state rejected"' "calibration rejects relative state" mcal10
+run calibrate.sh "s/'\.state == \$expected'/'\.state == \"blocked\" or .state == \"failed\"'/" "calibration drill conflates blocked and failed" mcal11
 wait
 survived=0
 for n in "${order[@]}"; do
