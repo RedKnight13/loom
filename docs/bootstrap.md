@@ -25,8 +25,10 @@ unresolved choices require questions.
 The prompt uses [LOOM_SESSION.md](https://github.com/RedKnight13/loom/blob/main/templates/LOOM_SESSION.md) to add a small,
 marked bridge to root `AGENTS.md` or `CLAUDE.md`, only where the current agent
 actually supports that convention. Schema 1 requires literal
-`loom-calibration:v1` in at least one regular, readable, non-symlink root file;
-both are hashed when present. No additional TOML keys are needed.
+`loom-calibration:v1` in at least one root file; every present root entry file
+must be regular, readable and non-symlink, and both are hashed when present.
+Install or reuse the checklist in the consumer and verify the bridge's relative
+link resolves. No additional TOML keys are needed.
 It inspects existing conventions first and preserves surrounding content.
 Repeating setup updates that section without duplicating it. No universal
 instruction filename or automatic loader is assumed.
@@ -41,16 +43,20 @@ dependent work. The checklist itself is not a daemon or enforcement boundary.
 
 Report structural wiring, offline drills and live workflow proof separately.
 Selftest/lint and ticket rendering do not prove a real worker can finish and
-have its result harvested and verified. The confirmed schema-1 interface is:
+have its result harvested and verified. Use the absolute `LOOM_TOOLS`,
+`LOOM_REPO` and `FILE` paths resolved by the prompt or
+[manual setup](setup.md#4-register-a-consumer); no installed alias is assumed.
+For fresh setup and existing installations, compare first:
 
 ```sh
-loom calibrate --consumer FILE          # explicit baseline + fixed offline drill
-loom calibrate --consumer FILE --check  # read-only comparison; no drill rerun
+bash "$LOOM_TOOLS/ops/loom" calibrate --consumer "$FILE" --check
 ```
 
 On a setup rerun, check first and reuse a current baseline; never record
-unconditionally to clear drift. Bind `LOOM_REPO` to the intended checkout or
-run from it. Capture the exit and
+unconditionally to clear drift. For missing or drifted evidence, review it before
+explicitly recording with `bash "$LOOM_TOOLS/ops/loom" calibrate --consumer "$FILE"`,
+then run `--check` again. Bind `LOOM_REPO` to the intended checkout or run from it.
+Capture the exit and
 inspect the complete envelope: exit 0 means ready prerequisites/offline drill,
 1 means blocked/failed, 2 means usage error. Calibration acceptance is always
 `not_run`. Review drift before explicitly recording again; checking never
@@ -68,9 +74,15 @@ The bridge instructs execution at every session entry and immediately before
 delegation, including after context loss or a tool reconnect. Schema 1 does not
 automatically gate legacy dispatch/start/launch commands; the agent must enforce
 this protocol, and a gap remains between comparison and delegation.
+Calibration does not fingerprint linked checklists or project check implementations,
+inspect credentials or session permissions, or prove remote host reachability.
+Read the checklist and review current authorization separately; repeat relevant
+authorized observations after changes even if calibration is ready.
 
 The prompt renders a Mandate without opening an issue. Opening a ticket or
 starting workers requires task-specific authorization; existing authorization
-is retained. See [setup.md](setup.md) for commands and [support.md](support.md)
+is retained. `accept` opens the reviewed ticket; it does not launch a worker or
+certify project acceptance. Authorized `dispatch` and `start`/`launch` are separate
+steps. See [setup.md](setup.md) for commands and [support.md](support.md)
 for residual gaps. Private consumer configs stay untracked; tracked configs
-need an authorized conductor's commit before dispatch.
+need an authorized conductor's commit before calibration or dispatch.

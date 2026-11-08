@@ -119,6 +119,10 @@ printf 'LINT=%s\n' "$lint_exit"
 checkout. If reusing an installation, enter its directory and set
 `export LOOM_TOOLS="$(pwd -P)"` there. Run the two gates above from that directory.
 Keep this variable available in each terminal used below.
+If a tool starts a fresh shell for each call, bind the variables in the same
+invocation as the command or explicitly source an approved private setup file.
+This also applies to `LOOM_REPO` and `FILE` below; past tool calls or chats do
+not establish the current shell's environment.
 
 `ops/selftest.sh` needs no network, signals no real worker, and uses stubs for
 `gh`, `orca`, `ssh` and `ps`. If it fails, stop dependent setup work and retain the captured exit code.
@@ -224,6 +228,12 @@ Set `executor = "local"` in the consumer TOML. Complete the
 [first ticket checklist](#8-first-ticket-checklist), including calibration,
 before launching a real task. The commands below show an already authorized
 issue; replace `42`, the returned assignment ID and `my-agent` with your values.
+Run each step separately, capture its exit and inspect its JSON response before
+continuing. Recheck calibration immediately before dispatch and again before
+launch; a successful dispatch does not start a worker.
+Use an approved noninteractive worker command: local launch supplies no stdin
+and runs it inside the assignment workspace. `my-agent` is a placeholder, not
+an installed Loom command.
 
 <div class="code-region" role="region" tabindex="0" aria-label="Shell commands" markdown="1">
 
@@ -258,6 +268,11 @@ bash "$LOOM_TOOLS/ops/loom" collect add-flag.1
 
 </div>
 
+`launch` harvests when the local process exits; inspect the report, not just the
+command exit. Continue to collect only after verification succeeds. Collect
+fetches the branch; it does not enforce verification or perform review, push or
+merge. After changing or rebasing the collected branch, verify its new revision.
+
 `dispatch` creates a **private clone** with its own `.git` and **no remote**.
 The worker reads `WORK.md`, leaves files in the working tree, and appends one
 line to `REPORT.md`:
@@ -286,7 +301,7 @@ app must be running: `orca status` reports whether the runtime is ready.
 ```bash
 orca --version                    # must be 1.4.246 or newer
 orca status                       # runtime reachable and ready
-orca repo add --path ~/src/your-repo
+orca repo add --path "$LOOM_REPO"
 orca host list                    # connect the target in the Orca app first
 ```
 
@@ -306,7 +321,11 @@ compute  = ["build1", "build2"]   # optional; first connected Orca host wins
 Complete the [first ticket checklist](#8-first-ticket-checklist) before an
 authorized real task. With compute placement, the consumer project must also
 have a ready setup on the selected Orca host; the pinned base commit must be
-available there. Use your issue number and the assignment ID returned by dispatch:
+available there. Use your issue number and the assignment ID returned by dispatch.
+Run each step separately, capture its exit and inspect its JSON response before
+continuing. Check calibration immediately before dispatch and again before
+start. After harvest, inspect the report and verify a ready result before collect;
+blocked or failed work needs resolution first.
 
 <div class="code-region" role="region" tabindex="0" aria-label="Shell commands" markdown="1">
 
@@ -321,6 +340,12 @@ bash "$LOOM_TOOLS/ops/loom" release add-flag.1                  # after collect
 ```
 
 </div>
+
+`start` defaults to the `codex` agent; use `start add-flag.1 --agent NAME` for an
+approved alternative available in Orca. `collect` fetches the branch and `release`
+releases the settled worker; neither proves project acceptance. Review, push and
+merge remain the authorized conductor's actions. Reverify after any change to
+the collected revision.
 
 Rules Loom keeps for Orca:
 
@@ -352,8 +377,9 @@ Requirements on the host:
 - whatever `compute_setup` expects (a venv, a toolchain)
 
 `verify` ships the exact commit as a git bundle over SSH, builds a fresh tree in
-`$HOME/.loom-remote/<id>`, runs setup then checks, streams the log back, records
-the host, and deletes its folder. A host that is unreachable refuses; Loom never
+an isolated directory under `$HOME/.loom-remote/`, runs setup then checks,
+returns the log, records the host, and deletes its folder. If no declared host
+is reachable, verification refuses; Loom never
 falls back to the conductor's machine. A failing `compute_setup` is reported as
 **could not run** (exit 126), never as a test failure.
 
@@ -372,6 +398,44 @@ falls back to the conductor's machine. A failing `compute_setup` is reported as
 - [ ] session entry is inspected and calibration `--check` is current (below)
 - [ ] opening the ticket or launching a worker is authorized for this task
 
+### Render, then accept a ticket
+
+After configuring the paths above, replace the scope and done condition with
+the proposed task. Rendering validates the Mandate format without creating an
+issue or worker:
+
+<div class="code-region" role="region" tabindex="0" aria-label="Shell commands" markdown="1">
+
+```bash
+bash "$LOOM_TOOLS/ops/ticket.sh" "$FILE" \
+  --short first-check --title "First check" \
+  --scope "<authorized area>" --out "everything else" \
+  --done "<trusted checks> exits 0" --dry-run
+```
+
+</div>
+
+Inspect the rendered Mandate and capture the exit. Only when opening this
+ticket is authorized, run the following with the same reviewed values. Reuse
+authorization already granted; ask only for an unresolved owner decision.
+
+<div class="code-region" role="region" tabindex="0" aria-label="Shell commands" markdown="1">
+
+```bash
+bash "$LOOM_TOOLS/ops/loom" accept --consumer "$FILE" \
+  --short first-check --title "First check" \
+  --scope "<authorized area>" --out "everything else" \
+  --done "<trusted checks> exits 0"
+```
+
+</div>
+
+`accept` opens a GitHub issue; its `accepted` state is not project acceptance.
+Use the returned `ticket` for authorized `dispatch`, then the returned `id` for
+`start` (Orca) or `launch` (local), as shown in the executor sections. An existing
+reviewed ticket can be dispatched without opening another. These are separate
+actions; rendering or accepting a ticket does not authorize a worker.
+
 ### Calibration and session entry (schema 1)
 
 The schema-1 command ships in `ops/loom`. Confirm availability in the installed
@@ -382,12 +446,16 @@ actual harness loading and real worker acceptance still need separate evidence.
 
 Install the [session bridge](https://github.com/RedKnight13/loom/blob/main/templates/LOOM_SESSION.md) only after inspecting
 the agent's project loading convention and existing content. Schema 1 requires
-literal `loom-calibration:v1` in root `AGENTS.md` or `CLAUDE.md` (regular,
-readable, non-symlink); both are fingerprinted if present. Preserve existing
+literal `loom-calibration:v1` in root `AGENTS.md` or `CLAUDE.md`; every present
+root entry file must be regular, readable and non-symlink, and both are
+fingerprinted if present. Preserve existing
 content and user customizations; reuse one `loom-session:start` / `loom-session:end`
 section rather than appending another. Reconcile duplicate or malformed markers
 before editing. Do not create competing entry files or overwrite global instructions.
 Unsupported entry conventions remain unwired. No new consumer TOML keys are required.
+Install or reuse the checklist in the consumer checkout and make the bridge's
+project-relative link resolve to it. A link into a nonexistent consumer
+`templates/` directory does not carry the checklist into the next session.
 
 With `LOOM_REPO` bound to the intended consumer checkout (otherwise cwd), use
 the trusted Loom installation and the resolved consumer `FILE`.
@@ -456,6 +524,13 @@ after context loss, tool reconnect or dependency changes. Read the bridge
 explicitly if loading is uncertain and confirm it was read. Review drift before
 explicit recording; comparison never accepts changes. Fingerprints cover Loom
 source/version, consumer and bridge bytes, checkout identity, tools and executor.
+They do not cover linked checklist contents, project check implementations,
+credentials or session permissions. The `connectivity` stage reflects local
+executor selection (and Orca status when probed), not GitHub authentication,
+SSH access or remote project readiness. Read the linked checklist and review
+current authorization at session entry; repeat relevant authorized observations
+after changes even when calibration returns ready. Do not refresh a baseline
+as a substitute for checking facts outside its fingerprint.
 Recording reobserves inputs after the drill, and checking reobserves before
 success; observable concurrent changes fail without replacing evidence. These
 checks do not prevent adversarial filesystem races. SHA-1 fingerprints are
