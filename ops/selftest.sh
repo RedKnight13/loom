@@ -445,7 +445,11 @@ case "$1" in
                 st='settled'
                 [[ -f $GH_STATE/show-$4 ]] && st=$(cat "$GH_STATE/show-$4")
                 [[ $st != notfound ]] || { echo '{"ok":false,"error":{"code":"dispatch_not_found"}}'; exit 1; }
-                jq -n --arg d "$4" --arg s "$st" '{ok: true, result: {dispatchId: $d, status: $s}}' ;;
+                if [[ -f $GH_STATE/view-$4 ]]; then cat "$GH_STATE/view-$4"; exit "${ORCA_SHOW_EXIT:-0}"; fi
+                state=completed; live=idle
+                if [[ $st == active ]]; then state=dispatched; live=live; fi
+                jq -n --arg d "$4" --arg s "$state" --arg l "$live" --arg w "repo-stub::$GH_STATE/orca-ws/${4#disp-}" \
+                    '{ok: true, result: {dispatch: {id: $d, taskId: "task-1", runId: "run-1", status: $s}, worker: {state: "ready"}, projection: {workspace: {id: $w}, liveness: {verdict: $l}, resource: {terminalState: "retained"}}}}' ;;
             worker-read)
                 echo '{"ok":true,"result":{"source":"transcript","text":"worker transcript"}}' ;;
             worker-abandon)
@@ -461,7 +465,11 @@ case "$1" in
                 echo '{"ok":true,"result":{"messages":[]}}' ;;
             inbox)
                 echo '{"ok":true,"result":{"messages":[]}}' ;;
-            send|ask|reply)
+            send)
+                printf '%s\n' "$*" > "$GH_STATE/send.args"
+                if [[ -n ${ORCA_SEND_RECEIPT:-} ]]; then cat "$ORCA_SEND_RECEIPT"; exit "${ORCA_SEND_EXIT:-0}"; fi
+                jq -n --arg d "${4#dispatch:}" '{ok:true,result:{messageId:"message-stub",dispatchId:$d,queuedFor:"worker"}}' ;;
+            ask|reply)
                 shift 2
                 echo "{\"ok\":true,\"result\":{\"args\":\"$*\"}}" ;;
             gate-create|gate-resolve|gate-list)
@@ -550,6 +558,167 @@ EOF
     jq -e '.executor.released == true' "$(rec "$ido")" >/dev/null || fail 'release not recorded'
     ! grep -q "^$ido"$'\t'"release"$'\t' <<< "$(bash "$ops/status.sh")" || fail 'released workspace still in status'
     bash "$ops/orca.sh" release "$ido" >/dev/null 2>&1 && fail 'double release accepted'
+
+    # Follow-up lifecycle: already settled/released assignment, new dispatch.
+    # Fixtures use full worker-show envelopes with deliberately distracting metadata.
+    fixture_view() {
+        jq -n --arg d "$1" --arg p "$2" --arg s "$3" --arg l "$4" --arg w "repo-stub::$ws" '
+          {ok:true,result:{dispatch:{id:$d,taskId:("task-"+$d),runId:"run-1",followUpOf:$p,status:$s},
+           worker:{state:"ready"},projection:{workspace:{id:$w},liveness:{verdict:$l},resource:{terminalState:"retained"}},
+           unrelated:{status:"completed",dispatchId:$d}}}'
+    }
+    fixture_view follow-one "disp-$ido" dispatched live > "$GH_STATE/view-follow-one"
+    jq -n --arg p "disp-$ido" '{ok:true,result:{delivery:"resumed",followUpOf:$p,dispatchId:"follow-one",state:"ready"}}' > "$scratch/send.receipt"
+    # Legacy raw dispatch selectors must resolve to exactly one assignment.
+    rm -f "$GH_STATE/send.args"
+    bash "$ops/loom" send unknown-dispatch --subject continue >/dev/null 2>&1 && fail 'unknown raw dispatch sent'
+    [[ ! -f $GH_STATE/send.args ]] || fail 'unknown dispatch had a delivery side effect'
+    cp "$(rec "$ido")" "$LOOM_STATE/duplicate-dispatch.json"
+    bash "$ops/loom" send "disp-$ido" --subject continue >/dev/null 2>&1 && fail 'ambiguous raw dispatch sent'
+    [[ ! -f $GH_STATE/send.args ]] || fail 'ambiguous dispatch had a delivery side effect'
+    rm "$LOOM_STATE/duplicate-dispatch.json"
+    cp "$(rec "$ido")" "$scratch/before-placement"
+    jq '.compute = ["declared-remote"]' "$(rec "$ido")" > "$scratch/wrong-placement"
+    mv "$scratch/wrong-placement" "$(rec "$ido")"
+    bash "$ops/loom" send "$ido" --subject continue >/dev/null 2>&1 && fail 'continuation fell back to a local worker'
+    cp "$scratch/before-placement" "$(rec "$ido")"
+    ORCA_SEND_RECEIPT="$scratch/send.receipt" bash "$ops/loom" send "disp-$ido" --subject continue --body review > "$scratch/send.out" || fail 'follow-up send failed'
+    grep -q -- "--to dispatch:disp-$ido" "$GH_STATE/send.args" || fail 'send used assignment id as dispatch'
+    jq -e '.executor.dispatch == "follow-one" and .executor.task == "task-follow-one" and .executor.state == "running" and
+        .report_offset == 1 and .collected_sha == null and .executor.released == null and (.reports | length) == 2' "$(rec "$ido")" >/dev/null || fail "follow-up not tracked or old completion reused: $(jq -c . "$(rec "$ido")")"
+    archive=$(jq -r '.executor.history[-1].archive' "$(rec "$ido")")
+    [[ -s $LOOM_STATE/$archive/$ido.evidence/discovery.log ]] || fail 'old evidence lost on continuation'
+    cp "$(rec "$ido")" "$scratch/before-denial"
+    oldhead=$(git -C "$ws" rev-parse HEAD)
+    printf 'follow-up change\n' >> "$ws/notes.txt"
+    printf 'state: ready — follow-up finished\n' >> "$ws/REPORT.md"
+    # Every refused read must leave assignment, report offset, index and HEAD alone.
+    for mode in live unknown failed worker-failed nested wrong malformed false transport retained compact-live compact-unknown; do
+        fixture_view follow-one "disp-$ido" completed idle > "$scratch/good-view"
+        case $mode in
+            live) jq '.result.projection.liveness.verdict = "live"' "$scratch/good-view" ;;
+            unknown) jq '.result.projection.liveness.verdict = "unverifiable"' "$scratch/good-view" ;;
+            failed) jq '.result.dispatch.status = "failed"' "$scratch/good-view" ;;
+            worker-failed) jq '.result.worker.state = "failed"' "$scratch/good-view" ;;
+            compact-live) printf '%s\n' '{"ok":true,"result":{"dispatchId":"follow-one","state":"ready","liveness":"live","terminalState":"retained","metadata":{"status":"completed"}}}' ;;
+            compact-unknown) printf '%s\n' '{"ok":true,"result":{"dispatchId":"follow-one","terminalState":"retained","metadata":{"status":"completed"}}}' ;;
+            nested) jq '.result.dispatch.status = "dispatched" | .result.worker.metadata = {state:"completed"}' "$scratch/good-view" ;;
+            wrong) jq '.result.dispatch.id = "another-dispatch"' "$scratch/good-view" ;;
+            malformed) printf 'not json\n' ;;
+            false) jq '.ok = false' "$scratch/good-view" ;;
+            transport) cat "$scratch/good-view" ;;
+            retained) jq '.result.dispatch |= del(.status)' "$scratch/good-view" ;;
+        esac > "$GH_STATE/view-follow-one"
+        rc=0
+        if [[ $mode == transport ]]; then
+            ORCA_SHOW_EXIT=1 bash "$ops/loom" harvest "$ido" > "$scratch/denied" || rc=$?
+        else
+            bash "$ops/loom" harvest "$ido" > "$scratch/denied" || rc=$?
+        fi
+        [[ $rc != 0 ]] || fail "unsafe harvest accepted: $mode"
+        jq -e '.ok == false' "$scratch/denied" >/dev/null || fail 'harvest refusal lost JSON envelope'
+        cmp -s "$(rec "$ido")" "$scratch/before-denial" || fail "refused harvest changed state: $mode"
+        [[ $(git -C "$ws" rev-parse HEAD) == "$oldhead" && -z $(git -C "$ws" diff --cached --name-only) ]] || fail "refused harvest touched git: $mode"
+    done
+    cp "$scratch/good-view" "$GH_STATE/view-follow-one"
+    bash "$ops/loom" harvest "$ido" >/dev/null || fail 'completed follow-up harvest failed'
+    jq -e '.executor.state == "settled" and .reports[-1].fact == "follow-up finished" and (.reports | length) == 3 and .report_offset == 2' "$(rec "$ido")" >/dev/null || fail 'second harvest reused initial report'
+    bash "$ops/loom" harvest "$ido" >/dev/null 2>&1 && fail 'duplicate follow-up harvest accepted'
+    [[ $(git -C "$ws" rev-list --count "$oldhead..HEAD") == 1 ]] || fail 'second harvest did not commit continuation exactly once'
+    # Recovery for old Loom records after an external coordinator send: infer
+    # the boundary from the unique prior report, never from the new last line.
+    jq 'del(.harvest_report_lines) | .report_offset = 0' "$(rec "$ido")" > "$scratch/legacy"
+    mv "$scratch/legacy" "$(rec "$ido")"
+    printf 'recovered change\n' >> "$ws/notes.txt"
+    printf 'state: ready — recovered review\n' >> "$ws/REPORT.md"
+    fixture_view follow-two follow-one completed idle > "$GH_STATE/view-follow-two"
+    cp "$(rec "$ido")" "$scratch/before-reconcile"
+    for mode in parent workspace run task; do
+        case $mode in
+            parent) jq '.result.dispatch.followUpOf = "unrelated"' "$GH_STATE/view-follow-two" ;;
+            workspace) jq '.result.projection.workspace.id = "other::/elsewhere"' "$GH_STATE/view-follow-two" ;;
+            run) jq '.result.dispatch.runId = "another-run"' "$GH_STATE/view-follow-two" ;;
+            task) jq '.result.dispatch.taskId = "task-follow-one"' "$GH_STATE/view-follow-two" ;;
+        esac > "$GH_STATE/view-bad-followup"
+        jq '.result.dispatch.id = "bad-followup"' "$GH_STATE/view-bad-followup" > "$scratch/bad"
+        mv "$scratch/bad" "$GH_STATE/view-bad-followup"
+        bash "$ops/loom" reconcile "$ido" --dispatch bad-followup >/dev/null 2>&1 && fail "reconcile accepted wrong $mode"
+        cmp -s "$(rec "$ido")" "$scratch/before-reconcile" || fail 'rejected reconcile changed record'
+    done
+    cp "$ws/REPORT.md" "$scratch/report-before-ambiguous"
+    printf 'state: ready — follow-up finished\n' >> "$ws/REPORT.md"
+    bash "$ops/loom" reconcile "$ido" --dispatch follow-two >/dev/null 2>&1 && fail 'ambiguous legacy report boundary accepted'
+    cmp -s "$(rec "$ido")" "$scratch/before-reconcile" || fail 'ambiguous boundary changed assignment'
+    cp "$scratch/report-before-ambiguous" "$ws/REPORT.md"
+    bash "$ops/loom" reconcile "$ido" --dispatch follow-two >/dev/null || fail 'legacy completed follow-up recovery failed'
+    jq -e '.executor.dispatch == "follow-two" and .report_offset == 2' "$(rec "$ido")" >/dev/null || fail 'legacy recovery lost report boundary'
+    bash "$ops/loom" harvest "$ido" >/dev/null || fail 'recovered review harvest failed'
+    jq -e '.reports[-1].fact == "recovered review" and (.reports | length) == 4' "$(rec "$ido")" >/dev/null || fail 'recovered review not folded'
+    # Same-dispatch reconcile is idempotent; it never authorizes another harvest.
+    bash "$ops/loom" reconcile "$ido" --dispatch follow-two >/dev/null || fail 'idempotent reconcile failed'
+    bash "$ops/loom" harvest "$ido" >/dev/null 2>&1 && fail 'same-dispatch recovery reopened settled work'
+    fixture_view follow-three follow-two completed idle > "$GH_STATE/view-follow-three"
+    bash "$ops/loom" reconcile "$ido" --dispatch follow-three >/dev/null || fail 'silent continuation reconcile failed'
+    bash "$ops/loom" harvest "$ido" >/dev/null || fail 'silent completed continuation harvest failed'
+    jq -e '.reports[-1].state == "failed" and .reports[-1].fact == "worker_done_without_report (orca)"' "$(rec "$ido")" >/dev/null || fail 'continuation without new report reused old ready'
+    # Failed sends remain fenced, including the old completed dispatch.
+    ORCA_SEND_RECEIPT="$scratch/send.receipt" ORCA_SEND_EXIT=1 bash "$ops/loom" send "$ido" --subject uncertain >/dev/null 2>&1 && fail 'failed send accepted'
+    bash "$ops/loom" reconcile "$ido" --dispatch follow-three >/dev/null 2>&1 && fail 'old completion cleared uncertain send'
+    bash "$ops/loom" collect "$ido" >/dev/null 2>&1 && fail 'uncertain continuation collected'
+    bash "$ops/loom" release "$ido" >/dev/null 2>&1 && fail 'uncertain continuation released'
+    # A verified child resolves the uncertain send, with no duplicate delivery.
+    fixture_view follow-four follow-three completed idle > "$GH_STATE/view-follow-four"
+    bash "$ops/loom" reconcile "$ido" --dispatch follow-four >/dev/null || fail 'uncertain send recovery failed'
+    bash "$ops/loom" harvest "$ido" >/dev/null || fail 'uncertain send recovered harvest failed'
+    # Remote queue acknowledgement on a settled assignment cannot establish
+    # whether a follow-up will be created asynchronously. Keep it fenced.
+    bash "$ops/loom" collect "$ido" >/dev/null || fail 'collect before queued continuation failed'
+    printf '%s\n' '{"ok":true,"result":{"messageId":"queued-message","dispatchId":"follow-four","queuedFor":"worker"}}' > "$scratch/queued.receipt"
+    ORCA_SEND_RECEIPT="$scratch/queued.receipt" bash "$ops/loom" send "$ido" --subject continue >/dev/null 2>&1 && fail 'settled queue-only receipt accepted as resolved'
+    jq -e '.executor.continuation_pending == true and .executor.state == "settled" and .executor.dispatch == "follow-four"' "$(rec "$ido")" >/dev/null || fail 'settled queue-only receipt dropped continuation fence'
+    bash "$ops/loom" collect "$ido" >/dev/null 2>&1 && fail 'queued settled continuation collected stale work'
+    bash "$ops/loom" release "$ido" >/dev/null 2>&1 && fail 'queued settled continuation released stale work'
+    bash "$ops/loom" reconcile "$ido" --dispatch follow-four >/dev/null 2>&1 && fail 'old dispatch resolved queued continuation'
+    fixture_view follow-five follow-four completed idle > "$GH_STATE/view-follow-five"
+    bash "$ops/loom" reconcile "$ido" --dispatch follow-five >/dev/null || fail 'queued continuation child reconcile failed'
+    bash "$ops/loom" harvest "$ido" >/dev/null || fail 'queued continuation child harvest failed'
+    # Real worker-show schema after completion telemetry expires: retained
+    # resources and stale_status cannot erase durable exact-dispatch success.
+    fixture_view follow-durable follow-five completed unverifiable | jq '
+      .result.dispatch.completedAt = "2026-01-01T00:00:00Z" |
+      .result.worker = {dispatchId:"follow-durable",state:"succeeded"} |
+      .result.projection.outcome = "succeeded" |
+      .result.projection.evidence = {durable:true,liveStatus:"stale"} |
+      .result.projection.liveness.reason = "stale_status"
+    ' > "$scratch/durable-view"
+    cp "$scratch/durable-view" "$GH_STATE/view-follow-durable"
+    bash "$ops/loom" reconcile "$ido" --dispatch follow-durable >/dev/null || fail 'durable completed review reconcile failed'
+    printf 'durable review change\n' >> "$ws/notes.txt"
+    printf 'state: ready — durable review finished\n' >> "$ws/REPORT.md"
+    cp "$(rec "$ido")" "$scratch/before-durable-denial"
+    oldhead=$(git -C "$ws" rev-parse HEAD)
+    for mode in timestamp durable live-status reason outcome worker-id projection-id worker-state live failed; do
+        case $mode in
+            timestamp) jq 'del(.result.dispatch.completedAt)' "$scratch/durable-view" ;;
+            durable) jq '.result.projection.evidence.durable = false' "$scratch/durable-view" ;;
+            live-status) jq '.result.projection.evidence.liveStatus = "unknown"' "$scratch/durable-view" ;;
+            reason) jq '.result.projection.liveness.reason = "no_observation"' "$scratch/durable-view" ;;
+            outcome) jq '.result.projection.outcome = "failed"' "$scratch/durable-view" ;;
+            worker-id) jq '.result.worker.dispatchId = "unrelated"' "$scratch/durable-view" ;;
+            projection-id) jq '.result.projection.dispatchId = "unrelated"' "$scratch/durable-view" ;;
+            worker-state) jq '.result.worker.state = "failed"' "$scratch/durable-view" ;;
+            live) jq '.result.projection.liveness.verdict = "live"' "$scratch/durable-view" ;;
+            failed) jq '.result.dispatch.status = "failed"' "$scratch/durable-view" ;;
+        esac > "$GH_STATE/view-follow-durable"
+        bash "$ops/loom" harvest "$ido" >/dev/null 2>&1 && fail "unsafe durable completion accepted: $mode"
+        cmp -s "$(rec "$ido")" "$scratch/before-durable-denial" || fail 'rejected durable completion changed assignment'
+        [[ $(git -C "$ws" rev-parse HEAD) == "$oldhead" && -z $(git -C "$ws" diff --cached --name-only) ]] || fail 'rejected durable completion touched git'
+    done
+    cp "$scratch/durable-view" "$GH_STATE/view-follow-durable"
+    bash "$ops/loom" harvest "$ido" >/dev/null || fail 'durable exact-dispatch success rejected for stale telemetry'
+    jq -e '.executor.state == "settled" and .reports[-1].fact == "durable review finished"' "$(rec "$ido")" >/dev/null || fail 'durable completed review not harvested'
+    pass 'durable completed success survives stale telemetry; all incomplete or contradictory proofs fail closed'
+    pass 'follow-up tracking, fail-closed harvest, identity-bound recovery and evidence preservation'
 
     # Unversioned configs inside a repo must produce usable records (gap #68).
     mkdir -p "$scratch/cfg/local"
@@ -694,6 +863,7 @@ EOF
     bash "$ops/orca.sh" list | grep -q 'disp-' || fail 'worker-list empty'
     bash "$ops/orca.sh" peek | jq -e '.ok == true' >/dev/null || fail 'peek'
     bash "$ops/orca.sh" send "$idp" --subject hi --body there | jq -e '.ok == true' >/dev/null || fail 'send'
+    jq -e '.executor.state == "running" and .executor.continuation_pending == null' "$(rec "$idp")" >/dev/null || fail 'active queue-only delivery remained fenced'
     bash "$ops/orca.sh" ask "$idp" --question 'why?' | jq -e '.ok == true' >/dev/null || fail 'ask'
     bash "$ops/orca.sh" reply --id m1 --body 'because' | jq -e '.ok == true' >/dev/null || fail 'reply'
     bash "$ops/orca.sh" gate list | jq -e '.ok == true' >/dev/null || fail 'gate list'

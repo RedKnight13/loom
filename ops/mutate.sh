@@ -6,6 +6,7 @@
 #   bash ops/mutate.sh               run here, mutants in parallel
 #   bash ops/mutate.sh --on HOST     run the whole check on a compute host (#42)
 #
+# LOOM_MUTATE_PREFIX optionally selects a mutant ID prefix (e.g. mlife).
 # LOOM_MUTATE_JOBS caps parallel mutants (default: CPU count). Exit 0 = every
 # mutant caught; 1 = a mutant survived, did not apply, or was not valid bash;
 # 2 = the harness itself is broken (the unmutated copy fails its selftest).
@@ -59,6 +60,7 @@ one() {  # one <file> <sed> <description> <name>: writes $base/<name>/result
     printf '%s\n' "$r" > "$m/result"
 }
 run() {
+    [[ -z ${LOOM_MUTATE_PREFIX:-} || $4 == "$LOOM_MUTATE_PREFIX"* ]] || return 0
     while [[ $(jobs -rp | wc -l) -ge $jobs_max ]]; do sleep 0.2; done
     order+=("$4")
     one "$@" &
@@ -119,7 +121,20 @@ run dispatch.sh 's/if \[\[ \$workers != null \]\]; then/if false; then/' "worker
 run dispatch.sh '/git -C "\$config_dir" ls-files --error-unmatch/c\
     true; then' "ignored config records an empty commit (#68)" m54
 run loom 's/ ${label_args\[@\]+"${label_args\[@\]}"}//' "loom accept drops label pass-through (#67)" m67
+run orca.sh 's/\.executor.dispatch = \$v.dispatch/.executor.dispatch = .executor.dispatch/' "follow-up keeps old dispatch" mlife1
+run orca.sh 's/elif .state == "completed" and/elif true and/' "harvest accepts no positive dispatch completion" mlife2
+run orca.sh 's/if .dispatch != \$d then/if false then/' "harvest accepts another dispatch completion" mlife3
+run orca.sh 's/IN("live", "working", "running")/IN("never", "working", "running")/; s/IN("idle", "exited", "absent", "completed")/IN("live", "idle", "exited", "absent", "completed")/' "harvest ignores live retained worker" mlife4
+run orca.sh 's/\.report_offset = \$offset/.report_offset = 0/' "follow-up reuses an old report" mlife5
+run orca.sh 's/followup_link "\$ancestor" "\$child"/true/' "reconcile ignores follow-up identity chain" mlife6
+run orca.sh 's/cp -R "\$old" "\$archive\/"/true/' "continuation drops old evidence" mlife7
+run orca.sh 's/id=${matches\[0\]%.json}/:/' "legacy dispatch selector is not mapped to its assignment" mlife8
+run orca.sh 's/elif \[\[ \$xstate == running \]\] \&\& jq/elif jq/' "settled queue-only receipt clears continuation fence" mlife9
+run orca.sh 's/(.liveness == "unverifiable" and/(false and/' "durable success rejected after telemetry expires" mlife10
+run orca.sh 's/\.durable == true/true/' "stale completion accepted without durable evidence" mlife11
+
 wait
+[[ ${#order[@]} -gt 0 ]] || { echo "HARNESS BROKEN: no mutants match the selected prefix"; exit 2; }
 survived=0
 for n in "${order[@]}"; do
     r=$(cat "$base/$n/result" 2>/dev/null || echo "NO RESULT: $n")

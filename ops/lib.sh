@@ -84,6 +84,9 @@ loom_validate() {
               (.exit | type == "number") and (.at | iso)))) and
       ((has("limit_min") | not) or .limit_min == null or (.limit_min | type == "number" and . > 0)) and
       ((has("report_offset") | not) or (.report_offset | type == "number" and . >= 0)) and
+      ((has("harvest_report_lines") | not) or (.harvest_report_lines | type == "number" and . >= 0 and . == floor)) and
+      (.executor.continuation_pending == null or (.executor.continuation_pending | type == "boolean")) and
+      (.executor.send_boundary == null or (.executor.send_boundary | type == "number" and . >= 0 and . == floor)) and
       ((has("collected_sha") | not) or (.collected_sha | type == "string" and test("^[0-9a-f]{40}$"))) and
       ((has("acked") | not) or (.acked | type == "object" and (.at | iso) and (.fact | type == "string" and length > 0))) and
       (.reports | type == "array") and
@@ -183,6 +186,38 @@ loom_take_evidence() {  # loom_take_evidence <workdir> <id> [host]
     cp -R "$src" "$dest"
 }
 
+# Read a report without following a symlink; use the recorded workspace host.
+loom_report_text() {
+    local host workdir
+    host=${2-$(loom_ws_host "$1")}
+    workdir=$(jq -r '.workdir' "$1")
+    loom_ws "$host" "$workdir" bash -c '
+      if [ -L REPORT.md ]; then exit 1; fi
+      if [ -f REPORT.md ]; then cat REPORT.md; fi'
+}
+
+# Before a send, count existing lines. For settled legacy records, recover the
+# consumed boundary only from one exact match to the previously folded report.
+loom_report_boundary() {
+    local file=$1 report offset matches reports
+    report=$(loom_report_text "$file") || loom_error 'cannot read report boundary'
+    if [[ $(jq -r '.executor.state' "$file") != settled ]]; then
+        if [[ -z $report ]]; then printf 0; else printf '%s\n' "$report" | awk 'END {print NR}'; fi
+        return
+    fi
+    offset=$(jq -r '.harvest_report_lines // empty' "$file")
+    if [[ -n $offset ]]; then printf '%s' "$offset"; return; fi
+    reports=$(jq -c '.reports | reverse' "$file")
+    matches=$(jq -Rn --argjson reports "$reports" '
+      [inputs] | to_entries | map({line: (.key + 1), report: (.value |
+        try capture("^state:[ \t]*(?<state>ready|blocked|failed|waiting)[ \t]*(?:—|--|-|:)?[ \t]*(?<fact>.*)$") catch null)}) as $lines |
+      [$reports[] as $r | [$lines[] | select(.report.state == $r.state and .report.fact == $r.fact) | .line] |
+       select(length > 0)] | first // []
+    ' <<< "$report")
+    [[ $(jq length <<< "$matches") == 1 ]] || loom_error 'legacy report boundary is ambiguous; cannot reconcile safely'
+    jq -r '.[0]' <<< "$matches"
+}
+
 # Fold the newest state line written since launch into the record and clear the
 # worker. Accepted line: "state: <ready|blocked|failed|waiting> — <fact>"
 # (separator may be —, --, - or :).
@@ -229,6 +264,11 @@ loom_harvest() {  # loom_harvest <file> <why-if-silent>
             fi
         done
     fi
+    # Persist the consumed boundary for the next authorized continuation.
+    local report_lines
+    report_lines=$(loom_report_text "$file" "$host" | awk 'END {print NR+0}') || loom_error 'cannot record consumed report boundary'
+    # shellcheck disable=SC2016
+    loom_write "$file" '.report_offset = $n | .harvest_report_lines = $n' --argjson n "$report_lines"
     loom_append "$file" "$state" "$fact" true
     printf '%s\n' "$state"
 }
@@ -297,7 +337,7 @@ loom_executor() {  # loom_executor <record>: local | orca
 # An Orca worker is live while loom has recorded it running; Orca, not loom,
 # supervises the process.
 loom_orca_running() {
-    jq -e '.executor.kind == "orca" and (.executor.state == "running" or .executor.state == "starting")' "$1" >/dev/null
+    jq -e '.executor.kind == "orca" and (.executor.state == "running" or .executor.state == "starting" or .executor.continuation_pending == true)' "$1" >/dev/null
 }
 
 # --- compute hosts (gap #36) --------------------------------------------------
@@ -321,7 +361,7 @@ loom_compute_pick() {  # loom_compute_pick <host>...: first reachable host
 # settled (an Orca pending record).
 loom_open() {  # loom_open <file>
     if jq -e '.executor.kind == "orca"' "$1" >/dev/null; then
-        jq -e '.executor.state | IN("pending", "starting", "running")' "$1" >/dev/null
+        jq -e '.executor.continuation_pending == true or (.executor.state | IN("pending", "starting", "running"))' "$1" >/dev/null
     else
         loom_alive "$1" || [[ $(jq -r '.reports | length' "$1") == 0 ]]
     fi
