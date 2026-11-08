@@ -172,7 +172,7 @@ than reading as healthy.
 | `LOOM_LOCK_WAIT` | seconds to wait for a live lock (default 10) |
 | `LOOM_ORCA` | Orca binary (tests stub it) |
 | `LOOM_SSH` | ssh binary used for compute hosts (tests stub it) |
-| `LOOM_ALLOW_LOCAL` | `1` lets `launch` start a local worker while Orca is ready |
+| `LOOM_ALLOW_LOCAL` | ignored legacy variable; native assignments follow their pinned executor |
 | `LOOM_CALLER_UMASK` | umask handed to workers and checks |
 
 </div>
@@ -227,14 +227,17 @@ a commit. Preserve existing configuration; bootstrap does not commit it.
 counts records that are live or dispatched-but-unsettled and refuses past the
 cap with the ids that hold the slots. Omit the key for no cap.
 
-`bash "$LOOM_TOOLS/ops/loom" capacity` reports what Orca can carry right now — runtime ready, connected
-hosts — and suggests a number (one per connected host, minimum one). The
+`bash "$LOOM_TOOLS/ops/loom" capacity` reports Orca readiness and connected
+host count, or a local suggestion when unavailable. Its one-per-host suggestion
+is not measured agent capacity, model availability or remaining quota. The
 bootstrap prompt reuses an existing cap or offers this suggestion when the
 choice is unresolved. A capacity suggestion is not authorization to launch.
 
-Declaring `executor = "local"` selects local dispatch. If Orca is installed
-and ready, `launch` still requires `LOOM_ALLOW_LOCAL=1`; the config alone
-does not bypass that guard.
+Declaring `executor = "local"` selects native dispatch and launch independently
+of Orca installation or readiness. Assignments keep their selected executor;
+installing Orca later does not redirect them. This does not authorize execution
+on an otherwise forbidden host. Required Orca policy still refuses unavailable
+Orca; it never silently falls back.
 
 ### Coordination choice before delegation
 

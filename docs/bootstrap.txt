@@ -88,8 +88,10 @@ prompt is not proof of dependable operation.
    For Orca, inspect `orca status`, `orca --version` (1.4.246+) and
    `orca host list --json`; declared placement must be connected. Compute checks
    also need working SSH and the declared setup/runtime. Do not silently fall
-   back to local. Local launch while Orca is ready requires LOOM_ALLOW_LOCAL=1;
-   executor = "local" alone does not bypass that launch guard.
+   back to local. Explicit local execution and calibration are independent of
+   Orca installation/readiness; LOOM_ALLOW_LOCAL is an ignored legacy variable.
+   Respect the approved execution host; native independence does not authorize
+   running on a forbidden host. Existing assignments keep their pinned executor.
    These separately authorized connectivity observations are not probes performed
    by calibration: calibration never calls gh auth, compute probes or a model.
 
