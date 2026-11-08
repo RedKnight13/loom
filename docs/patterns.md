@@ -22,16 +22,16 @@ layout: null
 <div class="manual-heading">
   <p class="intro">Choose the simplest adequate workflow</p>
   <h1>Coordination patterns<br>and model roles</h1>
-  <p class="lead">Three recommendations for your task. One explicit choice. Advice grounded in the capabilities you actually have.</p>
+  <p class="lead">Every complete catalog entry. One choice based on your task and the capabilities you actually have.</p>
   <p><a href="copy.html">Copy the bootstrap prompt</a> or <a href="setup.html#manual-reference">return to setup</a>. You can keep a single scoped worker or defer selection.</p>
 </div>
 <div class="setup-reference">
 <aside class="setup-toc" aria-label="Pattern reference navigation">
   <nav aria-label="Pattern sections">
-    <a href="#recommendations">Three recommendations</a>
+    <a href="#recommendations">Choose a pattern</a>
     <a href="#cost">Cost and effectiveness</a>
     <a href="#models">Model-role matching</a>
-    <a href="#catalog">Full maintained catalog</a>
+    <a href="#catalog">Built-in family comparison</a>
     <a href="#choice">Save an explicit choice</a>
     <a href="#mechanics">Loom mechanics and limits</a>
     <a href="#sources">Primary sources</a>
@@ -39,50 +39,72 @@ layout: null
 </aside>
 <div class="setup-doc" markdown="1">
 
-## Three recommendations
+## Choose a pattern
 {: id="recommendations"}
 
-Bootstrap inspects the task, repository, dependencies/shared files, trusted
-checks, budget, authorized execution location, harnesses, worker cap and existing
-choice. It then offers **exactly three candidates**, marks **one recommended**,
-and includes a **single scoped worker baseline** even when that is not one of
-the three. A small fix can favor solo work; independent subtasks can favor
-fan-out; architectural uncertainty can favor design plus fresh review. These
-are examples, not a fixed team prescription. Start with the simplest adequate
-workflow, as recommended by [Anthropic][effective] and [Microsoft][azure].
+This page is the explanation, not a second selection source. The selection set
+is every complete `catalog/<id>/PATTERN.md` in the Loom checkout, including
+community entries. The [catalog contribution and review guide](https://github.com/RedKnight13/loom/blob/main/catalog/README.md)
+describes the nine required fields; an incomplete entry is not offered or used.
+If named, identify it as incomplete. New entries arrive with the normal checkout
+update, with no separate catalog URL, clone or pull. The root Loom session
+bridge is the per-repo permission; a repo without it follows the base Loom turn.
 
-Use these columns for the three-row recommendation table:
+- **An explicit name wins.** Use the named complete entry. If a name is
+  ambiguous, list the matches and do not pick. If unknown, say so and do not
+  substitute another pattern.
+- **Explicitly no opinion:** say "Let me propose an ideal flow for us," apply
+  the criteria below, and pick one with a short explanation of the reasoning.
+- **Manual choice:** list every complete entry with attribution and let the
+  person pick. The catalog is not a claim to contain all possible patterns.
+- **Silence does not select.** Ask once; if there is still no answer, continue
+  the base turn without a pattern and record no choice.
+- **Reuse a saved choice that still fits.** Say its name. A different
+  recommendation remains a proposal until accepted or the person asks the
+  session to pick; never silently replace an approved choice.
 
-<div class="table-region" role="region" tabindex="0" aria-label="Recommendation table fields; scroll horizontally if needed" markdown="1">
+Before following the entry in this same session, announce its name, author,
+upstream and license, plus cost, effectiveness and intelligence estimates grounded
+in the entry and this task. Say **using this pattern** and follow its bounded
+steps on top of the normal Loom turn. Selection grants no installation,
+configuration change or worker-launch permission.
 
-| Candidate and status | Fit / rationale | Roles / peak concurrency | Cost increase vs baseline | Time / human productivity | Effectiveness / tradeoffs | Constraints |
-| --- | --- | --- | --- | --- | --- | --- |
-| Name; one marked recommended | Task evidence, dependencies | Count workers and coordinator; context boundaries | Assumptions, rate source/date or unknown; confidence | Expected direction, bottlenecks; no invented gain | Source plus task-specific inference; defects/rework risk | Caps, budgets, tools, host policy, stop conditions |
+Apply these criteria in order when making the no-opinion pick:
 
-</div>
+1. **Eligibility:** reject missing or unknown capabilities, isolation, placement,
+   worker slots or permissions, and anything exceeding approved bounds.
+2. **Task shape:** match scoped work to solo; independent subtasks to fan-out;
+   fixed dependent stages to pipeline; unclear design to fresh review; a clear
+   rubric and artifact to evaluator-optimizer; changing expertise to handoff;
+   isolated competing assessments to voting. Magentic without a manager stays
+   informational.
+3. **Evidence:** prefer specific `when`, `cost`, `effectiveness` and
+   `intelligence` fields that match observed inventory. Unsupported dimensions
+   remain unknown.
+4. **Cost:** prefer the lowest bounds that satisfy the preceding criteria;
+   compare workers, rounds and elapsed time where outcomes are comparable.
+5. **Safety and reversibility:** preserve the base turn, a clear stop and no
+   automatic behavior. Reject recipes needing new permissions or weaker gates.
+6. **Tie-break:** choose the simplest option with fewest workers, closest to
+   solo, and say when this tie-break was used.
 
-Give each candidate its own [role table](#models), including unavailable roles.
-Status is determined by observation, not by a catalog label:
+If none is eligible, say so and offer solo work with human review; do not relax
+constraints or invent a pattern. Start with the simplest adequate workflow,
+as recommended by [Anthropic][effective] and [Microsoft][azure].
 
-- **Recommendable:** the bounded recipe fits the task and its required capabilities
-  are observed. This is advice, not permission or launch verification.
-- **Recipe-only:** a useful composition, with capabilities or configuration still
-  unverified. Explain what would be needed; selection cannot create it.
-- **Unavailable:** a required capability is absent, forbidden or incompatible.
-  State why and offer the simpler route.
+Give the selected or manually compared entries a [role table](#models).
+Capability status is observed, not bestowed by a catalog label:
 
-If fewer than three are feasible, still show three candidates with honest
-unavailable/recipe-only labels. Recommend the simplest safe route, identifying
-any blocked execution; do not fabricate three runnable teams. Without project
-access, the comparison is provisional and wiring remains unverified. Missing
-automatic model discovery does not prevent advice: use explicitly user-supplied
-observed inventory or label it unknown. No Orca prerequisite applies.
+- **Recommendable:** task fit, approved bounds and required capabilities are
+  observed; this is advice, not permission or launch verification.
+- **Recipe-only:** a composition whose required capabilities or configuration
+  remain unverified; explain what is needed without assuming eligibility.
+- **Unavailable:** a requirement is absent, forbidden or incompatible; state
+  why and offer a simpler route without silently changing the choice.
 
-Offer four responses: choose a candidate, **manual catalog**, keep simple
-baseline, or defer. Manual means show every family below with its current
-capability status, then validate the selected recipe. This is the full maintained
-catalog, **not all possible patterns**. Neither silence nor a timeout selects
-anything. No choice grants installation, configuration changes or worker launch.
+Without project access, comparisons remain provisional and wiring unverified.
+Use explicitly user-supplied observed inventory where discovery is unavailable,
+or label it unknown. No Orca prerequisite applies.
 
 ## Cost and effectiveness
 {: id="cost"}
@@ -149,7 +171,7 @@ Distinguish evidence levels:
   effective configuration at a stated time. Prior success does not prove current
   quota/access, and no test launch is authorized by bootstrap advice.
 
-For **each of the three candidates**, fill one row per role using this format:
+For **each selected or compared entry**, fill one row per role using this format:
 
 <div class="table-region" role="region" tabindex="0" aria-label="Model-role recommendation fields; scroll horizontally if needed" markdown="1">
 
@@ -179,9 +201,11 @@ host fields the executor actually exposes. If absent or mismatched, report that
 application is unverified and stop dependent work rather than claiming success.
 Respect budgets, caps, host restrictions and authorization on every path.
 
-## Full maintained catalog
+## Built-in family comparison
 {: id="catalog"}
 
+Each family name links to its selectable catalog entry. This comparison explains
+the eleven built-in families; complete community entries are selectable too.
 The source links describe pattern families; the following Loom mappings and
 bounds are **proposed recipes**, not installed plugins or source benchmarks.
 Their status must be reevaluated for the current harness. A composition uses
@@ -195,17 +219,17 @@ to fit the approved budget and capacity. A missing bound blocks expansion.
 
 | Family / aliases and source | Fit and context boundary | Proposed worker / review bounds | Risks and stop conditions | Loom mapping / capability requirement |
 | --- | --- | --- | --- | --- |
-| **Solo baseline** — single agent with tools ([Microsoft][azure]) | One scoped change; one task context | One worker; one verification/rework cycle | Self-review blind spots; stop at acceptance, scope conflict or exhausted budget | One ticket and worker, trusted verify, collect and human review; local or supported executor |
-| **Pipeline** — sequential / prompt chaining ([Anthropic][effective], [Microsoft][azure]) | Fixed dependent stages; each receives reviewed previous artifact | Up to three stages, one worker at a time; one check per stage | Serial latency, propagated mistakes; stop on a failed stage | Separate scoped tickets as needed; conductor reviews output before the next stage; no automatic pipeline |
-| **Specialist routing** ([Anthropic][effective]) | Known task categories; selected specialist gets relevant brief | One selected worker per task; one routing decision | Misclassification; stop when category or access is unclear | Conductor chooses a reviewed ticket/consumer/harness; no automatic model router |
-| **Parallel fan-out/fan-in** — sectioning / concurrent / scatter-gather ([Anthropic][effective], [Microsoft][azure]) | Predefined independent work; minimal shared files and bounded briefs | Two workers concurrently plus conductor; one integration review | Duplicate work, conflicts, synthesis cost; stop if independence fails | Separate tickets/assignments, verify each, integrate explicitly and verify combined revision; requires authorized parallel capacity |
-| **Orchestrator-workers** ([Anthropic][effective]) | Subtasks discovered during work; conductor keeps overall context | At most two active workers, three total subtasks, one synthesis review | Decomposition and coordination errors; pause on new scope/dependency | Conductor proposes bounded tickets dynamically; existing dispatch/verify/collect only; no recursive spawning by recipe |
-| **Evaluator-optimizer** — maker-checker / critic loop ([Anthropic][effective], [Microsoft][azure]) | Clear rubric; checker sees artifact and criteria | One maker and one checker, sequential; two critique/revision rounds | Circular critique, false approval; stop on acceptance, stalled improvement or round cap | Review deliverable then scoped revision; tests remain authoritative evidence; no automatic retry loop |
-| **Fresh-context design/review** — EGM-inspired ([EGM][egm]) | Context-rich designer drafts spec; isolated reviewer sees only draft and referenced material, never prior conversation | One designer and one fresh reviewer, sequential; two review rounds; user architecture approval before implementation | Missing context may expose assumptions; freshness cannot be faked; stop if isolation unavailable or tradeoff unresolved | Design/review tickets and owner approval; recipe-only until isolation observed; not the EGM plugin or its full staged workflow |
-| **Independent voting** ([Anthropic][effective]) | Same rubric/artifact, separate assessments before aggregation | Two reviewers plus conductor; one independent round | Correlated errors, inconclusive split; escalate disagreements, no majority-as-proof | Separate read-only review tasks; human resolves evidence, implementation still verified; requires isolated contexts |
-| **Group chat / debate** — roundtable / council ([Microsoft][azure]) | Shared discussion for competing perspectives; shared context is not fresh review | At most three participants including moderator; two rounds | Conformity, discussion cost; stop on round cap or unresolved owner decision | Informational unless an authorized harness supplies bounded shared discussion; Loom mail alone does not install a group-chat manager |
-| **Handoffs** — transfer / triage ([Microsoft][azure]) | Expertise changes; curated state and unresolved questions pass to next role | One active worker at a time; at most two transfers | Lost state, ownership gaps, bouncing; stop if receiver/boundary unclear | Conductor settles prior work and authorizes next scoped assignment; no automatic ownership transfer or overlapping worker on one ticket |
-| **Magentic planning** — adaptive / task-ledger orchestration ([Microsoft][azure]) | Open-ended planning, explicit evolving task ledger | One planner, at most two scoped workers; two replans before human review | Runaway planning and side effects; stop at stalled progress, budget or plan change needing approval | Informational/recipe-only: manual plan and tickets can borrow the idea; Loom has no magentic manager/runtime; unavailable for automatic execution |
+| **[Solo baseline](https://github.com/RedKnight13/loom/blob/main/catalog/solo-baseline/PATTERN.md)** — single agent with tools ([Microsoft][azure]) | One scoped change; one task context | One worker; one verification/rework cycle | Self-review blind spots; stop at acceptance, scope conflict or exhausted budget | One ticket and worker, trusted verify, collect and human review; local or supported executor |
+| **[Pipeline](https://github.com/RedKnight13/loom/blob/main/catalog/pipeline/PATTERN.md)** — sequential / prompt chaining ([Anthropic][effective], [Microsoft][azure]) | Fixed dependent stages; each receives reviewed previous artifact | Up to three stages, one worker at a time; one check per stage | Serial latency, propagated mistakes; stop on a failed stage | Separate scoped tickets as needed; conductor reviews output before the next stage; no automatic pipeline |
+| **[Specialist routing](https://github.com/RedKnight13/loom/blob/main/catalog/specialist-routing/PATTERN.md)** ([Anthropic][effective]) | Known task categories; selected specialist gets relevant brief | One selected worker per task; one routing decision | Misclassification; stop when category or access is unclear | Conductor chooses a reviewed ticket/consumer/harness; no automatic model router |
+| **[Parallel fan-out/fan-in](https://github.com/RedKnight13/loom/blob/main/catalog/parallel-fan-out/PATTERN.md)** — sectioning / concurrent / scatter-gather ([Anthropic][effective], [Microsoft][azure]) | Predefined independent work; minimal shared files and bounded briefs | Two workers concurrently plus conductor; one integration review | Duplicate work, conflicts, synthesis cost; stop if independence fails | Separate tickets/assignments, verify each, integrate explicitly and verify combined revision; requires authorized parallel capacity |
+| **[Orchestrator-workers](https://github.com/RedKnight13/loom/blob/main/catalog/orchestrator-workers/PATTERN.md)** ([Anthropic][effective]) | Subtasks discovered during work; conductor keeps overall context | At most two active workers, three total subtasks, one synthesis review | Decomposition and coordination errors; pause on new scope/dependency | Conductor proposes bounded tickets dynamically; existing dispatch/verify/collect only; no recursive spawning by recipe |
+| **[Evaluator-optimizer](https://github.com/RedKnight13/loom/blob/main/catalog/evaluator-optimizer/PATTERN.md)** — maker-checker / critic loop ([Anthropic][effective], [Microsoft][azure]) | Clear rubric; checker sees artifact and criteria | One maker and one checker, sequential; two critique/revision rounds | Circular critique, false approval; stop on acceptance, stalled improvement or round cap | Review deliverable then scoped revision; tests remain authoritative evidence; no automatic retry loop |
+| **[Fresh-context design/review](https://github.com/RedKnight13/loom/blob/main/catalog/fresh-context-review/PATTERN.md)** — EGM-inspired ([EGM][egm]) | Context-rich designer drafts spec; isolated reviewer sees only draft and referenced material, never prior conversation | One designer and one fresh reviewer, sequential; two review rounds; user architecture approval before implementation | Missing context may expose assumptions; freshness cannot be faked; stop if isolation unavailable or tradeoff unresolved | Design/review tickets and owner approval; recipe-only until isolation observed; not the EGM plugin or its full staged workflow |
+| **[Independent voting](https://github.com/RedKnight13/loom/blob/main/catalog/independent-voting/PATTERN.md)** ([Anthropic][effective]) | Same rubric/artifact, separate assessments before aggregation | Two reviewers plus conductor; one independent round | Correlated errors, inconclusive split; escalate disagreements, no majority-as-proof | Separate read-only review tasks; human resolves evidence, implementation still verified; requires isolated contexts |
+| **[Group chat / debate](https://github.com/RedKnight13/loom/blob/main/catalog/group-debate/PATTERN.md)** — roundtable / council ([Microsoft][azure]) | Shared discussion for competing perspectives; shared context is not fresh review | At most three participants including moderator; two rounds | Conformity, discussion cost; stop on round cap or unresolved owner decision | Informational unless an authorized harness supplies bounded shared discussion; Loom mail alone does not install a group-chat manager |
+| **[Handoffs](https://github.com/RedKnight13/loom/blob/main/catalog/handoffs/PATTERN.md)** — transfer / triage ([Microsoft][azure]) | Expertise changes; curated state and unresolved questions pass to next role | One active worker at a time; at most two transfers | Lost state, ownership gaps, bouncing; stop if receiver/boundary unclear | Conductor settles prior work and authorizes next scoped assignment; no automatic ownership transfer or overlapping worker on one ticket |
+| **[Magentic planning](https://github.com/RedKnight13/loom/blob/main/catalog/magentic-planning/PATTERN.md)** — adaptive / task-ledger orchestration ([Microsoft][azure]) | Open-ended planning, explicit evolving task ledger | One planner, at most two scoped workers; two replans before human review | Runaway planning and side effects; stop at stalled progress, budget or plan change needing approval | Informational/recipe-only: manual plan and tickets can borrow the idea; Loom has no magentic manager/runtime; unavailable for automatic execution |
 
 </div>
 
@@ -220,7 +244,8 @@ with human review, clearly describing the change. [EGM source][egm]
 {: id="choice"}
 
 Reuse a still-applicable approved selection. New recommendations stay proposals
-until explicitly accepted; never overwrite the current choice on a setup rerun.
+until explicitly accepted or the person asks the session to pick; never overwrite
+the current choice on a setup rerun.
 If it becomes infeasible, stop work that depends on it and offer a simpler route
 without silently changing the selection. Existing tasks with no choice keep
 their existing authorization and checks; no extra workers are implied. Deferral
@@ -240,7 +265,8 @@ approved edit, compare calibration first, review drift, explicitly record as
 appropriate, then check again. A separate linked pattern artifact may supplement
 the choice, but **its bytes are not fingerprinted**; keep the operative choice
 in the root section and review linked content separately. Unsupported entry
-loading remains unwired; offer manual entry without claiming persistence.
+loading remains unwired; keep the choice session-only if the calibration flow is
+unavailable and say it was not persisted.
 
 ## Loom mechanics and limits
 {: id="mechanics"}
