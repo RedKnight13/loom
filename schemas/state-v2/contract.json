@@ -1,0 +1,1047 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loom.invalid/schemas/state-v2/contract.json",
+  "title": "Loom durable storage envelopes, schema 2",
+  "description": "Canonical jq -cS JSON plus newline; runtime also enforces UTF-8 byte bounds, duplicate rejection, safe numbers, no NUL, unique kind/ID changes, cross-field identity, revision CAS, run epoch and hash chains. Domain payload semantics belong to S3/S6/S7.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/request"
+    },
+    {
+      "$ref": "#/$defs/transaction"
+    },
+    {
+      "$ref": "#/$defs/metadata"
+    },
+    {
+      "$ref": "#/$defs/entity"
+    },
+    {
+      "$ref": "#/$defs/event"
+    },
+    {
+      "$ref": "#/$defs/outcome"
+    },
+    {
+      "$ref": "#/$defs/snapshot"
+    },
+    {
+      "$ref": "#/$defs/lock"
+    }
+  ],
+  "$defs": {
+    "json": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "string",
+          "pattern": "^[^\u0000]*$"
+        },
+        {
+          "type": "number",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/json"
+          }
+        },
+        {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^[^\u0000]*$"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/json"
+          }
+        }
+      ]
+    },
+    "actor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "run_id",
+        "epoch"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "x-loom-maxUtf8Bytes": 128,
+          "pattern": "^[^\u0000]+$",
+          "description": "1\u2013128 UTF-8 bytes; NUL prohibited. Runtime canonical JSON rules also apply."
+        },
+        "run_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "x-loom-maxUtf8Bytes": 128,
+              "pattern": "^[^\u0000]+$",
+              "description": "1\u2013128 UTF-8 bytes; NUL prohibited. Runtime canonical JSON rules also apply."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "id",
+        "revision"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "run",
+            "task",
+            "assignment",
+            "attempt",
+            "message",
+            "delivery",
+            "gate",
+            "operation",
+            "config",
+            "host",
+            "profile"
+          ]
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "x-loom-maxUtf8Bytes": 128,
+          "pattern": "^[^\u0000]+$",
+          "description": "1\u2013128 UTF-8 bytes; NUL prohibited. Runtime canonical JSON rules also apply."
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "previous_revision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "id",
+        "revision"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "run",
+            "task",
+            "assignment",
+            "attempt",
+            "message",
+            "delivery",
+            "gate",
+            "operation",
+            "config",
+            "host",
+            "profile"
+          ]
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "x-loom-maxUtf8Bytes": 128,
+          "pattern": "^[^\u0000]+$",
+          "description": "1\u2013128 UTF-8 bytes; NUL prohibited. Runtime canonical JSON rules also apply."
+        },
+        "revision": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "change": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "id",
+        "expected_revision",
+        "run_id",
+        "epoch",
+        "data"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "run",
+            "task",
+            "assignment",
+            "attempt",
+            "message",
+            "delivery",
+            "gate",
+            "operation",
+            "config",
+            "host",
+            "profile"
+          ]
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "x-loom-maxUtf8Bytes": 128,
+          "pattern": "^[^\u0000]+$",
+          "description": "1\u2013128 UTF-8 bytes; NUL prohibited. Runtime canonical JSON rules also apply."
+        },
+        "expected_revision": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "run_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "x-loom-maxUtf8Bytes": 128,
+              "pattern": "^[^\u0000]+$",
+              "description": "1\u2013128 UTF-8 bytes; NUL prohibited. Runtime canonical JSON rules also apply."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "data": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^[^\u0000]*$"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/json"
+          },
+          "description": "Domain-owned payload: S3/S6/S7 must validate their closed domain schemas before storage. Not a wire-schema bypass."
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "run"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "required": [
+                  "owner_id"
+                ],
+                "properties": {
+                  "owner_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128,
+                    "x-loom-maxUtf8Bytes": 128,
+                    "pattern": "^[^\u0000]+$",
+                    "description": "1\u2013128 UTF-8 bytes; NUL prohibited. Runtime canonical JSON rules also apply."
+                  }
+                }
+              }
+            },
+            "description": "For runs, run_id must equal id (runtime equality check)."
+          }
+        }
+      ]
+    },
+    "event_input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "entity_ids",
+        "payload",
+        "observed_at"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "x-loom-maxUtf8Bytes": 128,
+          "pattern": "^[^\u0000]+$",
+          "description": "1\u2013128 UTF-8 bytes; NUL prohibited. Runtime canonical JSON rules also apply."
+        },
+        "entity_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "x-loom-maxUtf8Bytes": 128,
+            "pattern": "^[^\u0000]+$",
+            "description": "1\u2013128 UTF-8 bytes; NUL prohibited. Runtime canonical JSON rules also apply."
+          },
+          "maxItems": 100,
+          "minItems": 0,
+          "uniqueItems": true
+        },
+        "payload": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^[^\u0000]*$"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/json"
+          },
+          "description": "Domain-owned payload: S3/S6/S7 must validate their closed domain schemas before storage. Not a wire-schema bypass."
+        },
+        "observed_at": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "store_id",
+        "operation_id",
+        "idempotency_key",
+        "op",
+        "actor",
+        "target",
+        "checks",
+        "changes",
+        "events",
+        "result"
+      ],
+      "properties": {
+        "schema": {
+          "const": 2
+        },
+        "store_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "x-loom-maxUtf8Bytes": 128,
+          "pattern": "^[^\u0000]+$",
+          "description": "1\u2013128 UTF-8 bytes; NUL prohibited. Runtime canonical JSON rules also apply."
+        },
+        "operation_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "x-loom-maxUtf8Bytes": 128,
+          "pattern": "^[^\u0000]+$",
+          "description": "1\u2013128 UTF-8 bytes; NUL prohibited. Runtime canonical JSON rules also apply."
+        },
+        "idempotency_key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "x-loom-maxUtf8Bytes": 128,
+          "pattern": "^[^\u0000]+$",
+          "description": "1\u2013128 UTF-8 bytes; NUL prohibited. Runtime canonical JSON rules also apply."
+        },
+        "op": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "x-loom-maxUtf8Bytes": 128,
+          "pattern": "^[^\u0000]+$",
+          "description": "1\u2013128 UTF-8 bytes; NUL prohibited. Runtime canonical JSON rules also apply."
+        },
+        "actor": {
+          "$ref": "#/$defs/actor"
+        },
+        "target": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^[^\u0000]*$"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/json"
+          },
+          "description": "Domain-owned payload: S3/S6/S7 must validate their closed domain schemas before storage. Not a wire-schema bypass."
+        },
+        "checks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/check"
+          },
+          "maxItems": 100,
+          "minItems": 0
+        },
+        "changes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/change"
+          },
+          "maxItems": 100,
+          "minItems": 0
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/event_input"
+          },
+          "maxItems": 100,
+          "minItems": 1
+        },
+        "result": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^[^\u0000]*$"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/json"
+          },
+          "description": "Domain-owned payload: S3/S6/S7 must validate their closed domain schemas before storage. Not a wire-schema bypass."
+        }
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "store_id",
+        "created_at"
+      ],
+      "properties": {
+        "schema": {
+          "const": 2
+        },
+        "store_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "x-loom-maxUtf8Bytes": 128,
+          "pattern": "^[^\u0000]+$",
+          "description": "1\u2013128 UTF-8 bytes; NUL prohibited. Runtime canonical JSON rules also apply."
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+        }
+      }
+    },
+    "entity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "kind",
+        "id",
+        "revision",
+        "run_id",
+        "epoch",
+        "data"
+      ],
+      "properties": {
+        "schema": {
+          "const": 2
+        },
+        "kind": {
+          "enum": [
+            "run",
+            "task",
+            "assignment",
+            "attempt",
+            "message",
+            "delivery",
+            "gate",
+            "operation",
+            "config",
+            "host",
+            "profile"
+          ]
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "x-loom-maxUtf8Bytes": 128,
+          "pattern": "^[^\u0000]+$",
+          "description": "1\u2013128 UTF-8 bytes; NUL prohibited. Runtime canonical JSON rules also apply."
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "run_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "x-loom-maxUtf8Bytes": 128,
+              "pattern": "^[^\u0000]+$",
+              "description": "1\u2013128 UTF-8 bytes; NUL prohibited. Runtime canonical JSON rules also apply."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "data": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^[^\u0000]*$"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/json"
+          },
+          "description": "Domain-owned payload: S3/S6/S7 must validate their closed domain schemas before storage. Not a wire-schema bypass."
+        }
+      }
+    },
+    "event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "sequence",
+        "event_id",
+        "transaction_id",
+        "actor",
+        "entity_ids",
+        "previous_revisions",
+        "type",
+        "payload",
+        "recorded_at",
+        "observed_at"
+      ],
+      "properties": {
+        "schema": {
+          "const": 2
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "event_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "transaction_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "x-loom-maxUtf8Bytes": 128,
+          "pattern": "^[^\u0000]+$",
+          "description": "1\u2013128 UTF-8 bytes; NUL prohibited. Runtime canonical JSON rules also apply."
+        },
+        "actor": {
+          "$ref": "#/$defs/actor"
+        },
+        "entity_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "x-loom-maxUtf8Bytes": 128,
+            "pattern": "^[^\u0000]+$",
+            "description": "1\u2013128 UTF-8 bytes; NUL prohibited. Runtime canonical JSON rules also apply."
+          },
+          "maxItems": 100,
+          "minItems": 0,
+          "uniqueItems": true
+        },
+        "previous_revisions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/previous_revision"
+          },
+          "maxItems": 200,
+          "minItems": 0
+        },
+        "type": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "x-loom-maxUtf8Bytes": 128,
+          "pattern": "^[^\u0000]+$",
+          "description": "1\u2013128 UTF-8 bytes; NUL prohibited. Runtime canonical JSON rules also apply."
+        },
+        "payload": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^[^\u0000]*$"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/json"
+          },
+          "description": "Domain-owned payload: S3/S6/S7 must validate their closed domain schemas before storage. Not a wire-schema bypass."
+        },
+        "recorded_at": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+        },
+        "observed_at": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "outcome": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "store_id",
+        "sequence",
+        "transaction_id",
+        "operation_id",
+        "durable",
+        "revisions",
+        "result"
+      ],
+      "properties": {
+        "schema": {
+          "const": 2
+        },
+        "store_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "x-loom-maxUtf8Bytes": 128,
+          "pattern": "^[^\u0000]+$",
+          "description": "1\u2013128 UTF-8 bytes; NUL prohibited. Runtime canonical JSON rules also apply."
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "transaction_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "x-loom-maxUtf8Bytes": 128,
+          "pattern": "^[^\u0000]+$",
+          "description": "1\u2013128 UTF-8 bytes; NUL prohibited. Runtime canonical JSON rules also apply."
+        },
+        "operation_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "x-loom-maxUtf8Bytes": 128,
+          "pattern": "^[^\u0000]+$",
+          "description": "1\u2013128 UTF-8 bytes; NUL prohibited. Runtime canonical JSON rules also apply."
+        },
+        "durable": {
+          "const": true
+        },
+        "revisions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/check"
+          },
+          "maxItems": 100,
+          "minItems": 0
+        },
+        "result": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^[^\u0000]*$"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/json"
+          },
+          "description": "Domain-owned payload: S3/S6/S7 must validate their closed domain schemas before storage. Not a wire-schema bypass."
+        }
+      }
+    },
+    "transaction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "store_id",
+        "sequence",
+        "transaction_id",
+        "previous_digest",
+        "recorded_at",
+        "request",
+        "request_digest",
+        "events",
+        "outcome"
+      ],
+      "properties": {
+        "schema": {
+          "const": 2
+        },
+        "store_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "x-loom-maxUtf8Bytes": 128,
+          "pattern": "^[^\u0000]+$",
+          "description": "1\u2013128 UTF-8 bytes; NUL prohibited. Runtime canonical JSON rules also apply."
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "transaction_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "x-loom-maxUtf8Bytes": 128,
+          "pattern": "^[^\u0000]+$",
+          "description": "1\u2013128 UTF-8 bytes; NUL prohibited. Runtime canonical JSON rules also apply."
+        },
+        "previous_digest": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^git-blob-sha1-v1:[0-9a-f]{40}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "recorded_at": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+        },
+        "request": {
+          "$ref": "#/$defs/request"
+        },
+        "request_digest": {
+          "type": "string",
+          "pattern": "^git-blob-sha1-v1:[0-9a-f]{40}$"
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/event"
+          },
+          "maxItems": 100,
+          "minItems": 1
+        },
+        "outcome": {
+          "$ref": "#/$defs/outcome"
+        }
+      }
+    },
+    "operation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "actor_id",
+        "op",
+        "key",
+        "operation_id",
+        "digest",
+        "outcome"
+      ],
+      "properties": {
+        "actor_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "x-loom-maxUtf8Bytes": 128,
+          "pattern": "^[^\u0000]+$",
+          "description": "1\u2013128 UTF-8 bytes; NUL prohibited. Runtime canonical JSON rules also apply."
+        },
+        "op": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "x-loom-maxUtf8Bytes": 128,
+          "pattern": "^[^\u0000]+$",
+          "description": "1\u2013128 UTF-8 bytes; NUL prohibited. Runtime canonical JSON rules also apply."
+        },
+        "key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "x-loom-maxUtf8Bytes": 128,
+          "pattern": "^[^\u0000]+$",
+          "description": "1\u2013128 UTF-8 bytes; NUL prohibited. Runtime canonical JSON rules also apply."
+        },
+        "operation_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "x-loom-maxUtf8Bytes": 128,
+          "pattern": "^[^\u0000]+$",
+          "description": "1\u2013128 UTF-8 bytes; NUL prohibited. Runtime canonical JSON rules also apply."
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^git-blob-sha1-v1:[0-9a-f]{40}$"
+        },
+        "outcome": {
+          "$ref": "#/$defs/outcome"
+        }
+      }
+    },
+    "lock": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "host_id",
+        "boot_id",
+        "pid_namespace",
+        "pid",
+        "start_ticks",
+        "nonce"
+      ],
+      "properties": {
+        "schema": {
+          "const": 2
+        },
+        "host_id": {
+          "type": "string",
+          "pattern": "^git-blob-sha1-v1:[0-9a-f]{40}$"
+        },
+        "boot_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "x-loom-maxUtf8Bytes": 128,
+          "pattern": "^[^\u0000]+$",
+          "description": "1\u2013128 UTF-8 bytes; NUL prohibited. Runtime canonical JSON rules also apply."
+        },
+        "pid_namespace": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "x-loom-maxUtf8Bytes": 128,
+          "pattern": "^[^\u0000]+$",
+          "description": "1\u2013128 UTF-8 bytes; NUL prohibited. Runtime canonical JSON rules also apply."
+        },
+        "pid": {
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 9007199254740991
+        },
+        "start_ticks": {
+          "type": "string",
+          "pattern": "^[0-9]+$"
+        },
+        "nonce": {
+          "type": "string",
+          "pattern": "^[a-f0-9-]{36}$"
+        }
+      }
+    },
+    "snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "store_id",
+        "sequence",
+        "event_sequence",
+        "last_digest",
+        "entities",
+        "operations",
+        "events"
+      ],
+      "properties": {
+        "schema": {
+          "const": 2
+        },
+        "store_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "x-loom-maxUtf8Bytes": 128,
+          "pattern": "^[^\u0000]+$",
+          "description": "1\u2013128 UTF-8 bytes; NUL prohibited. Runtime canonical JSON rules also apply."
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "event_sequence": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "last_digest": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^git-blob-sha1-v1:[0-9a-f]{40}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "entities": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "run": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/entity"
+              }
+            },
+            "task": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/entity"
+              }
+            },
+            "assignment": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/entity"
+              }
+            },
+            "attempt": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/entity"
+              }
+            },
+            "message": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/entity"
+              }
+            },
+            "delivery": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/entity"
+              }
+            },
+            "gate": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/entity"
+              }
+            },
+            "operation": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/entity"
+              }
+            },
+            "config": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/entity"
+              }
+            },
+            "host": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/entity"
+              }
+            },
+            "profile": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/entity"
+              }
+            }
+          }
+        },
+        "operations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/operation"
+          },
+          "maxItems": 4096,
+          "minItems": 0
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/event"
+          },
+          "maxItems": 409600,
+          "minItems": 0
+        }
+      }
+    }
+  }
+}
