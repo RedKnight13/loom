@@ -14,6 +14,10 @@ Three tickets. Two run in parallel, then the third takes the first free slot.
 | B | `catalog-bootstrap` | `docs/bootstrap.txt`, `docs/bootstrap.md`, `docs/copy.html` |
 | C | `catalog-session` | `templates/LOOM_SESSION.md`, `docs/setup.md`, `docs/support.md`, `ops/README.md` |
 
+The root `AGENTS.md` in the conductor checkout is local, git-ignored machine
+setup. No ticket edits it. The conductor updates it after merge and re-records
+calibration.
+
 Dispatch A and B together. Dispatch C when either finishes.
 
 ## Shared invariants
@@ -124,7 +128,8 @@ three files must not contradict each other.
 ## Ticket C — session template, setup and support pages
 
 Files: `templates/LOOM_SESSION.md`, `docs/setup.md`, `docs/support.md`, and
-`ops/README.md` only if it states the old rule.
+`ops/README.md` only if it states the old rule. Do not edit the root
+`AGENTS.md`; it is local, git-ignored machine setup.
 
 - `templates/LOOM_SESSION.md`: the bridge remains the per-repo permission. Add
   the no-opinion proposal sentence, the pick criteria summary, and the
