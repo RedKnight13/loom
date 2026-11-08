@@ -1,0 +1,2715 @@
+[
+  {
+    "protocol": "execution",
+    "op": "hello",
+    "mode": "read",
+    "request": {
+      "protocol": "loom.execution",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": null,
+      "idempotency_key": null,
+      "op": "hello",
+      "actor": {
+        "id": "Agni",
+        "run_id": null,
+        "epoch": 1
+      },
+      "target": {
+        "assignment_id": null,
+        "attempt_id": null,
+        "host_id": null
+      },
+      "expected_revision": null,
+      "timeout_ms": 5000,
+      "args": {
+        "versions": [
+          {
+            "major": 1,
+            "minor": 0
+          }
+        ],
+        "required_capabilities": []
+      },
+      "extensions": {}
+    },
+    "response": {
+      "protocol": "loom.execution",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": null,
+      "op": "hello",
+      "target": {
+        "assignment_id": null,
+        "attempt_id": null,
+        "host_id": null
+      },
+      "ok": true,
+      "status": "completed",
+      "revision": null,
+      "durable": false,
+      "result": {
+        "selected_version": {
+          "major": 1,
+          "minor": 0
+        },
+        "provider": {
+          "id": "example",
+          "version": "example"
+        },
+        "capabilities": [],
+        "limits": {
+          "request_bytes": 1,
+          "response_bytes": 1,
+          "metadata_bytes": 1,
+          "message_bytes": 1,
+          "read_bytes": 1,
+          "list_rows": 1,
+          "diagnostic_bytes": 1
+        },
+        "schema_digest": "git-blob-sha1-v1:1111111111111111111111111111111111111111"
+      },
+      "error": null,
+      "effects": [],
+      "evidence": [],
+      "observed_at": "2026-01-01T00:00:00Z",
+      "extensions": {}
+    }
+  },
+  {
+    "protocol": "execution",
+    "op": "hosts.list",
+    "mode": "read",
+    "request": {
+      "protocol": "loom.execution",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": null,
+      "idempotency_key": null,
+      "op": "hosts.list",
+      "actor": {
+        "id": "Agni",
+        "run_id": null,
+        "epoch": 1
+      },
+      "target": {
+        "assignment_id": null,
+        "attempt_id": null,
+        "host_id": null
+      },
+      "expected_revision": null,
+      "timeout_ms": 5000,
+      "args": {
+        "limit": 1
+      },
+      "extensions": {}
+    },
+    "response": {
+      "protocol": "loom.execution",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": null,
+      "op": "hosts.list",
+      "target": {
+        "assignment_id": null,
+        "attempt_id": null,
+        "host_id": null
+      },
+      "ok": true,
+      "status": "completed",
+      "revision": null,
+      "durable": false,
+      "result": {
+        "items": [],
+        "next_cursor": null
+      },
+      "error": null,
+      "effects": [],
+      "evidence": [],
+      "observed_at": "2026-01-01T00:00:00Z",
+      "extensions": {}
+    }
+  },
+  {
+    "protocol": "execution",
+    "op": "agents.discover",
+    "mode": "read",
+    "request": {
+      "protocol": "loom.execution",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": null,
+      "idempotency_key": null,
+      "op": "agents.discover",
+      "actor": {
+        "id": "Agni",
+        "run_id": null,
+        "epoch": 1
+      },
+      "target": {
+        "assignment_id": null,
+        "attempt_id": null,
+        "host_id": null
+      },
+      "expected_revision": null,
+      "timeout_ms": 5000,
+      "args": {
+        "host_id": "example",
+        "profile_ids": [
+          "example"
+        ]
+      },
+      "extensions": {}
+    },
+    "response": {
+      "protocol": "loom.execution",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": null,
+      "op": "agents.discover",
+      "target": {
+        "assignment_id": null,
+        "attempt_id": null,
+        "host_id": null
+      },
+      "ok": true,
+      "status": "completed",
+      "revision": null,
+      "durable": false,
+      "result": {
+        "profiles": []
+      },
+      "error": null,
+      "effects": [],
+      "evidence": [],
+      "observed_at": "2026-01-01T00:00:00Z",
+      "extensions": {}
+    }
+  },
+  {
+    "protocol": "execution",
+    "op": "workspace.prepare",
+    "mode": "create",
+    "request": {
+      "protocol": "loom.execution",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": "operation-example",
+      "idempotency_key": "key-example",
+      "op": "workspace.prepare",
+      "actor": {
+        "id": "Agni",
+        "run_id": null,
+        "epoch": 1
+      },
+      "target": {
+        "assignment_id": "example",
+        "attempt_id": null,
+        "host_id": "example"
+      },
+      "expected_revision": null,
+      "timeout_ms": 5000,
+      "args": {
+        "workspace_id": "example",
+        "base_sha": "1111111111111111111111111111111111111111",
+        "bundle_ref": "artifacts/example",
+        "bundle_digest": "git-blob-sha1-v1:1111111111111111111111111111111111111111",
+        "branch": "work/example",
+        "manifest_digest": "git-blob-sha1-v1:1111111111111111111111111111111111111111"
+      },
+      "extensions": {}
+    },
+    "response": {
+      "protocol": "loom.execution",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": "operation-example",
+      "op": "workspace.prepare",
+      "target": {
+        "assignment_id": "example",
+        "attempt_id": null,
+        "host_id": "example"
+      },
+      "ok": true,
+      "status": "completed",
+      "revision": null,
+      "durable": false,
+      "result": {
+        "workspace_id": "example",
+        "host_id": "example",
+        "base_sha": "1111111111111111111111111111111111111111",
+        "manifest_digest": "git-blob-sha1-v1:1111111111111111111111111111111111111111",
+        "disposition": "created"
+      },
+      "error": null,
+      "effects": [],
+      "evidence": [],
+      "observed_at": "2026-01-01T00:00:00Z",
+      "extensions": {}
+    }
+  },
+  {
+    "protocol": "execution",
+    "op": "execution.start",
+    "mode": "create",
+    "request": {
+      "protocol": "loom.execution",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": "operation-example",
+      "idempotency_key": "key-example",
+      "op": "execution.start",
+      "actor": {
+        "id": "Agni",
+        "run_id": null,
+        "epoch": 1
+      },
+      "target": {
+        "assignment_id": "example",
+        "attempt_id": "example",
+        "host_id": "example"
+      },
+      "expected_revision": null,
+      "timeout_ms": 5000,
+      "args": {
+        "workspace_id": "example",
+        "profile_id": "example",
+        "profile_digest": "git-blob-sha1-v1:1111111111111111111111111111111111111111",
+        "argv": [
+          "example"
+        ],
+        "prompt_ref": "artifacts/example",
+        "model": null,
+        "effort": null,
+        "limits": {
+          "runtime_ms": null,
+          "stop_on_timeout": false,
+          "allow_kill": false,
+          "output_bytes": 1
+        },
+        "manifest_digest": "git-blob-sha1-v1:1111111111111111111111111111111111111111"
+      },
+      "extensions": {}
+    },
+    "response": {
+      "protocol": "loom.execution",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": "operation-example",
+      "op": "execution.start",
+      "target": {
+        "assignment_id": "example",
+        "attempt_id": "example",
+        "host_id": "example"
+      },
+      "ok": true,
+      "status": "completed",
+      "revision": null,
+      "durable": false,
+      "result": {
+        "binding": {
+          "assignment_id": "example",
+          "attempt_id": "example",
+          "host_id": "example"
+        },
+        "identity": null,
+        "start_evidence": [],
+        "prompt_acceptance": "unknown",
+        "resources": []
+      },
+      "error": null,
+      "effects": [],
+      "evidence": [],
+      "observed_at": "2026-01-01T00:00:00Z",
+      "extensions": {}
+    }
+  },
+  {
+    "protocol": "execution",
+    "op": "execution.inspect",
+    "mode": "read",
+    "request": {
+      "protocol": "loom.execution",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": null,
+      "idempotency_key": null,
+      "op": "execution.inspect",
+      "actor": {
+        "id": "Agni",
+        "run_id": null,
+        "epoch": 1
+      },
+      "target": {
+        "assignment_id": "example",
+        "attempt_id": "example",
+        "host_id": "example"
+      },
+      "expected_revision": null,
+      "timeout_ms": 5000,
+      "args": {},
+      "extensions": {}
+    },
+    "response": {
+      "protocol": "loom.execution",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": null,
+      "op": "execution.inspect",
+      "target": {
+        "assignment_id": "example",
+        "attempt_id": "example",
+        "host_id": "example"
+      },
+      "ok": true,
+      "status": "completed",
+      "revision": null,
+      "durable": false,
+      "result": {
+        "binding": {
+          "assignment_id": "example",
+          "attempt_id": "example",
+          "host_id": "example"
+        },
+        "state": "reserved",
+        "identity": null,
+        "identity_verified": false,
+        "terminal": null,
+        "source": "example",
+        "observed_at": "2026-01-01T00:00:00Z",
+        "resources": []
+      },
+      "error": null,
+      "effects": [],
+      "evidence": [],
+      "observed_at": "2026-01-01T00:00:00Z",
+      "extensions": {}
+    }
+  },
+  {
+    "protocol": "execution",
+    "op": "execution.list",
+    "mode": "read",
+    "request": {
+      "protocol": "loom.execution",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": null,
+      "idempotency_key": null,
+      "op": "execution.list",
+      "actor": {
+        "id": "Agni",
+        "run_id": null,
+        "epoch": 1
+      },
+      "target": {
+        "assignment_id": null,
+        "attempt_id": null,
+        "host_id": null
+      },
+      "expected_revision": null,
+      "timeout_ms": 5000,
+      "args": {
+        "run_id": "example",
+        "limit": 1
+      },
+      "extensions": {}
+    },
+    "response": {
+      "protocol": "loom.execution",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": null,
+      "op": "execution.list",
+      "target": {
+        "assignment_id": null,
+        "attempt_id": null,
+        "host_id": null
+      },
+      "ok": true,
+      "status": "completed",
+      "revision": null,
+      "durable": false,
+      "result": {
+        "items": [],
+        "next_cursor": null
+      },
+      "error": null,
+      "effects": [],
+      "evidence": [],
+      "observed_at": "2026-01-01T00:00:00Z",
+      "extensions": {}
+    }
+  },
+  {
+    "protocol": "execution",
+    "op": "execution.read",
+    "mode": "read",
+    "request": {
+      "protocol": "loom.execution",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": null,
+      "idempotency_key": null,
+      "op": "execution.read",
+      "actor": {
+        "id": "Agni",
+        "run_id": null,
+        "epoch": 1
+      },
+      "target": {
+        "assignment_id": "example",
+        "attempt_id": "example",
+        "host_id": "example"
+      },
+      "expected_revision": null,
+      "timeout_ms": 5000,
+      "args": {
+        "source": "example",
+        "limit_bytes": 65536
+      },
+      "extensions": {}
+    },
+    "response": {
+      "protocol": "loom.execution",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": null,
+      "op": "execution.read",
+      "target": {
+        "assignment_id": "example",
+        "attempt_id": "example",
+        "host_id": "example"
+      },
+      "ok": true,
+      "status": "completed",
+      "revision": null,
+      "durable": false,
+      "result": {
+        "source": "example",
+        "generation": "example",
+        "data": "example",
+        "next_cursor": null,
+        "eof": false,
+        "truncated": false,
+        "gap": null
+      },
+      "error": null,
+      "effects": [],
+      "evidence": [],
+      "observed_at": "2026-01-01T00:00:00Z",
+      "extensions": {}
+    }
+  },
+  {
+    "protocol": "execution",
+    "op": "execution.stop",
+    "mode": "mutate",
+    "request": {
+      "protocol": "loom.execution",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": "operation-example",
+      "idempotency_key": "key-example",
+      "op": "execution.stop",
+      "actor": {
+        "id": "Agni",
+        "run_id": null,
+        "epoch": 1
+      },
+      "target": {
+        "assignment_id": "example",
+        "attempt_id": "example",
+        "host_id": "example"
+      },
+      "expected_revision": 1,
+      "timeout_ms": 5000,
+      "args": {
+        "reason": "example",
+        "grace_ms": 1,
+        "allow_kill": false
+      },
+      "extensions": {}
+    },
+    "response": {
+      "protocol": "loom.execution",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": "operation-example",
+      "op": "execution.stop",
+      "target": {
+        "assignment_id": "example",
+        "attempt_id": "example",
+        "host_id": "example"
+      },
+      "ok": true,
+      "status": "completed",
+      "revision": null,
+      "durable": false,
+      "result": {
+        "binding": {
+          "assignment_id": "example",
+          "attempt_id": "example",
+          "host_id": "example"
+        },
+        "requested_signals": [],
+        "identity_verified": false,
+        "group_state": "live",
+        "confirmed_stopped": false,
+        "terminal": null
+      },
+      "error": null,
+      "effects": [],
+      "evidence": [],
+      "observed_at": "2026-01-01T00:00:00Z",
+      "extensions": {}
+    }
+  },
+  {
+    "protocol": "execution",
+    "op": "execution.release",
+    "mode": "mutate",
+    "request": {
+      "protocol": "loom.execution",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": "operation-example",
+      "idempotency_key": "key-example",
+      "op": "execution.release",
+      "actor": {
+        "id": "Agni",
+        "run_id": null,
+        "epoch": 1
+      },
+      "target": {
+        "assignment_id": "example",
+        "attempt_id": "example",
+        "host_id": "example"
+      },
+      "expected_revision": 1,
+      "timeout_ms": 5000,
+      "args": {
+        "retention_policy": "retain"
+      },
+      "extensions": {}
+    },
+    "response": {
+      "protocol": "loom.execution",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": "operation-example",
+      "op": "execution.release",
+      "target": {
+        "assignment_id": "example",
+        "attempt_id": "example",
+        "host_id": "example"
+      },
+      "ok": true,
+      "status": "completed",
+      "revision": null,
+      "durable": false,
+      "result": {
+        "binding": {
+          "assignment_id": "example",
+          "attempt_id": "example",
+          "host_id": "example"
+        },
+        "resources": []
+      },
+      "error": null,
+      "effects": [],
+      "evidence": [],
+      "observed_at": "2026-01-01T00:00:00Z",
+      "extensions": {}
+    }
+  },
+  {
+    "protocol": "execution",
+    "op": "execution.reconcile",
+    "mode": "read",
+    "request": {
+      "protocol": "loom.execution",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": null,
+      "idempotency_key": null,
+      "op": "execution.reconcile",
+      "actor": {
+        "id": "Agni",
+        "run_id": null,
+        "epoch": 1
+      },
+      "target": {
+        "assignment_id": "example",
+        "attempt_id": "example",
+        "host_id": "example"
+      },
+      "expected_revision": null,
+      "timeout_ms": 5000,
+      "args": {
+        "operation_id": "example"
+      },
+      "extensions": {}
+    },
+    "response": {
+      "protocol": "loom.execution",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": null,
+      "op": "execution.reconcile",
+      "target": {
+        "assignment_id": "example",
+        "attempt_id": "example",
+        "host_id": "example"
+      },
+      "ok": true,
+      "status": "completed",
+      "revision": null,
+      "durable": false,
+      "result": {
+        "operation_id": "example",
+        "observation": {
+          "binding": {
+            "assignment_id": "example",
+            "attempt_id": "example",
+            "host_id": "example"
+          },
+          "state": "reserved",
+          "identity": null,
+          "identity_verified": false,
+          "terminal": null,
+          "source": "example",
+          "observed_at": "2026-01-01T00:00:00Z",
+          "resources": []
+        }
+      },
+      "error": null,
+      "effects": [],
+      "evidence": [],
+      "observed_at": "2026-01-01T00:00:00Z",
+      "extensions": {}
+    }
+  },
+  {
+    "protocol": "execution",
+    "op": "execution.prompt",
+    "mode": "mutate",
+    "request": {
+      "protocol": "loom.execution",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": "operation-example",
+      "idempotency_key": "key-example",
+      "op": "execution.prompt",
+      "actor": {
+        "id": "Agni",
+        "run_id": null,
+        "epoch": 1
+      },
+      "target": {
+        "assignment_id": "example",
+        "attempt_id": "example",
+        "host_id": "example"
+      },
+      "expected_revision": 1,
+      "timeout_ms": 5000,
+      "args": {
+        "message_id": "example",
+        "delivery_id": "example",
+        "body_ref": "artifacts/example",
+        "mode": "live"
+      },
+      "extensions": {}
+    },
+    "response": {
+      "protocol": "loom.execution",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": "operation-example",
+      "op": "execution.prompt",
+      "target": {
+        "assignment_id": "example",
+        "attempt_id": "example",
+        "host_id": "example"
+      },
+      "ok": true,
+      "status": "completed",
+      "revision": null,
+      "durable": false,
+      "result": {
+        "binding": {
+          "assignment_id": "example",
+          "attempt_id": "example",
+          "host_id": "example"
+        },
+        "message_id": "example",
+        "delivery_id": "example",
+        "acceptance": "accepted"
+      },
+      "error": null,
+      "effects": [],
+      "evidence": [],
+      "observed_at": "2026-01-01T00:00:00Z",
+      "extensions": {}
+    }
+  },
+  {
+    "protocol": "execution",
+    "op": "execution.fence",
+    "mode": "mutate",
+    "request": {
+      "protocol": "loom.execution",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": "operation-example",
+      "idempotency_key": "key-example",
+      "op": "execution.fence",
+      "actor": {
+        "id": "Agni",
+        "run_id": null,
+        "epoch": 1
+      },
+      "target": {
+        "assignment_id": "example",
+        "attempt_id": "example",
+        "host_id": "example"
+      },
+      "expected_revision": 1,
+      "timeout_ms": 5000,
+      "args": {
+        "reason": "example",
+        "new_epoch": 1
+      },
+      "extensions": {}
+    },
+    "response": {
+      "protocol": "loom.execution",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": "operation-example",
+      "op": "execution.fence",
+      "target": {
+        "assignment_id": "example",
+        "attempt_id": "example",
+        "host_id": "example"
+      },
+      "ok": true,
+      "status": "completed",
+      "revision": null,
+      "durable": false,
+      "result": {
+        "binding": {
+          "assignment_id": "example",
+          "attempt_id": "example",
+          "host_id": "example"
+        },
+        "epoch": 1,
+        "fenced": false
+      },
+      "error": null,
+      "effects": [],
+      "evidence": [],
+      "observed_at": "2026-01-01T00:00:00Z",
+      "extensions": {}
+    }
+  },
+  {
+    "protocol": "execution",
+    "op": "workspace.read",
+    "mode": "read",
+    "request": {
+      "protocol": "loom.execution",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": null,
+      "idempotency_key": null,
+      "op": "workspace.read",
+      "actor": {
+        "id": "Agni",
+        "run_id": null,
+        "epoch": 1
+      },
+      "target": {
+        "assignment_id": "example",
+        "attempt_id": null,
+        "host_id": "example"
+      },
+      "expected_revision": null,
+      "timeout_ms": 5000,
+      "args": {
+        "artifact": "artifacts/example",
+        "limit_bytes": 65536
+      },
+      "extensions": {}
+    },
+    "response": {
+      "protocol": "loom.execution",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": null,
+      "op": "workspace.read",
+      "target": {
+        "assignment_id": "example",
+        "attempt_id": null,
+        "host_id": "example"
+      },
+      "ok": true,
+      "status": "completed",
+      "revision": null,
+      "durable": false,
+      "result": {
+        "source": "example",
+        "generation": "example",
+        "data": "example",
+        "next_cursor": null,
+        "eof": false,
+        "truncated": false,
+        "gap": null
+      },
+      "error": null,
+      "effects": [],
+      "evidence": [],
+      "observed_at": "2026-01-01T00:00:00Z",
+      "extensions": {}
+    }
+  },
+  {
+    "protocol": "execution",
+    "op": "workspace.export",
+    "mode": "read",
+    "request": {
+      "protocol": "loom.execution",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": null,
+      "idempotency_key": null,
+      "op": "workspace.export",
+      "actor": {
+        "id": "Agni",
+        "run_id": null,
+        "epoch": 1
+      },
+      "target": {
+        "assignment_id": "example",
+        "attempt_id": null,
+        "host_id": "example"
+      },
+      "expected_revision": null,
+      "timeout_ms": 5000,
+      "args": {
+        "sha": "1111111111111111111111111111111111111111",
+        "kind": "git_bundle",
+        "limit_bytes": 65536
+      },
+      "extensions": {}
+    },
+    "response": {
+      "protocol": "loom.execution",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": null,
+      "op": "workspace.export",
+      "target": {
+        "assignment_id": "example",
+        "attempt_id": null,
+        "host_id": "example"
+      },
+      "ok": true,
+      "status": "completed",
+      "revision": null,
+      "durable": false,
+      "result": {
+        "artifact": "artifacts/example",
+        "digest": "git-blob-sha1-v1:1111111111111111111111111111111111111111",
+        "bytes": 1,
+        "sha": "1111111111111111111111111111111111111111"
+      },
+      "error": null,
+      "effects": [],
+      "evidence": [],
+      "observed_at": "2026-01-01T00:00:00Z",
+      "extensions": {}
+    }
+  },
+  {
+    "protocol": "coordination",
+    "op": "hello",
+    "mode": "read",
+    "request": {
+      "protocol": "loom.coordination",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": null,
+      "idempotency_key": null,
+      "op": "hello",
+      "actor": {
+        "id": "Agni",
+        "run_id": null,
+        "epoch": 1
+      },
+      "target": {
+        "assignment_id": null,
+        "attempt_id": null,
+        "host_id": null
+      },
+      "expected_revision": null,
+      "timeout_ms": 5000,
+      "args": {
+        "versions": [
+          {
+            "major": 1,
+            "minor": 0
+          }
+        ],
+        "required_capabilities": []
+      },
+      "extensions": {}
+    },
+    "response": {
+      "protocol": "loom.coordination",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": null,
+      "op": "hello",
+      "target": {
+        "assignment_id": null,
+        "attempt_id": null,
+        "host_id": null
+      },
+      "ok": true,
+      "status": "completed",
+      "revision": null,
+      "durable": false,
+      "result": {
+        "selected_version": {
+          "major": 1,
+          "minor": 0
+        },
+        "provider": {
+          "id": "example",
+          "version": "example"
+        },
+        "capabilities": [],
+        "limits": {
+          "request_bytes": 1,
+          "response_bytes": 1,
+          "metadata_bytes": 1,
+          "message_bytes": 1,
+          "read_bytes": 1,
+          "list_rows": 1,
+          "diagnostic_bytes": 1
+        },
+        "schema_digest": "git-blob-sha1-v1:1111111111111111111111111111111111111111"
+      },
+      "error": null,
+      "effects": [],
+      "evidence": [],
+      "observed_at": "2026-01-01T00:00:00Z",
+      "extensions": {}
+    }
+  },
+  {
+    "protocol": "coordination",
+    "op": "run.create",
+    "mode": "create",
+    "request": {
+      "protocol": "loom.coordination",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": "operation-example",
+      "idempotency_key": "key-example",
+      "op": "run.create",
+      "actor": {
+        "id": "Agni",
+        "run_id": null,
+        "epoch": 1
+      },
+      "target": {
+        "assignment_id": null,
+        "attempt_id": null,
+        "host_id": null
+      },
+      "expected_revision": null,
+      "timeout_ms": 5000,
+      "args": {
+        "objective": "example",
+        "owner_id": "example",
+        "parent_run_id": null
+      },
+      "extensions": {}
+    },
+    "response": {
+      "protocol": "loom.coordination",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": "operation-example",
+      "op": "run.create",
+      "target": {
+        "assignment_id": null,
+        "attempt_id": null,
+        "host_id": null
+      },
+      "ok": true,
+      "status": "completed",
+      "revision": null,
+      "durable": false,
+      "result": {
+        "run_id": "example",
+        "objective": "example",
+        "owner_id": "example",
+        "epoch": 1,
+        "state": "open",
+        "revision": 1,
+        "parent_run_id": null
+      },
+      "error": null,
+      "effects": [],
+      "evidence": [],
+      "observed_at": "2026-01-01T00:00:00Z",
+      "extensions": {}
+    }
+  },
+  {
+    "protocol": "coordination",
+    "op": "run.use",
+    "mode": "read",
+    "request": {
+      "protocol": "loom.coordination",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": null,
+      "idempotency_key": null,
+      "op": "run.use",
+      "actor": {
+        "id": "Agni",
+        "run_id": null,
+        "epoch": 1
+      },
+      "target": {
+        "assignment_id": null,
+        "attempt_id": null,
+        "host_id": null
+      },
+      "expected_revision": null,
+      "timeout_ms": 5000,
+      "args": {
+        "run_id": "example"
+      },
+      "extensions": {}
+    },
+    "response": {
+      "protocol": "loom.coordination",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": null,
+      "op": "run.use",
+      "target": {
+        "assignment_id": null,
+        "attempt_id": null,
+        "host_id": null
+      },
+      "ok": true,
+      "status": "completed",
+      "revision": null,
+      "durable": false,
+      "result": {
+        "run_id": "example",
+        "objective": "example",
+        "owner_id": "example",
+        "epoch": 1,
+        "state": "open",
+        "revision": 1,
+        "parent_run_id": null
+      },
+      "error": null,
+      "effects": [],
+      "evidence": [],
+      "observed_at": "2026-01-01T00:00:00Z",
+      "extensions": {}
+    }
+  },
+  {
+    "protocol": "coordination",
+    "op": "run.show",
+    "mode": "read",
+    "request": {
+      "protocol": "loom.coordination",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": null,
+      "idempotency_key": null,
+      "op": "run.show",
+      "actor": {
+        "id": "Agni",
+        "run_id": null,
+        "epoch": 1
+      },
+      "target": {
+        "assignment_id": null,
+        "attempt_id": null,
+        "host_id": null
+      },
+      "expected_revision": null,
+      "timeout_ms": 5000,
+      "args": {
+        "run_id": "example"
+      },
+      "extensions": {}
+    },
+    "response": {
+      "protocol": "loom.coordination",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": null,
+      "op": "run.show",
+      "target": {
+        "assignment_id": null,
+        "attempt_id": null,
+        "host_id": null
+      },
+      "ok": true,
+      "status": "completed",
+      "revision": null,
+      "durable": false,
+      "result": {
+        "run_id": "example",
+        "objective": "example",
+        "owner_id": "example",
+        "epoch": 1,
+        "state": "open",
+        "revision": 1,
+        "parent_run_id": null
+      },
+      "error": null,
+      "effects": [],
+      "evidence": [],
+      "observed_at": "2026-01-01T00:00:00Z",
+      "extensions": {}
+    }
+  },
+  {
+    "protocol": "coordination",
+    "op": "run.list",
+    "mode": "read",
+    "request": {
+      "protocol": "loom.coordination",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": null,
+      "idempotency_key": null,
+      "op": "run.list",
+      "actor": {
+        "id": "Agni",
+        "run_id": null,
+        "epoch": 1
+      },
+      "target": {
+        "assignment_id": null,
+        "attempt_id": null,
+        "host_id": null
+      },
+      "expected_revision": null,
+      "timeout_ms": 5000,
+      "args": {
+        "limit": 1
+      },
+      "extensions": {}
+    },
+    "response": {
+      "protocol": "loom.coordination",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": null,
+      "op": "run.list",
+      "target": {
+        "assignment_id": null,
+        "attempt_id": null,
+        "host_id": null
+      },
+      "ok": true,
+      "status": "completed",
+      "revision": null,
+      "durable": false,
+      "result": {
+        "items": [],
+        "next_cursor": null
+      },
+      "error": null,
+      "effects": [],
+      "evidence": [],
+      "observed_at": "2026-01-01T00:00:00Z",
+      "extensions": {}
+    }
+  },
+  {
+    "protocol": "coordination",
+    "op": "run.claim",
+    "mode": "mutate",
+    "request": {
+      "protocol": "loom.coordination",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": "operation-example",
+      "idempotency_key": "key-example",
+      "op": "run.claim",
+      "actor": {
+        "id": "Agni",
+        "run_id": null,
+        "epoch": 1
+      },
+      "target": {
+        "assignment_id": null,
+        "attempt_id": null,
+        "host_id": null
+      },
+      "expected_revision": 1,
+      "timeout_ms": 5000,
+      "args": {
+        "run_id": "example",
+        "expected_owner": "example",
+        "reason": "example"
+      },
+      "extensions": {}
+    },
+    "response": {
+      "protocol": "loom.coordination",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": "operation-example",
+      "op": "run.claim",
+      "target": {
+        "assignment_id": null,
+        "attempt_id": null,
+        "host_id": null
+      },
+      "ok": true,
+      "status": "completed",
+      "revision": null,
+      "durable": false,
+      "result": {
+        "run_id": "example",
+        "objective": "example",
+        "owner_id": "example",
+        "epoch": 1,
+        "state": "open",
+        "revision": 1,
+        "parent_run_id": null
+      },
+      "error": null,
+      "effects": [],
+      "evidence": [],
+      "observed_at": "2026-01-01T00:00:00Z",
+      "extensions": {}
+    }
+  },
+  {
+    "protocol": "coordination",
+    "op": "task.create",
+    "mode": "create",
+    "request": {
+      "protocol": "loom.coordination",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": "operation-example",
+      "idempotency_key": "key-example",
+      "op": "task.create",
+      "actor": {
+        "id": "Agni",
+        "run_id": null,
+        "epoch": 1
+      },
+      "target": {
+        "assignment_id": null,
+        "attempt_id": null,
+        "host_id": null
+      },
+      "expected_revision": null,
+      "timeout_ms": 5000,
+      "args": {
+        "run_id": "example",
+        "spec_ref": "artifacts/example",
+        "spec_digest": "git-blob-sha1-v1:1111111111111111111111111111111111111111",
+        "deps": [],
+        "gates": []
+      },
+      "extensions": {}
+    },
+    "response": {
+      "protocol": "loom.coordination",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": "operation-example",
+      "op": "task.create",
+      "target": {
+        "assignment_id": null,
+        "attempt_id": null,
+        "host_id": null
+      },
+      "ok": true,
+      "status": "completed",
+      "revision": null,
+      "durable": false,
+      "result": {
+        "task_id": "example",
+        "run_id": "example",
+        "spec_ref": "artifacts/example",
+        "spec_digest": "git-blob-sha1-v1:1111111111111111111111111111111111111111",
+        "deps": [],
+        "gates": [],
+        "state": "pending",
+        "revision": 1,
+        "attempt_ids": [],
+        "accepted_result": null
+      },
+      "error": null,
+      "effects": [],
+      "evidence": [],
+      "observed_at": "2026-01-01T00:00:00Z",
+      "extensions": {}
+    }
+  },
+  {
+    "protocol": "coordination",
+    "op": "task.update",
+    "mode": "mutate",
+    "request": {
+      "protocol": "loom.coordination",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": "operation-example",
+      "idempotency_key": "key-example",
+      "op": "task.update",
+      "actor": {
+        "id": "Agni",
+        "run_id": null,
+        "epoch": 1
+      },
+      "target": {
+        "assignment_id": null,
+        "attempt_id": null,
+        "host_id": null
+      },
+      "expected_revision": 1,
+      "timeout_ms": 5000,
+      "args": {
+        "task_id": "example",
+        "transition": "ready",
+        "evidence_refs": []
+      },
+      "extensions": {}
+    },
+    "response": {
+      "protocol": "loom.coordination",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": "operation-example",
+      "op": "task.update",
+      "target": {
+        "assignment_id": null,
+        "attempt_id": null,
+        "host_id": null
+      },
+      "ok": true,
+      "status": "completed",
+      "revision": null,
+      "durable": false,
+      "result": {
+        "task_id": "example",
+        "run_id": "example",
+        "spec_ref": "artifacts/example",
+        "spec_digest": "git-blob-sha1-v1:1111111111111111111111111111111111111111",
+        "deps": [],
+        "gates": [],
+        "state": "pending",
+        "revision": 1,
+        "attempt_ids": [],
+        "accepted_result": null
+      },
+      "error": null,
+      "effects": [],
+      "evidence": [],
+      "observed_at": "2026-01-01T00:00:00Z",
+      "extensions": {}
+    }
+  },
+  {
+    "protocol": "coordination",
+    "op": "task.show",
+    "mode": "read",
+    "request": {
+      "protocol": "loom.coordination",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": null,
+      "idempotency_key": null,
+      "op": "task.show",
+      "actor": {
+        "id": "Agni",
+        "run_id": null,
+        "epoch": 1
+      },
+      "target": {
+        "assignment_id": null,
+        "attempt_id": null,
+        "host_id": null
+      },
+      "expected_revision": null,
+      "timeout_ms": 5000,
+      "args": {
+        "task_id": "example"
+      },
+      "extensions": {}
+    },
+    "response": {
+      "protocol": "loom.coordination",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": null,
+      "op": "task.show",
+      "target": {
+        "assignment_id": null,
+        "attempt_id": null,
+        "host_id": null
+      },
+      "ok": true,
+      "status": "completed",
+      "revision": null,
+      "durable": false,
+      "result": {
+        "task_id": "example",
+        "run_id": "example",
+        "spec_ref": "artifacts/example",
+        "spec_digest": "git-blob-sha1-v1:1111111111111111111111111111111111111111",
+        "deps": [],
+        "gates": [],
+        "state": "pending",
+        "revision": 1,
+        "attempt_ids": [],
+        "accepted_result": null
+      },
+      "error": null,
+      "effects": [],
+      "evidence": [],
+      "observed_at": "2026-01-01T00:00:00Z",
+      "extensions": {}
+    }
+  },
+  {
+    "protocol": "coordination",
+    "op": "task.list",
+    "mode": "read",
+    "request": {
+      "protocol": "loom.coordination",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": null,
+      "idempotency_key": null,
+      "op": "task.list",
+      "actor": {
+        "id": "Agni",
+        "run_id": null,
+        "epoch": 1
+      },
+      "target": {
+        "assignment_id": null,
+        "attempt_id": null,
+        "host_id": null
+      },
+      "expected_revision": null,
+      "timeout_ms": 5000,
+      "args": {
+        "run_id": "example",
+        "limit": 1
+      },
+      "extensions": {}
+    },
+    "response": {
+      "protocol": "loom.coordination",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": null,
+      "op": "task.list",
+      "target": {
+        "assignment_id": null,
+        "attempt_id": null,
+        "host_id": null
+      },
+      "ok": true,
+      "status": "completed",
+      "revision": null,
+      "durable": false,
+      "result": {
+        "items": [],
+        "next_cursor": null
+      },
+      "error": null,
+      "effects": [],
+      "evidence": [],
+      "observed_at": "2026-01-01T00:00:00Z",
+      "extensions": {}
+    }
+  },
+  {
+    "protocol": "coordination",
+    "op": "task.continue",
+    "mode": "mutate",
+    "request": {
+      "protocol": "loom.coordination",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": "operation-example",
+      "idempotency_key": "key-example",
+      "op": "task.continue",
+      "actor": {
+        "id": "Agni",
+        "run_id": null,
+        "epoch": 1
+      },
+      "target": {
+        "assignment_id": null,
+        "attempt_id": null,
+        "host_id": null
+      },
+      "expected_revision": 1,
+      "timeout_ms": 5000,
+      "args": {
+        "task_id": "example",
+        "parent_attempt_id": "example",
+        "placement_digest": "git-blob-sha1-v1:1111111111111111111111111111111111111111",
+        "message_ids": [],
+        "reason": "example"
+      },
+      "extensions": {}
+    },
+    "response": {
+      "protocol": "loom.coordination",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": "operation-example",
+      "op": "task.continue",
+      "target": {
+        "assignment_id": null,
+        "attempt_id": null,
+        "host_id": null
+      },
+      "ok": true,
+      "status": "completed",
+      "revision": null,
+      "durable": false,
+      "result": {
+        "task_id": "example",
+        "parent_attempt_id": "example",
+        "attempt_id": "example",
+        "revision": 1
+      },
+      "error": null,
+      "effects": [],
+      "evidence": [],
+      "observed_at": "2026-01-01T00:00:00Z",
+      "extensions": {}
+    }
+  },
+  {
+    "protocol": "coordination",
+    "op": "gate.create",
+    "mode": "create",
+    "request": {
+      "protocol": "loom.coordination",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": "operation-example",
+      "idempotency_key": "key-example",
+      "op": "gate.create",
+      "actor": {
+        "id": "Agni",
+        "run_id": null,
+        "epoch": 1
+      },
+      "target": {
+        "assignment_id": null,
+        "attempt_id": null,
+        "host_id": null
+      },
+      "expected_revision": null,
+      "timeout_ms": 5000,
+      "args": {
+        "task_id": "example",
+        "question": "example",
+        "resolver_id": "example",
+        "options": [
+          "example"
+        ]
+      },
+      "extensions": {}
+    },
+    "response": {
+      "protocol": "loom.coordination",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": "operation-example",
+      "op": "gate.create",
+      "target": {
+        "assignment_id": null,
+        "attempt_id": null,
+        "host_id": null
+      },
+      "ok": true,
+      "status": "completed",
+      "revision": null,
+      "durable": false,
+      "result": {
+        "gate_id": "example",
+        "task_id": "example",
+        "question": "example",
+        "resolver_id": "example",
+        "options": [
+          "example"
+        ],
+        "state": "open",
+        "revision": 1,
+        "decision": null,
+        "evidence_ref": null
+      },
+      "error": null,
+      "effects": [],
+      "evidence": [],
+      "observed_at": "2026-01-01T00:00:00Z",
+      "extensions": {}
+    }
+  },
+  {
+    "protocol": "coordination",
+    "op": "gate.resolve",
+    "mode": "mutate",
+    "request": {
+      "protocol": "loom.coordination",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": "operation-example",
+      "idempotency_key": "key-example",
+      "op": "gate.resolve",
+      "actor": {
+        "id": "Agni",
+        "run_id": null,
+        "epoch": 1
+      },
+      "target": {
+        "assignment_id": null,
+        "attempt_id": null,
+        "host_id": null
+      },
+      "expected_revision": 1,
+      "timeout_ms": 5000,
+      "args": {
+        "gate_id": "example",
+        "decision": "approved",
+        "evidence_ref": "artifacts/example"
+      },
+      "extensions": {}
+    },
+    "response": {
+      "protocol": "loom.coordination",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": "operation-example",
+      "op": "gate.resolve",
+      "target": {
+        "assignment_id": null,
+        "attempt_id": null,
+        "host_id": null
+      },
+      "ok": true,
+      "status": "completed",
+      "revision": null,
+      "durable": false,
+      "result": {
+        "gate": {
+          "gate_id": "example",
+          "task_id": "example",
+          "question": "example",
+          "resolver_id": "example",
+          "options": [
+            "example"
+          ],
+          "state": "approved",
+          "revision": 1,
+          "decision": "approved",
+          "evidence_ref": null
+        },
+        "ready_task_ids": []
+      },
+      "error": null,
+      "effects": [],
+      "evidence": [],
+      "observed_at": "2026-01-01T00:00:00Z",
+      "extensions": {}
+    }
+  },
+  {
+    "protocol": "coordination",
+    "op": "gate.list",
+    "mode": "read",
+    "request": {
+      "protocol": "loom.coordination",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": null,
+      "idempotency_key": null,
+      "op": "gate.list",
+      "actor": {
+        "id": "Agni",
+        "run_id": null,
+        "epoch": 1
+      },
+      "target": {
+        "assignment_id": null,
+        "attempt_id": null,
+        "host_id": null
+      },
+      "expected_revision": null,
+      "timeout_ms": 5000,
+      "args": {
+        "run_id": "example",
+        "limit": 1
+      },
+      "extensions": {}
+    },
+    "response": {
+      "protocol": "loom.coordination",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": null,
+      "op": "gate.list",
+      "target": {
+        "assignment_id": null,
+        "attempt_id": null,
+        "host_id": null
+      },
+      "ok": true,
+      "status": "completed",
+      "revision": null,
+      "durable": false,
+      "result": {
+        "items": [],
+        "next_cursor": null
+      },
+      "error": null,
+      "effects": [],
+      "evidence": [],
+      "observed_at": "2026-01-01T00:00:00Z",
+      "extensions": {}
+    }
+  },
+  {
+    "protocol": "coordination",
+    "op": "mail.send",
+    "mode": "create",
+    "request": {
+      "protocol": "loom.coordination",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": "operation-example",
+      "idempotency_key": "key-example",
+      "op": "mail.send",
+      "actor": {
+        "id": "Agni",
+        "run_id": null,
+        "epoch": 1
+      },
+      "target": {
+        "assignment_id": null,
+        "attempt_id": null,
+        "host_id": null
+      },
+      "expected_revision": null,
+      "timeout_ms": 5000,
+      "args": {
+        "message_id": "example",
+        "from": "example",
+        "to": [
+          "task:example"
+        ],
+        "kind": "guidance",
+        "subject": "example",
+        "body": "example",
+        "thread_id": null,
+        "in_reply_to": null,
+        "expires_at": null
+      },
+      "extensions": {}
+    },
+    "response": {
+      "protocol": "loom.coordination",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": "operation-example",
+      "op": "mail.send",
+      "target": {
+        "assignment_id": null,
+        "attempt_id": null,
+        "host_id": null
+      },
+      "ok": true,
+      "status": "completed",
+      "revision": null,
+      "durable": false,
+      "result": {
+        "message_id": "example",
+        "deliveries": []
+      },
+      "error": null,
+      "effects": [],
+      "evidence": [],
+      "observed_at": "2026-01-01T00:00:00Z",
+      "extensions": {}
+    }
+  },
+  {
+    "protocol": "coordination",
+    "op": "mail.poll",
+    "mode": "read",
+    "request": {
+      "protocol": "loom.coordination",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": null,
+      "idempotency_key": null,
+      "op": "mail.poll",
+      "actor": {
+        "id": "Agni",
+        "run_id": null,
+        "epoch": 1
+      },
+      "target": {
+        "assignment_id": null,
+        "attempt_id": null,
+        "host_id": null
+      },
+      "expected_revision": null,
+      "timeout_ms": 5000,
+      "args": {
+        "mailbox": "task:example",
+        "after_cursor": null,
+        "limit": 1
+      },
+      "extensions": {}
+    },
+    "response": {
+      "protocol": "loom.coordination",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": null,
+      "op": "mail.poll",
+      "target": {
+        "assignment_id": null,
+        "attempt_id": null,
+        "host_id": null
+      },
+      "ok": true,
+      "status": "completed",
+      "revision": null,
+      "durable": false,
+      "result": {
+        "items": [],
+        "next_cursor": null
+      },
+      "error": null,
+      "effects": [],
+      "evidence": [],
+      "observed_at": "2026-01-01T00:00:00Z",
+      "extensions": {}
+    }
+  },
+  {
+    "protocol": "coordination",
+    "op": "mail.claim",
+    "mode": "mutate",
+    "request": {
+      "protocol": "loom.coordination",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": "operation-example",
+      "idempotency_key": "key-example",
+      "op": "mail.claim",
+      "actor": {
+        "id": "Agni",
+        "run_id": null,
+        "epoch": 1
+      },
+      "target": {
+        "assignment_id": null,
+        "attempt_id": null,
+        "host_id": null
+      },
+      "expected_revision": 1,
+      "timeout_ms": 5000,
+      "args": {
+        "mailbox": "task:example",
+        "delivery_id": "example",
+        "lease_ms": 1,
+        "claim_token": null
+      },
+      "extensions": {}
+    },
+    "response": {
+      "protocol": "loom.coordination",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": "operation-example",
+      "op": "mail.claim",
+      "target": {
+        "assignment_id": null,
+        "attempt_id": null,
+        "host_id": null
+      },
+      "ok": true,
+      "status": "completed",
+      "revision": null,
+      "durable": false,
+      "result": {
+        "delivery": {
+          "delivery_id": "example",
+          "message_id": "example",
+          "message_digest": "git-blob-sha1-v1:1111111111111111111111111111111111111111",
+          "recipient": "task:example",
+          "attempt_id": null,
+          "revision": 1,
+          "state": "pending",
+          "authority_sync": "committed",
+          "next_action": "none",
+          "reason": null
+        },
+        "claim_token": "example",
+        "expires_at": "2026-01-01T00:00:00Z"
+      },
+      "error": null,
+      "effects": [],
+      "evidence": [],
+      "observed_at": "2026-01-01T00:00:00Z",
+      "extensions": {}
+    }
+  },
+  {
+    "protocol": "coordination",
+    "op": "mail.read",
+    "mode": "mutate",
+    "request": {
+      "protocol": "loom.coordination",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": "operation-example",
+      "idempotency_key": "key-example",
+      "op": "mail.read",
+      "actor": {
+        "id": "Agni",
+        "run_id": null,
+        "epoch": 1
+      },
+      "target": {
+        "assignment_id": null,
+        "attempt_id": null,
+        "host_id": null
+      },
+      "expected_revision": 1,
+      "timeout_ms": 5000,
+      "args": {
+        "delivery_id": "example",
+        "claim_token": "example"
+      },
+      "extensions": {}
+    },
+    "response": {
+      "protocol": "loom.coordination",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": "operation-example",
+      "op": "mail.read",
+      "target": {
+        "assignment_id": null,
+        "attempt_id": null,
+        "host_id": null
+      },
+      "ok": true,
+      "status": "completed",
+      "revision": null,
+      "durable": false,
+      "result": {
+        "delivery": {
+          "delivery_id": "example",
+          "message_id": "example",
+          "message_digest": "git-blob-sha1-v1:1111111111111111111111111111111111111111",
+          "recipient": "task:example",
+          "attempt_id": null,
+          "revision": 1,
+          "state": "pending",
+          "authority_sync": "committed",
+          "next_action": "none",
+          "reason": null
+        },
+        "message": {
+          "message_id": "example",
+          "from": "example",
+          "to": [
+            "task:example"
+          ],
+          "kind": "guidance",
+          "subject": "example",
+          "body": "example",
+          "thread_id": null,
+          "in_reply_to": null,
+          "expires_at": null
+        }
+      },
+      "error": null,
+      "effects": [],
+      "evidence": [],
+      "observed_at": "2026-01-01T00:00:00Z",
+      "extensions": {}
+    }
+  },
+  {
+    "protocol": "coordination",
+    "op": "mail.ack",
+    "mode": "mutate",
+    "request": {
+      "protocol": "loom.coordination",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": "operation-example",
+      "idempotency_key": "key-example",
+      "op": "mail.ack",
+      "actor": {
+        "id": "Agni",
+        "run_id": null,
+        "epoch": 1
+      },
+      "target": {
+        "assignment_id": null,
+        "attempt_id": null,
+        "host_id": null
+      },
+      "expected_revision": 1,
+      "timeout_ms": 5000,
+      "args": {
+        "delivery_id": "example",
+        "claim_token": "example",
+        "message_digest": "git-blob-sha1-v1:1111111111111111111111111111111111111111"
+      },
+      "extensions": {}
+    },
+    "response": {
+      "protocol": "loom.coordination",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": "operation-example",
+      "op": "mail.ack",
+      "target": {
+        "assignment_id": null,
+        "attempt_id": null,
+        "host_id": null
+      },
+      "ok": true,
+      "status": "completed",
+      "revision": null,
+      "durable": false,
+      "result": {
+        "delivery_id": "example",
+        "message_id": "example",
+        "message_digest": "git-blob-sha1-v1:1111111111111111111111111111111111111111",
+        "recipient": "task:example",
+        "attempt_id": null,
+        "revision": 1,
+        "state": "pending",
+        "authority_sync": "committed",
+        "next_action": "none",
+        "reason": null
+      },
+      "error": null,
+      "effects": [],
+      "evidence": [],
+      "observed_at": "2026-01-01T00:00:00Z",
+      "extensions": {}
+    }
+  },
+  {
+    "protocol": "coordination",
+    "op": "mail.reply",
+    "mode": "create",
+    "request": {
+      "protocol": "loom.coordination",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": "operation-example",
+      "idempotency_key": "key-example",
+      "op": "mail.reply",
+      "actor": {
+        "id": "Agni",
+        "run_id": null,
+        "epoch": 1
+      },
+      "target": {
+        "assignment_id": null,
+        "attempt_id": null,
+        "host_id": null
+      },
+      "expected_revision": null,
+      "timeout_ms": 5000,
+      "args": {
+        "question_id": "example",
+        "message_id": "example",
+        "body": "example",
+        "ack_claim_token": null
+      },
+      "extensions": {}
+    },
+    "response": {
+      "protocol": "loom.coordination",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": "operation-example",
+      "op": "mail.reply",
+      "target": {
+        "assignment_id": null,
+        "attempt_id": null,
+        "host_id": null
+      },
+      "ok": true,
+      "status": "completed",
+      "revision": null,
+      "durable": false,
+      "result": {
+        "message_id": "example",
+        "deliveries": []
+      },
+      "error": null,
+      "effects": [],
+      "evidence": [],
+      "observed_at": "2026-01-01T00:00:00Z",
+      "extensions": {}
+    }
+  },
+  {
+    "protocol": "coordination",
+    "op": "mail.status",
+    "mode": "read",
+    "request": {
+      "protocol": "loom.coordination",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": null,
+      "idempotency_key": null,
+      "op": "mail.status",
+      "actor": {
+        "id": "Agni",
+        "run_id": null,
+        "epoch": 1
+      },
+      "target": {
+        "assignment_id": null,
+        "attempt_id": null,
+        "host_id": null
+      },
+      "expected_revision": null,
+      "timeout_ms": 5000,
+      "args": {
+        "message_id": "example"
+      },
+      "extensions": {}
+    },
+    "response": {
+      "protocol": "loom.coordination",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": null,
+      "op": "mail.status",
+      "target": {
+        "assignment_id": null,
+        "attempt_id": null,
+        "host_id": null
+      },
+      "ok": true,
+      "status": "completed",
+      "revision": null,
+      "durable": false,
+      "result": {
+        "message_id": "example",
+        "deliveries": []
+      },
+      "error": null,
+      "effects": [],
+      "evidence": [],
+      "observed_at": "2026-01-01T00:00:00Z",
+      "extensions": {}
+    }
+  },
+  {
+    "protocol": "coordination",
+    "op": "mail.retry",
+    "mode": "mutate",
+    "request": {
+      "protocol": "loom.coordination",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": "operation-example",
+      "idempotency_key": "key-example",
+      "op": "mail.retry",
+      "actor": {
+        "id": "Agni",
+        "run_id": null,
+        "epoch": 1
+      },
+      "target": {
+        "assignment_id": null,
+        "attempt_id": null,
+        "host_id": null
+      },
+      "expected_revision": 1,
+      "timeout_ms": 5000,
+      "args": {
+        "delivery_id": "example"
+      },
+      "extensions": {}
+    },
+    "response": {
+      "protocol": "loom.coordination",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": "operation-example",
+      "op": "mail.retry",
+      "target": {
+        "assignment_id": null,
+        "attempt_id": null,
+        "host_id": null
+      },
+      "ok": true,
+      "status": "completed",
+      "revision": null,
+      "durable": false,
+      "result": {
+        "delivery_id": "example",
+        "message_id": "example",
+        "message_digest": "git-blob-sha1-v1:1111111111111111111111111111111111111111",
+        "recipient": "task:example",
+        "attempt_id": null,
+        "revision": 1,
+        "state": "pending",
+        "authority_sync": "committed",
+        "next_action": "none",
+        "reason": null
+      },
+      "error": null,
+      "effects": [],
+      "evidence": [],
+      "observed_at": "2026-01-01T00:00:00Z",
+      "extensions": {}
+    }
+  },
+  {
+    "protocol": "coordination",
+    "op": "mail.pump",
+    "mode": "mutate",
+    "request": {
+      "protocol": "loom.coordination",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": "operation-example",
+      "idempotency_key": "key-example",
+      "op": "mail.pump",
+      "actor": {
+        "id": "Agni",
+        "run_id": null,
+        "epoch": 1
+      },
+      "target": {
+        "assignment_id": null,
+        "attempt_id": null,
+        "host_id": null
+      },
+      "expected_revision": 1,
+      "timeout_ms": 5000,
+      "args": {
+        "run_id": "example",
+        "deadline_ms": 1
+      },
+      "extensions": {}
+    },
+    "response": {
+      "protocol": "loom.coordination",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": "operation-example",
+      "op": "mail.pump",
+      "target": {
+        "assignment_id": null,
+        "attempt_id": null,
+        "host_id": null
+      },
+      "ok": true,
+      "status": "completed",
+      "revision": null,
+      "durable": false,
+      "result": {
+        "deliveries": [],
+        "next_cursor": null,
+        "deadline_reached": false
+      },
+      "error": null,
+      "effects": [],
+      "evidence": [],
+      "observed_at": "2026-01-01T00:00:00Z",
+      "extensions": {}
+    }
+  },
+  {
+    "protocol": "coordination",
+    "op": "events.read",
+    "mode": "read",
+    "request": {
+      "protocol": "loom.coordination",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": null,
+      "idempotency_key": null,
+      "op": "events.read",
+      "actor": {
+        "id": "Agni",
+        "run_id": null,
+        "epoch": 1
+      },
+      "target": {
+        "assignment_id": null,
+        "attempt_id": null,
+        "host_id": null
+      },
+      "expected_revision": null,
+      "timeout_ms": 5000,
+      "args": {
+        "after_sequence": 1,
+        "limit": 1
+      },
+      "extensions": {}
+    },
+    "response": {
+      "protocol": "loom.coordination",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": null,
+      "op": "events.read",
+      "target": {
+        "assignment_id": null,
+        "attempt_id": null,
+        "host_id": null
+      },
+      "ok": true,
+      "status": "completed",
+      "revision": null,
+      "durable": false,
+      "result": {
+        "events": [],
+        "next_sequence": 1
+      },
+      "error": null,
+      "effects": [],
+      "evidence": [],
+      "observed_at": "2026-01-01T00:00:00Z",
+      "extensions": {}
+    }
+  },
+  {
+    "protocol": "coordination",
+    "op": "watch",
+    "mode": "read",
+    "request": {
+      "protocol": "loom.coordination",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": null,
+      "idempotency_key": null,
+      "op": "watch",
+      "actor": {
+        "id": "Agni",
+        "run_id": null,
+        "epoch": 1
+      },
+      "target": {
+        "assignment_id": null,
+        "attempt_id": null,
+        "host_id": null
+      },
+      "expected_revision": null,
+      "timeout_ms": 5000,
+      "args": {
+        "run_id": "example",
+        "every_ms": 1,
+        "deadline_ms": 1
+      },
+      "extensions": {}
+    },
+    "response": {
+      "protocol": "loom.coordination",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": null,
+      "op": "watch",
+      "target": {
+        "assignment_id": null,
+        "attempt_id": null,
+        "host_id": null
+      },
+      "ok": true,
+      "status": "completed",
+      "revision": null,
+      "durable": false,
+      "result": {
+        "observations": [],
+        "next_cursor": null,
+        "state": "settled"
+      },
+      "error": null,
+      "effects": [],
+      "evidence": [],
+      "observed_at": "2026-01-01T00:00:00Z",
+      "extensions": {}
+    }
+  }
+]
