@@ -40,19 +40,28 @@ prompt is not proof of dependable operation.
    implementation checks, not live consumer proof. Do not run ops/mutate.sh
    during setup: it is the longer contributor/CI mutation gate, runnable locally
    or on a compute host with `bash ops/mutate.sh --on HOST`.
+   Set LOOM_TOOLS to the absolute path of this trusted checkout. Use
+   bash "$LOOM_TOOLS/ops/loom" below; no installed loom alias is assumed.
 
 4. Resolve consumer configuration.
    Reuse an existing config when correct. Infer candidates from repository
    remotes, project instructions and CI, but do not invent an owner's decision
    or treat an arbitrary shell command as trusted. Ask only for unresolved
    ticket repository, trusted checks, workspace location, executor and worker
-   cap. Run `bash ops/loom capacity` when available and offer its suggestion;
-   it is not permission to launch that many workers. Omitted workers = no cap.
+   cap. Run `bash "$LOOM_TOOLS/ops/loom" capacity` when available and offer its
+   suggestion; it is not permission to launch that many workers. Omitted
+   workers = no cap.
    Create or narrowly update consumers/<name>.toml from consumers/example.toml
    only within authorized scope; preserve unrelated values. Private configs
    there are ignored, except the tracked examples. A tracked consumer config
-   must be committed before dispatch; leave that to its authorized conductor.
+   must be committed before calibration or dispatch; leave that to its
+   authorized conductor.
    Do not commit, push, merge or publish as part of this bootstrap.
+   Set FILE to the absolute path of the resolved config and export LOOM_REPO
+   as the absolute consumer checkout path, distinct from LOOM_TOOLS. Keep these
+   bindings in the shell executing each command. If a tool starts a fresh shell
+   per call, bind them in that invocation or explicitly source an approved
+   private setup file; do not assume they persist across tool calls.
 
 5. Inspect structural wiring and save redacted setup evidence privately under .loom/.
    Check `gh auth status` and `gh repo view <owner/name> --json defaultBranchRef,name`
@@ -70,12 +79,15 @@ prompt is not proof of dependable operation.
    Inspect the current agent's actual project instruction loading conventions
    and existing content first. Use templates/LOOM_SESSION.md as the checklist.
    Schema 1 recognizes root AGENTS.md and CLAUDE.md only; at least one must
-   be regular, readable, non-symlink and contain literal loom-calibration:v1.
+   contain literal loom-calibration:v1; every present root entry file must be
+   regular, readable and non-symlink.
    Use the existing file supported by this agent. Do not create a competing
    instruction file when conventions disagree; report unwired and offer manual
    entry instead. Calibration hashes both root files when present.
    Add one marked section with the template's entry/check/stop semantics and
-   a project-relative checklist link. Reuse/update that section on reruns;
+   a project-relative checklist link. Copy the checklist into the consumer at
+   that link's target if absent; reuse an existing reviewed checklist and verify
+   the link resolves from the entry file. Reuse/update that section on reruns;
    preserve everything outside it and any user customizations. Duplicate or
    malformed markers require reconciliation, not blind appending. Store private
    configuration references outside shared instructions. Add no consumer keys.
@@ -94,12 +106,11 @@ prompt is not proof of dependable operation.
    A specification alone does not establish installed command availability.
    Bind LOOM_REPO to the intended consumer checkout (otherwise cwd is used).
    Resolve FILE to the existing consumer config and first compare:
-     loom calibrate --consumer FILE --check
+     bash "$LOOM_TOOLS/ops/loom" calibrate --consumer "$FILE" --check
    Reuse a current successful baseline. For missing evidence or drift, review
    current observations and intended changes before explicitly recording:
-     loom calibrate --consumer FILE
+     bash "$LOOM_TOOLS/ops/loom" calibrate --consumer "$FILE"
    Then run --check again. Never unconditionally record on a setup rerun.
-   An uninstalled CLI can be invoked as bash <trusted-loom-checkout>/ops/loom.
    Capture each exit code and inspect the complete JSON envelope. Exit 0 means
    ok:true and state:ready; items[0] must have schema:1, readiness:ready and
    acceptance:not_run. Exit 1 blocks dependent delegation; exit 2 is a usage
@@ -119,17 +130,29 @@ prompt is not proof of dependable operation.
    Calibration hashes source/config/bridge/tool bytes, checkout identity and
    selected executor. A moved checkout/config needs its own baseline. Branch
    and HEAD changes alone are not bootstrap drift or acceptance evidence.
-   The agent enforces this protocol. Existing dispatch/start/launch commands
+   It does not hash linked checklists or project check implementations, inspect
+   credentials or session permissions, or prove host reachability. Read the
+   checklist and review authorization at entry; repeat relevant authorized
+   connectivity/check observations after changes even when --check is ready.
+   The agent must follow this protocol. Existing dispatch/start/launch commands
    are not automatically guarded; a gap remains between check and delegation.
 
 8. Render a ticket without opening an issue:
-     bash ops/ticket.sh consumers/<name>.toml \
+     bash "$LOOM_TOOLS/ops/ticket.sh" "$FILE" \
        --short first-check --title "First check" \
        --scope "<authorized area>" --out "everything else" \
        --done "<trusted checks> exits 0" --dry-run
    Show the Mandate. Opening tickets or starting workers requires task-specific
    authorization; reuse it if already granted, otherwise give the exact proposed
    next action for approval. A dry run is not a live workflow demonstration.
+   When ticket creation is authorized, use bash "$LOOM_TOOLS/ops/loom" accept
+   with --consumer "$FILE" and the same reviewed --short/--title/--scope/--out/--done
+   values (omit --dry-run). This opens an issue, not a worker and not project
+   acceptance. Use its returned ticket number for an authorized dispatch,
+   then its returned assignment id for start (Orca) or launch (local); check
+   calibration immediately before dispatch and again before start/launch.
+   Follow the setup reference for harvest, revision-specific verify and collect;
+   do not continue dependent actions after a failed command or non-ready report.
 
 Finish with changed files/tools, captured gate results, executor, evidence
 location, entry-file loading status and unresolved decisions. Separate:
