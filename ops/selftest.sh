@@ -292,8 +292,12 @@ EOF_JQ
     cp "$scratch/race-bridge" "$repo/AGENTS.md"
     rm "$scratch/bin/jq"
     calops=$scratch/safety-install/ops
+    # BSD sed joins inserted text to the following line unless the text ends
+    # with a newline; without it the append target becomes
+    # "$CAL_RACE_TARGETexit" and macOS writes AGENTS.mdexit instead of AGENTS.md.
     sed '/^exit "\$rc"/i\
-[[ -z ${CAL_RACE_TARGET:-} ]] || printf "# concurrent drill change\\n" >> "$CAL_RACE_TARGET"' "$ops/verify.sh" > "$calops/verify.sh"
+[[ -z ${CAL_RACE_TARGET:-} ]] || printf "# concurrent drill change\\n" >> "$CAL_RACE_TARGET"
+' "$ops/verify.sh" > "$calops/verify.sh"
     cal >/dev/null || fail 'record race fixture baseline failed'
     cp "$proof" "$scratch/race-proof"
     rc=0; obj=$(CAL_RACE_TARGET="$repo/AGENTS.md" cal) || rc=$?
