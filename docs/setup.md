@@ -9,7 +9,7 @@ title: Setup
     <p class="lead">Give your coding agent the bootstrap prompt. It updates the tools checkout to the latest <code>main</code>, inspects your project, reuses existing choices, and guides you through configuration and offline checks.</p>
     <div class="actions"><button class="button primary" data-copy-bootstrap hidden>Copy bootstrap prompt</button><a class="button secondary" href="copy.html">Read the prompt</a></div>
     <p class="copy-status" role="status" aria-live="polite" data-copy-status></p>
-    <p><a href="patterns.html">Compare coordination patterns and model roles</a>: bootstrap offers three task-appropriate choices; you can keep the simple baseline or defer.</p>
+    <p><a href="patterns.html">Compare coordination patterns and model roles</a>: name a catalog pattern or say you have no opinion and let the session propose and pick; you can also defer.</p>
     <p class="fine"><a href="bootstrap.txt">Open raw prompt</a> to select and copy manually. Prefer hands-on setup? <a href="#manual-reference">Jump to the manual reference.</a></p>
     <noscript><p>JavaScript is off. Open the raw prompt, select all its text, and copy it into your coding agent.</p></noscript>
   </div>
@@ -247,22 +247,52 @@ Orca; it never silently falls back.
 
 ### Coordination choice before delegation
 
-Use the [pattern catalog](patterns.html#catalog) for three task-appropriate
-recommendations and [model-role matching](patterns.html#models). Each candidate
-compares cost against one scoped worker, time, human productivity and quality;
-unavailable alternatives must be labelled. Read-only host inventory informs
-advice, not an automatic model router. Local/custom harnesses need no Orca;
-missing discovery can use user-supplied observed inventory or explicit unknowns.
-`capacity` counts connected hosts only.
+The root session bridge in `AGENTS.md` or `CLAUDE.md` is the per-repo
+permission to use patterns. Without it, use the base Loom turn without a catalog
+pattern. Every complete `catalog/<id>/PATTERN.md` in the trusted Loom checkout
+is selectable; missing fields or attribution exclude an entry. The
+[pattern page](patterns.html#catalog) explains the families, and
+[model-role matching](patterns.html#models) guides advice.
 
-Choose explicitly, browse the full maintained catalog, keep the baseline or
-defer. Preserve an existing approved choice until the user replaces it. Save a
-selected recipe in one reviewed `loom-pattern:start` / `loom-pattern:end`
-section inside the supported root session bridge; reuse the
+A named pattern wins. Ambiguous names list matches without a pick; unknown or
+incomplete names are reported without substitution. Manual choice lists every
+complete entry with attribution. If you explicitly have no opinion, the session
+says "Let me propose an ideal flow for us," then picks one using the
+[selection criteria](patterns.html#recommendations):
+eligibility, task shape, evidence, bounded cost, safety and reversibility, then
+the simplest option with fewest workers closest to solo. It explains the pick
+and any tie-break; unknown capabilities are ineligible and unsupported figures
+stay unknown. If none is eligible, it offers the solo baseline with human review
+without relaxing constraints. Before following steps in the same session, it
+announces the name, author, upstream, license, task-grounded cost, effectiveness
+and intelligence estimate, and **using this pattern**. Silence asks once, then
+continues the authorized base turn without a pattern and records no choice.
+
+Read-only host inventory informs advice, not an automatic model router.
+Local/custom harnesses need no Orca; missing discovery can use user-supplied
+observed inventory or explicit unknowns. `capacity` counts connected hosts only.
+
+Reuse a saved choice while its fit, capabilities, budget and authorization hold,
+and say its name. Changed advice stays a proposal until accepted or the person
+asks the session to pick. Save the selection immediately in one reviewed
+`loom-pattern:start` / `loom-pattern:end` section inside the supported root
+session bridge; reuse the
 [template](https://github.com/RedKnight13/loom/blob/main/templates/LOOM_SESSION.md).
-This changes fingerprinted entry bytes: check calibration, review drift before
-recording, then check again. Linked pattern artifacts are not fingerprinted.
-No choice is required for existing authorized work to continue without expansion.
+This changes fingerprinted entry bytes: run `loom calibrate --consumer FILE
+--check`, review named drift, explicitly record with `loom calibrate --consumer
+FILE`, then check again before delegation. The
+[calibration instructions](#calibration-and-session-entry-schema-1) give the
+trusted invocation and evidence requirements. If this flow is unavailable, keep
+the choice session-only and say it was not persisted. Linked pattern artifacts
+are not fingerprinted; review them separately. No choice is required for
+existing authorized work to continue without expansion.
+
+New entries arrive with the normal Loom checkout update. Contributors add or
+change `catalog/<id>/PATTERN.md` through a PR; owner review and merge is the
+trust gate. Follow the [contribution flow and review checklist](https://github.com/RedKnight13/loom/blob/main/catalog/README.md),
+including complete fields, verifiable attribution and license, supported claims,
+privacy and steps that preserve the protocol, laws, checks and owner-only finish.
+
 Selection grants no launch, installation, model, cap or placement permission.
 Loom Orca `start` accepts only `--agent`; model/effort remain pinned at dispatch from
 the reviewed consumer. Per-role advice needs explicitly reviewed consumer

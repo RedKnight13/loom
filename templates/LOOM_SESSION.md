@@ -1,6 +1,8 @@
 # Loom session entry
 
-This checklist neither installs a hook nor grants permission. Schema 1 recognizes
+This checklist installs no hook and grants no execution permission. The root
+session bridge is the per-repo permission to use catalog patterns; a repo without
+it follows the base Loom turn without a catalog pattern. Schema 1 recognizes
 root `AGENTS.md` and `CLAUDE.md`; at least one must contain `loom-calibration:v1`.
 Every present root entry file must be readable, regular and non-symlink. Both
 are fingerprinted when present. Inspect the agent's actual loading convention
@@ -58,12 +60,32 @@ not run** and move to a capable project session. Confirm you read this bridge;
 if loading is uncertain, open it explicitly rather than assuming persistence.
 
 Read the approved coordination choice below if present. Reuse it only while
-its task fit, capabilities, budget and authorization still hold. If absent or
-deferred, continue only existing authorized scope without adding workers; never
-infer a selection. Show changed advice separately, preserve the approved text
-until explicitly replaced, and stop work that depends on an infeasible choice.
-Manual choice opens the full maintained catalog; unsupported recipes remain
-informational. No response or timeout selects or launches anything.
+its task fit, capabilities, budget and authorization still hold, and say its
+name. Preserve the approved text until explicitly replaced; changed advice is
+a proposal until the person accepts it or asks the session to pick. Stop work
+that depends on an infeasible choice.
+
+Select only complete `catalog/<id>/PATTERN.md` entries in the trusted Loom
+checkout. Missing fields or attribution make an entry ineligible. A named
+pattern wins: list matches without picking if ambiguous; report an unknown or
+incomplete name without substituting. Manual choice lists every complete entry
+with attribution. If the person explicitly has no opinion, say "Let me propose
+an ideal flow for us," then pick one using the selection criteria in the
+trusted Loom checkout `docs/patterns.md` (Choose a pattern):
+eligibility, task shape, evidence, bounded cost, safety and reversibility, then
+the simplest option with fewest workers closest to solo as the tie-break.
+Unknown capability is ineligible; unsupported estimates stay unknown. State the
+reasoning and any tie-break. If none is eligible, say so and offer the solo
+baseline with human review without relaxing constraints.
+
+Before following steps in this same session, announce the name, author,
+upstream and license, the task-grounded cost, effectiveness and intelligence
+estimate, and **using this pattern**. Silence is not no opinion: ask once, then
+continue the authorized base turn without a pattern and record no choice if
+there is still no answer. Selection never launches workers. Pattern steps remain
+subordinate to the protocol, consumer laws, trusted checks and owner-only finish.
+New entries arrive with the normal Loom checkout update; contribution and owner
+PR review follow `catalog/README.md` in that checkout.
 
 Model-role recommendations are advice, not applied settings. Inspect current
 inventory for available local/custom harnesses or the optional Orca adapter on
@@ -83,7 +105,8 @@ prior acceptance do not substitute for that verification or authorize a worker.
 
 ## Optional approved coordination choice
 
-Only after explicit user selection, insert ONE section with the following fields
+After explicit user selection or an explicit no-opinion request to pick, save
+ONE section with the following fields
 inside the root bridge above. This example is a fill-in guide, not a selection;
 do not copy unfilled placeholders as approved instructions. Check both root
 entry files for duplicate/conflicting sections, reconcile first, and preserve
@@ -93,7 +116,7 @@ on reruns. A changed recommendation remains a proposal until accepted.
 ```markdown
 <!-- loom-pattern:start -->
 ### Approved coordination choice
-- Recipe and catalog reference: <chosen family; trusted docs/patterns.md>
+- Recipe and catalog reference: <chosen name; trusted catalog/<id>/PATTERN.md>
 - Task/fit: <scope and reason; when to reconsider>
 - Roles and context: <responsibilities; permitted input per role; isolation>
 - Bounds: <worker total and peak concurrency; review/retry rounds; time/token budget>
@@ -103,7 +126,7 @@ on reruns. A changed recommendation remains a proposal until accepted.
   installed/configured/launch-verified evidence; cost basis and confidence>
 - Applied configuration: <existing approved consumer settings or unknown;
   advice not applied; no per-role routing implied>
-- Approval scope: <user's explicit selection and constraints; no new permissions>
+- Approval scope: <explicit selection or no-opinion request to pick; constraints; no new permissions>
 <!-- loom-pattern:end -->
 ```
 
@@ -113,7 +136,9 @@ this root section. Schema 1 fingerprints root entry bytes, including the choice,
 but not linked checklist or separate pattern artifact bytes. Review linked
 content separately. On an approved edit, run `--check`, review the named drift,
 explicitly record if appropriate, then check again before delegation. Do not
-refresh the baseline merely to accept new advice. The markers add no parser,
+refresh the baseline merely to accept new advice. If this recording flow is
+unavailable, keep the choice session-only and say it was not persisted; dependent
+delegation still requires a successful check. The markers add no parser,
 TOML keys, model calls, scheduler, telemetry or automatic enforcement.
 
 ## Evidence and limits

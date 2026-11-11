@@ -105,23 +105,39 @@ prompt is not proof of dependable operation.
    by calibration: calibration never calls gh auth, compute probes or a model.
 
 6. Offer coordination and model-role advice before persisting a choice.
-   Read docs/patterns.md from the trusted Loom checkout (published catalog:
-   https://redknight13.github.io/loom/patterns.html). It is the full maintained
-   catalog, not every possible pattern. Inspect task size, dependencies, shared
-   files, trusted checks, risk, budget, worker cap, placement and existing choice.
-   If the task is unknown, ask only for its goal and constraints; do not guess.
-   Reuse a still-applicable approved choice. On initial selection or a requested
-   reconsideration, present exactly THREE task-appropriate candidates with ONE
-   marked recommended, plus a single scoped worker baseline reference (even if
-   not shortlisted). Compare fit/rationale; roles and peak concurrency; cost
-   increase vs baseline with assumptions/confidence; expected wall-clock and
+   Read every complete catalog/<id>/PATTERN.md in the trusted Loom checkout;
+   built-in and community entries form the selectable set. docs/patterns.md is
+   the explanation, not a second selection source. Ignore incomplete entries;
+   if one is named, say it is incomplete. The catalog is per repo: the root
+   AGENTS.md or CLAUDE.md session bridge is the permission. Without that bridge,
+   follow the base Loom turn without applying a catalog pattern. New entries
+   arrive with the normal checkout update in step 2; no separate catalog URL,
+   clone or pull is needed.
+   Inspect task size, dependencies, shared files, trusted checks, risk, budget,
+   worker cap, placement and existing choice. If the task is unknown, ask only
+   for its goal and constraints; do not guess. Reuse a still-applicable approved
+   choice and say its name. An explicit pattern name wins: do not substitute
+   your own pick. If ambiguous, list the matches and do not pick; if unknown,
+   say so and do not substitute.
+   If the person explicitly has no opinion, say
+   "Let me propose an ideal flow for us" then apply the criteria in the pattern
+   page, docs/patterns.md (Choose a pattern), in order:
+   eligibility, task shape, evidence, cost, safety and reversibility, then the
+   simplest option/fewest workers/closest-to-solo tie-break. Unknown capability
+   is ineligible; unsupported evidence stays unknown. Pick one eligible pattern
+   and explain the deciding criteria in one short paragraph, noting any
+   tie-break. If none is eligible, say so and offer solo with human review;
+   do not relax constraints. Do not always recommend a team.
+   Before following a selected pattern in this same session, announce its name,
+   author, upstream and license; its cost increase, effectiveness and intelligence
+   estimate grounded in its fields and this task; then say "using this pattern".
+   Compare fit/rationale; roles and peak concurrency; cost increase vs a single
+   scoped worker baseline with assumptions/confidence; expected wall-clock and
    accepted-work-per-human-hour impact; effectiveness evidence, defects/rework
-   tradeoffs and constraints. Cite the catalog's primary sources. Do not always
-   recommend a team. Mark candidates recommendable, recipe-only or unavailable
-   from observed capabilities; if fewer than three are feasible, label the
-   unavailable candidates and reasons instead of inventing feasibility. Mark
-   the simplest safe route recommended, even if delegation is currently blocked.
-   Never imply an unavailable candidate can be activated by choosing its name.
+   tradeoffs and constraints. Cite the entry's primary sources. Mark discussed
+   candidates recommendable, recipe-only or unavailable from observed
+   capabilities. Never imply an unavailable candidate can be activated by
+   choosing its name.
    Separate total spend, elapsed time, human productivity and quality. Use token
    budgets times verified current provider rates, including coordinator, review,
    retries, tools and compute; otherwise monetary cost is unknown. Subscription
@@ -158,16 +174,20 @@ prompt is not proof of dependable operation.
    apply to custom harnesses. When a later launch is separately authorized,
    verify its effective model/effort/host fields;
    unknown or mismatched fields are not proof the advice was applied.
-   Offer: choose a candidate, manual catalog, keep simple baseline, or defer.
-   For manual, show ALL maintained families and their capability status, then
-   validate the requested recipe's roles, bounds and context isolation. Selection
-   grants no permission to install, change models/caps/placement or launch.
-   Silence or a timeout never selects or launches anything. Existing work with
-   no choice may continue within its existing authorization and calibration;
-   do not introduce extra workers. Deferral does not save an approved choice.
+   Offer: name a pattern, say no opinion, browse the catalog, keep the simple
+   baseline, or defer. For manual choice, show ALL complete catalog entries
+   with attribution and capability status, then validate the requested recipe's
+   roles, bounds and context isolation. Selection grants no permission to
+   install, change models/caps/placement or launch.
+   Silence or a timeout is not no opinion and never selects or launches anything.
+   Ask once; if still unanswered, continue the base turn without a pattern and
+   record no choice. Existing work with no choice may continue within its
+   existing authorization and calibration; do not introduce extra workers.
+   Deferral does not save an approved choice.
    If an approved choice exists, show changed advice as a proposal and retain
-   the original until explicitly replaced. If now infeasible, stop only work
-   depending on it and offer a simpler route; do not silently fall back.
+   the original until the person accepts the change or explicitly asks you to
+   pick. If now infeasible, stop only work depending on it and offer a simpler
+   route; do not silently fall back.
 
 7. Persist a project session-entry bridge where supported.
    Inspect the current agent's actual project instruction loading conventions
@@ -185,7 +205,8 @@ prompt is not proof of dependable operation.
    preserve everything outside it and any user customizations. Duplicate or
    malformed markers require reconciliation, not blind appending. Store private
    configuration references outside shared instructions. Add no consumer keys.
-   After explicit selection, save exactly one loom-pattern:start/end section
+   After explicit selection (including a requested no-opinion pick), save
+   exactly one loom-pattern:start/end section
    inside that bridge, using the template fields: approved recipe, task/fit,
    roles/context boundaries, worker/review/time/token bounds, stop conditions,
    model-role advice versus applied config, evidence/unknowns and approval scope.
@@ -195,7 +216,9 @@ prompt is not proof of dependable operation.
    Root entry bytes (including this choice) are covered by schema-1 calibration;
    linked pattern/checklist artifact bytes are not. Keep the operative choice
    in the root section and review linked artifacts separately. After a reviewed
-   change, compare first, review drift, explicitly record, then check again.
+   change, compare first, review drift, explicitly record, then check again
+   before delegation. If that flow is unavailable, keep the choice session-only
+   and say it was not persisted.
    Read the result back. A file existing is structural wiring, not proof that a
    fresh agent loads it. If no supported entry file can be established, report
    unwired and provide the explicit manual session-start checklist instead.

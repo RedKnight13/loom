@@ -30,29 +30,50 @@ Missing tools are installed only within granted authorization. Existing files,
 consumer choices and global instructions are preserved. Only consequential
 unresolved choices require questions.
 
-## Three choices, grounded in this project
+## A pattern grounded in this project
 
-After inspecting the task, checks and capacity, bootstrap offers exactly three
-coordination candidates, marks one recommended and compares each with a single
-scoped worker baseline. Compare cost assumptions, elapsed time, accepted work
-per human hour and defects/rework separately; no measured gains are promised.
-Each candidate also gets role-by-role agent/model advice from the authorized
-host's observed inventory. Local/custom harnesses work without Orca; if discovery
-is unavailable, use user-supplied observed inventory or explicit unknowns without
+The selectable set is every complete `catalog/<id>/PATTERN.md` in the Loom
+checkout, including built-in and community entries. Incomplete entries are not
+listed or used; if named, they are reported as incomplete. The
+[pattern page](patterns.html#catalog) explains the catalog; it is not a second
+selection source. The catalog is per repo: the root `AGENTS.md` or `CLAUDE.md`
+session bridge is the permission. Without it, the session follows the base Loom
+turn without a catalog pattern. New entries arrive with the normal checkout
+update; there is no separate catalog URL, clone or pull.
+
+An explicit name wins. An ambiguous name lists the matches without picking;
+an unknown name is reported without substitution. If you explicitly have no
+opinion, the session says "Let me propose an ideal flow for us", applies the
+[selection criteria](patterns.html#recommendations)
+in order—eligibility, task shape, evidence, cost, safety and reversibility,
+then the simplest/fewest-workers/closest-to-solo tie-break—and picks one.
+It explains the deciding criteria and any tie-break. Unknown capabilities are
+ineligible; if none qualifies, it offers solo with human review without relaxing
+constraints. Before following a selection, the same session announces its name,
+author, upstream and license, its grounded cost increase, effectiveness and
+intelligence estimate, and **using this pattern**.
+
+After inspecting the task, checks and capacity, compare cost assumptions,
+elapsed time, accepted work per human hour and defects/rework separately against
+a single scoped worker baseline; no measured gains are promised. Each discussed
+candidate also gets role-by-role agent/model advice from the authorized host's
+observed inventory. Local/custom harnesses work without Orca; if discovery is
+unavailable, use user-supplied observed inventory or explicit unknowns without
 blocking advice. Unknown access, rates or quota stay unknown.
 
-Choose a candidate, keep the simple baseline, defer, or request the
-[full maintained pattern catalog](patterns.html#catalog). Manual choice lists
-all maintained families with capability limits; it does not claim to enumerate
-all possible patterns. Unavailable recipes remain informational. Selection
-never installs a plugin, changes models, raises caps, moves work or launches it.
-Loom capacity counts hosts, not model availability or safe concurrency.
+You can also choose by hand: list every complete entry with attribution and
+capability limits. Unavailable recipes remain informational. Keeping the simple
+baseline or deferring remains possible. Selection never installs a plugin,
+changes models, raises caps, moves work or launches it. Loom capacity counts
+hosts, not model availability or safe concurrency.
 
-An approved choice is reused. Changed advice is a proposal until explicitly
-accepted; silence never selects anything. Existing authorized work without a
-choice can continue safely without adding workers. The reviewed choice lives
-in one marked section of the supported root session-entry file, so existing
-schema-1 calibration detects edits. Linked artifacts are not fingerprinted.
+An approved choice that still fits is reused and named. Changed advice remains
+a proposal until accepted or you explicitly ask the session to pick. Silence is
+not no opinion: ask once, then continue the base turn without a pattern and
+record no choice if still unanswered. Existing authorized work can continue
+without adding workers. The reviewed choice lives in one marked section of the
+supported root session-entry file, so existing schema-1 calibration detects
+edits. Linked artifacts are not fingerprinted.
 Advice is not runtime routing: Loom Orca start exposes only `--agent`; consumer
 model/effort are pinned at dispatch. See [model-role matching](patterns.html#models)
 for inventory evidence and configuration limits.
