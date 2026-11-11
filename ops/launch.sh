@@ -16,6 +16,7 @@ id=$1
 shift 2
 loom_id "$id"
 loom_init
+loom_legacy_dispatch_fence
 loom_lock
 file=$(loom_record "$id")
 # Dispatch pins the executor. Native assignments never consult unrelated Orca

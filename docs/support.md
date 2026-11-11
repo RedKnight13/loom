@@ -71,6 +71,31 @@ otherwise continuity is unverified. Unsupported clients must open it manually.
 Rechecking at session entry, before delegation and after dependency changes is
 an agent instruction, not guaranteed runtime enforcement or background repair.
 
+The root session bridge is also the per-repo permission for catalog patterns;
+a repo without it uses the base Loom turn only. Selection reads every complete
+`catalog/<id>/PATTERN.md` in the trusted Loom checkout. Incomplete entries are
+not offered or used. A named pattern wins; ambiguous names list matches without
+picking, and unknown names get no substitute. Manual choice lists all complete
+entries with attribution. Explicit no opinion means the session says "Let me
+propose an ideal flow for us," applies the
+[selection criteria](patterns.html#recommendations),
+and picks one. It states the reasoning, name, author, upstream, license and
+task-grounded cost, effectiveness and intelligence estimate, then **using this
+pattern**, in the same session. Silence asks once, then continues the authorized
+base turn without a pattern and records no choice. A saved choice that still
+fits is reused; a changed recommendation remains a proposal until accepted or
+the person asks the session to pick. Selection grants no execution permission.
+
+Save a selection in one `loom-pattern:start` / `loom-pattern:end` section in
+that repo's root bridge. This changes fingerprinted bytes: run `loom calibrate
+--consumer FILE --check`, review named drift, explicitly record with `loom
+calibrate --consumer FILE`, then check again before delegation. If that flow is
+unavailable, keep the choice session-only and report it was not persisted;
+dependent delegation still requires a successful check. Linked pattern content
+is not fingerprinted and needs separate review. New entries arrive with the
+normal Loom checkout update through owner-reviewed and merged PRs; see the
+[catalog contribution and review checklist](https://github.com/RedKnight13/loom/blob/main/catalog/README.md).
+
 The confirmed schema-1 contract provides `loom calibrate --consumer FILE`
 (explicit record plus fixed offline drill) and `loom calibrate --consumer FILE
 --check` (comparison without writes, locks or drill rerun). Both ship in

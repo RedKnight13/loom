@@ -72,7 +72,7 @@ need_id() {
 
 status_object() {
     local raw items state fact
-    raw=$(bash "$ops/status.sh")
+    raw=$(run_out bash "$ops/status.sh")
     if [[ -z $raw ]]; then
         emit true waiting "nothing waits for a person"
     fi
@@ -89,6 +89,31 @@ status_object() {
     fact=$(jq -r '.[0].fact // "nothing waits for a person"' <<< "$items")
     emit true "$state" "$fact" "" "" "$items"
 }
+
+# Native is opt-in by an explicit context or an existing v2 routing record.
+# Legacy assignment IDs always remain on their original handler.
+# shellcheck source=ops/workflow.sh
+source "$ops/workflow.sh"
+if loom_workflow_selected "$cmd" "$@"; then
+    native_err=$(mktemp)
+    native_rc=0
+    native_out=$(bash "$ops/workflow.sh" "$cmd" "$@" 2>"$native_err") || native_rc=$?
+    native_protocol=false
+    for native_arg in "$@"; do [[ $native_arg != --protocol ]] || native_protocol=true; done
+    if [[ $native_protocol == true && -n $native_out ]] && jq -e '.protocol and .version and has("ok")' <<< "$native_out" >/dev/null 2>&1; then
+        rm -f "$native_err"
+        printf '%s\n' "$native_out" >&3
+        exit "$native_rc"
+    fi
+    native_fact=$(tail -n 1 "$native_err"); rm -f "$native_err"
+    native_items=$(jq -sc '.' <<< "$native_out" 2>/dev/null) || native_items='[]'
+    if (( native_rc==0 )); then
+        native_state=$(jq -r '.[0].result.state // .[0].state // "complete"' <<< "$native_items")
+        emit true "$native_state" 'native operation completed; inspect items for captured evidence' '' '' "$native_items"
+    fi
+    [[ -n $native_fact ]] || native_fact=$(jq -r '.[0].error.message // "native operation refused or uncertain"' <<< "$native_items")
+    emit false failed "$native_fact" '' '' "$native_items" '[]' "$native_rc"
+fi
 
 case $cmd in
     calibrate)

@@ -641,6 +641,14 @@ out=$(bash "$ops/collect.sh" "$id1")
 [[ $out == *'1 commit(s) over base'* ]] || fail "collect: $out"
 [[ $(git -C "$repo" log -1 --format=%s fixture-task) == 'build out.txt' ]] || fail 'branch not in checkout'
 [[ $(git -C "$repo" log -1 --format=%an fixture-task) == 'Loom Fixture' ]] || fail 'consumer identity not carried into clone'
+# A routine retry may not erase a conductor edit on the collected branch.
+collected_tip=$(git -C "$repo" rev-parse fixture-task)
+conductor_tip=$(printf 'conductor fixture fix\n' | git -C "$repo" commit-tree "$collected_tip^{tree}" -p "$collected_tip")
+git -C "$repo" update-ref refs/heads/fixture-task "$conductor_tip" "$collected_tip"
+if bash "$ops/collect.sh" "$id1" >/dev/null 2>&1; then fail 'repeat collect overwrote conductor branch'; fi
+[[ $(git -C "$repo" rev-parse fixture-task) == "$conductor_tip" ]] || fail 'conductor tip changed'
+git -C "$repo" update-ref refs/heads/fixture-task "$collected_tip" "$conductor_tip"
+bash "$ops/collect.sh" "$id1" >/dev/null || fail 'unchanged collect replay refused'
 pass 'launch harvests ready; collect brings the branch home'
 
 # --- D2/D4: hung worker refused a twin, killed with its children, re-dispatchable ---
@@ -883,6 +891,9 @@ EOF
     bash "$ops/launch.sh" "$idr" -- bash -c 'printf "REJECT\n" > bad.txt; printf "state: ready — wrote bad\n" >> REPORT.md' >/dev/null
     jq -e '.reports[-1].fact | endswith("[loom commit rejected by the consumer'"'"'s hooks: '"$idr"'.commit.log]")' "$(rec "$idr")" >/dev/null || fail 'rejection not named'
     grep -q "hook: rejected bad.txt" "$LOOM_STATE/$idr.commit.log" || fail 'hook output not logged'
+    jq -e '.seal_failed==true and .reports[-1].state=="failed"' "$(rec "$idr")" >/dev/null || fail 'rejected seal remained ready'
+    if bash "$ops/verify.sh" "$idr" >/dev/null 2>&1; then fail 'verified rejected seal'; fi
+    if bash "$ops/collect.sh" "$idr" >/dev/null 2>&1; then fail 'collected rejected seal'; fi
 )
 pass "consumer commit hooks: fixers retried, rejections logged"
 

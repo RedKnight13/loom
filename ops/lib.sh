@@ -258,9 +258,12 @@ loom_harvest() {  # loom_harvest <file> <why-if-silent>
         for try in 1 2; do
             if { loom_ws "$host" "$workdir" git add -A &&
                  loom_ws "$host" "$workdir" git -c commit.gpgsign=false commit -q -m "loom($id): $state — $fact"; } >> "$clog" 2>&1; then
+                loom_write "$file" 'del(.seal_failed)'
                 break
             fi
             if [[ $try == 2 ]]; then
+                state=failed
+                loom_write "$file" ' .seal_failed = true '
                 fact="$fact [loom commit rejected by the consumer's hooks: ${clog##*/}]"
             fi
         done
@@ -278,6 +281,14 @@ loom_harvest() {  # loom_harvest <file> <why-if-silent>
 # TOML escapes; comments are stripped only outside quoted strings. Prints JSON.
 loom_config() {
     [[ -f $1 ]] || loom_error 'consumer config not found'
+    if [[ $(LC_ALL=C sed -n '/[^[:space:]]/{s/^[[:space:]]*//;s/\(.\).*/\1/;p;q;}' "$1") == '{' ]]; then
+        # Schema 2 is JSON; never reinterpret it as legacy TOML or auto placement.
+        # shellcheck source=ops/policy.sh
+        source "${BASH_SOURCE[0]%/*}/policy.sh"
+        loom_policy_validate config "$(realpath -e "$1")" || loom_error 'invalid schema-2 config'
+        cat "$1"
+        return
+    fi
     jq -Rse '
   def fields:
     if test("^\\s*$") then {}
@@ -382,4 +393,10 @@ loom_orca_host() {  # loom_orca_host <name-or-id>
     jq -r --arg w "$want" '
       [.result.hosts[] | select(.id == $w or .name == $w) | select(.connected == true or .kind == "local")][0] | [.name, (.selector // "--host \(.id)")] | @tsv
     ' <<< "$out"
+}
+
+# Older routing cannot ignore a v2 authority and allocate a second capacity pool.
+# Existing legacy observations/stop/harvest remain available without migration.
+loom_legacy_dispatch_fence() {
+    [[ ! -d ${LOOM_STATE:-$HOME/.loom}/v2 ]] || loom_error 'v2 authority present; legacy dispatch/launch refused; use an explicit native context'
 }

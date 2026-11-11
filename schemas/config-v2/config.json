@@ -1,0 +1,154 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:loom:config-v2:config",
+  "title": "Loom v2 config",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "const": 2
+    },
+    "repo": {
+      "type": "string",
+      "maxLength": 128,
+      "pattern": "^[^\\u0000]*$",
+      "x-loom-maxUtf8Bytes": 128,
+      "minLength": 1
+    },
+    "execution": {
+      "type": "object",
+      "properties": {
+        "provider": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[^\\u0000]*$",
+          "x-loom-maxUtf8Bytes": 128,
+          "minLength": 1
+        },
+        "transport": {
+          "enum": [
+            "process",
+            "ssh"
+          ]
+        },
+        "placement": {
+          "type": "object",
+          "properties": {
+            "allowed_hosts": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "maxLength": 128,
+                "pattern": "^[^\\u0000]*$",
+                "x-loom-maxUtf8Bytes": 128,
+                "minLength": 1
+              },
+              "minItems": 1,
+              "maxItems": 256,
+              "uniqueItems": true
+            },
+            "selection": {
+              "const": "explicit"
+            },
+            "selected_host": {
+              "type": "string",
+              "maxLength": 128,
+              "pattern": "^[^\\u0000]*$",
+              "x-loom-maxUtf8Bytes": 128,
+              "minLength": 1
+            },
+            "allow_local": {
+              "type": "boolean"
+            },
+            "fallback": {
+              "const": "deny"
+            }
+          },
+          "required": [
+            "allowed_hosts",
+            "selection",
+            "selected_host",
+            "allow_local",
+            "fallback"
+          ],
+          "additionalProperties": false
+        },
+        "agent_profile": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[^\\u0000]*$",
+          "x-loom-maxUtf8Bytes": 128,
+          "minLength": 1
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 128,
+              "pattern": "^[^\\u0000]*$",
+              "x-loom-maxUtf8Bytes": 128,
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "effort": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 128,
+              "pattern": "^[^\\u0000]*$",
+              "x-loom-maxUtf8Bytes": 128,
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "provider",
+        "transport",
+        "placement",
+        "agent_profile",
+        "model",
+        "effort"
+      ],
+      "additionalProperties": false
+    },
+    "limits": {
+      "type": "object",
+      "properties": {
+        "workers": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000
+        },
+        "operation_timeout_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 300000
+        }
+      },
+      "required": [
+        "workers",
+        "operation_timeout_ms"
+      ],
+      "additionalProperties": false
+    },
+    "ticket_provider": {
+      "const": "github"
+    }
+  },
+  "required": [
+    "schema",
+    "repo",
+    "execution",
+    "limits",
+    "ticket_provider"
+  ],
+  "additionalProperties": false,
+  "$comment": "Runtime validate.jq also checks UTF-8 byte bounds, unique registry IDs, selected host membership and canonical paths. policy.sh rejects duplicate keys, NUL and non-integer numeric tokens."
+}

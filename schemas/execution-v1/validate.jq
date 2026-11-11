@@ -52,6 +52,8 @@ def observation_identity:
   .identity==null or (.identity.attempt_id==.binding.attempt_id and .identity.host_id==.binding.host_id);
 def unique_field($key): length==([.[]|getpath($key)]|unique|length);
 def semantics:
+  (if .op?=="workspace.check" and .ok? then .result.process.exit_code==.result.check_exit and .result.process.lost_prefix_bytes<=.result.process.total_output_bytes else true end) and
+  (if .op?=="workspace.seal" and .ok? then .result.execution.binding==.target and (.result.execution|observation_identity) else true end) and
   (if .op?=="execution.reconcile" and .ok? then .result.observation|observation_identity
    elif .op?=="execution.list" and .ok? then all(.result.items[];observation_identity) and (.result.items|unique_field(["binding","attempt_id"]))
    elif .op?=="watch" and .ok? then all(.result.observations[];observation_identity) and (.result.observations|unique_field(["binding","attempt_id"]))
