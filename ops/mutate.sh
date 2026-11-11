@@ -55,13 +55,29 @@ copy_tree() { mkdir -p "$1" && tree_files | xargs -0 tar cf - | (cd "$1" && tar 
 mutation_test() {  # <tree> <mutant-id>, empty id selects the control
     local tree=$1 name=${2:-}
     case $name in
+        mreview-native-check-start) bash "$tree/tests/review/review-check-start.sh" ;;
+        mreview-native-serialized-mail) bash "$tree/tests/review/review-native.sh" mail ;;
+        mreview-native-option-boundary|mreview-native-legacy-routing) bash "$tree/tests/review/review-native.sh" routing ;;
+        mreview-native-child-wait|mreview-native-scan-unknown) bash "$tree/tests/review/review-native.sh" keeper ;;
+        mreview-native-partial-metadata) bash "$tree/tests/review/review-native.sh" metadata ;;
+        mreview-native-kill-reconcile|mreview-native-kill-identity) bash "$tree/tests/review/review-native.sh" reconcile ;;
+        mreviewmail-cache-*) bash "$tree/tests/review/review-mail.sh" cache ;;
+        mreviewmail-selection-*) bash "$tree/tests/review/review-mail.sh" selection ;;
+        mreviewmail-claim-*) bash "$tree/tests/review/review-mail.sh" claim ;;
+        mreviewmail-exchange-*) bash "$tree/tests/review/review-mail.sh" replay ;;
+        mreviewmail-expiry-*) bash "$tree/tests/review/review-mail.sh" expiry ;;
+        mreviewmail-outbox-*) bash "$tree/tests/review/review-mail.sh" outbox ;;
+        mreviewmail-scratch-*) bash "$tree/tests/review/review-mail.sh" state ;;
         mlegacy*|m23|m46) bash "$tree/tests/review/review-legacy.sh" ;;
         m1|m2|m4|m7|m14|msettle*) bash "$tree/tests/legacy/settlement.sh" ;;
         '')
             if [[ ${LOOM_MUTATE_LEGACY_ONLY:-0} == 1 ]]; then
                 bash "$tree/tests/review/review-legacy.sh" && bash "$tree/tests/legacy/settlement.sh"
             else
-                bash "$tree/ops/selftest.sh"
+                bash "$tree/ops/selftest.sh" || return $?
+                if [[ $(uname -s) == Linux && ${LOOM_MUTATE_CALIBRATION_ONLY:-0} != 1 ]]; then
+                    bash "$tree/tests/review/review-check-start.sh" && bash "$tree/tests/review/review-native.sh" && bash "$tree/tests/review/review-mail.sh"
+                fi
             fi ;;
         *) bash "$tree/ops/selftest.sh" ;;
     esac
@@ -223,6 +239,31 @@ run orca.sh 's/\.previous_collected_sha = (.collected_sha \/\/ .previous_collect
 run lib.sh '/^    loom_legacy_platform || return 125$/d' "Darwin guard forgets platform initialization" msettle1
 run lib.sh 's/\[\[ $(loom_legacy_status "$file") == settled \]\]/true/' "harvest skips positive settlement" msettle2
 run lib.sh 's/if \[\[ $group == 1 \]\]/if [[ $group != 0 ]]/' "uncertain group scan proves settlement" msettle3
+
+# Native execution and durable state require Linux primitives.
+if [[ $(uname -s) == Linux ]]; then
+run workflow.sh '/read -r -t "$gate_timeout" permit/c\
+        :
+' 'fast check exits before identity capture' mreview-native-check-start
+run native-supervisor.sh 's/($next|tojson|utf8bytelength)/($next.messages|map(.message.body|utf8bytelength)|add)/' 'review-native serialized-mail' mreview-native-serialized-mail
+run workflow.sh '/\[\[ $arg != -- \]\] || break/d' 'review-native option-boundary' mreview-native-option-boundary
+run workflow.sh '/if \[\[ $# -ge 2 && -f .*\/\$2.json/d' 'review-native legacy-routing' mreview-native-legacy-routing
+run workflow.sh 's/else scan_unknown=true; fi/else child_done=true; fi/' 'review-native child-wait' mreview-native-child-wait
+run workflow.sh 's/|| scan_unknown=true; continue/|| :; continue/' 'review-native scan-unknown' mreview-native-scan-unknown
+run workflow.sh '/if \[\[ -e $_rh_spool\/workflow-check \]\]; then/a\        return 0' 'review-native partial-metadata' mreview-native-partial-metadata
+run native.sh 's/else _loom_native_reconcile_kill || :; fi/else :; fi/' 'review-native kill-reconcile' mreview-native-kill-reconcile
+run native.sh 's/\.==\$fact.outcome.result and /true and /' 'review-native kill-identity' mreview-native-kill-identity
+run coordination.sh 's/if \$q\[0\].op=="run.claim" then \$prior.outcome.result.response.epoch else \$q\[0\].actor.epoch end/\$q[0].actor.epoch/' 'review-mail: claim-old-epoch' mreviewmail-claim-old-epoch
+run coordination.sh 's/^      \.epoch==(if .*$/      true and/' 'review-mail: claim-unfenced' mreviewmail-claim-unfenced
+run mail.sh 's/if loom_state_get operation "\$request_id" > /if false \&\& loom_state_get operation "$request_id" > /' 'review-mail: exchange-regenerate' mreviewmail-exchange-regenerate
+run mail.sh '/jq -e.*pump-d.*continue/d' 'review-mail: expiry-stale' mreviewmail-expiry-stale
+run worker-bridge.sh 's/\.outbox_after=\$r\[0\]\.outbox_after/.outbox_after=null/' 'review-mail: outbox-starvation' mreviewmail-outbox-starvation
+run state.sh '/^    rm -f -- "\$tmp" || return 1$/d' 'review-mail: scratch-leak' mreviewmail-scratch-leak
+run state.sh 's/rm -f -- "\$path" || return 1/true || return 1/;s/rm -rf -- "\$path" || return 1/true || return 1/' 'review-mail: scratch-unreclaimed' mreviewmail-scratch-unreclaimed
+run mail.sh '/jq -cS \.data.message "\$cache"/s/\[\[.*\]\]/true/' 'review-mail: cache-digest' mreviewmail-cache-digest
+run mail.sh '/jq -ce --arg id "\$id".*\.items\[\].*pump-d/c\
+                loom_state_get delivery "$id" > "$_lm_tmp/pump-d" || return 2' 'review-mail: selection-refresh' mreviewmail-selection-refresh
+fi
 
 wait
 [[ ${#order[@]} -gt 0 ]] || { echo "HARNESS BROKEN: no mutants match the selected prefix"; exit 2; }

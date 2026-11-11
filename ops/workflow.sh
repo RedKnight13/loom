@@ -753,7 +753,7 @@ _loom_workflow_check_keeper() {
     set -uo pipefail
     umask 077
     local plan=$1 ops workspace script dir deadline output child ticks own_ticks code=0 waited=false live path pid escaped=false
-    local writer generation fd empty_seen=false scan_unknown child_done
+    local writer generation fd gate gate_timeout empty_seen=false scan_unknown child_done
     local -a _np
     local -A known=()
     for path in /proc/self/fd/*; do
@@ -771,13 +771,23 @@ _loom_workflow_check_keeper() {
     trap ':' TERM HUP INT
     generation=$(cat /proc/sys/kernel/random/uuid)
     jq -cn --argjson pid "$$" --arg ticks "$own_ticks" --arg boot "$(cat /proc/sys/kernel/random/boot_id)" --arg nonce "$generation" '{pid:$pid,start_ticks:$ticks,boot_id:$boot,nonce:$nonce}' | loom_output_atomic "$dir/check-identity" || return 1
-    mkfifo -m 600 "$dir/pipe" || return 1
+    mkfifo -m 600 "$dir/pipe" "$dir/check-gate" || return 1
     setsid /usr/bin/bash "$ops/output.sh" drain "$dir/output" "$output" "$generation" < "$dir/pipe" >/dev/null 2>&1 &
     writer=$!
-    (cd "$workspace" && exec env -i PATH=/usr/bin:/bin LANG=C.UTF-8 HOME="$workspace" /usr/bin/bash "$script") </dev/null > "$dir/pipe" 2>&1 &
+    # Keep even an immediate-exit check behind a gate until its identity is
+    # captured. A lost keeper cannot leave the gated child waiting forever.
+    exec {gate}<>"$dir/check-gate" || return 1
+    gate_timeout=$(jq -r '.timeout_ms/1000' "$plan")
+    (
+        read -r -t "$gate_timeout" permit <&"$gate" && [[ $permit == run ]] || exit 125
+        exec {gate}>&-
+        cd "$workspace" && exec env -i PATH=/usr/bin:/bin LANG=C.UTF-8 HOME="$workspace" /usr/bin/bash "$script"
+    ) </dev/null > "$dir/pipe" 2>&1 &
     child=$!
     _loom_native_proc "$child" || return 2
     ticks=${_np[19]}; known[$child]=$ticks
+    printf 'run\n' >&"$gate" || return 1
+    exec {gate}>&-
     while :; do
         live=0; scan_unknown=false
         for path in /proc/[0-9]*/stat; do
