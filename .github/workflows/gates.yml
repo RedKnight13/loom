@@ -1,7 +1,7 @@
 name: gates
 
 # Own branches run on the owner's machines (agni2 and this Mac); fork pull
-# requests run on GitHub-hosted runners. A public repository must never execute
+# requests and Dependabot updates run on GitHub-hosted runners. A public repository must never execute
 # untrusted pull-request code on a self-hosted runner.
 #
 # The macOS job is the one that catches Darwin-only harness assumptions: BSD
@@ -23,7 +23,7 @@ concurrency:
 jobs:
   self-hosted:
     name: gates (self-hosted ${{ matrix.label }})
-    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+    if: ${{ github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]') }}
     strategy:
       fail-fast: false
       matrix:
@@ -62,7 +62,7 @@ jobs:
 
   fork:
     name: gates (hosted ${{ matrix.os }})
-    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
+    if: ${{ github.event_name == 'pull_request' && (github.event.pull_request.head.repo.full_name != github.repository || github.event.pull_request.user.login == 'dependabot[bot]') }}
     strategy:
       fail-fast: false
       matrix:
