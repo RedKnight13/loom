@@ -1,8 +1,8 @@
 name: gates
 
-# Own branches run on the owner's machines (agni2 and this Mac); fork pull
-# requests and Dependabot updates run on GitHub-hosted runners. A public repository must never execute
-# untrusted pull-request code on a self-hosted runner.
+# Every change runs on standard GitHub-hosted Ubuntu and macOS runners.
+# Owner branches also run on agni2 and the Mac. Fork and Dependabot PRs
+# never execute on self-hosted runners.
 #
 # The macOS job is the one that catches Darwin-only harness assumptions: BSD
 # sed's inserted-line rule and TMPDIR living under the /var symlink.
@@ -60,9 +60,8 @@ jobs:
       - name: shellcheck
         run: shellcheck -x ops/*.sh ops/loom
 
-  fork:
+  hosted:
     name: gates (hosted ${{ matrix.os }})
-    if: ${{ github.event_name == 'pull_request' && (github.event.pull_request.head.repo.full_name != github.repository || github.event.pull_request.user.login == 'dependabot[bot]') }}
     strategy:
       fail-fast: false
       matrix:
@@ -99,16 +98,16 @@ jobs:
   required:
     name: Required CI
     if: ${{ always() }}
-    needs: [self-hosted, fork]
+    needs: [self-hosted, hosted]
     runs-on: ubuntu-latest
     steps:
-      - name: Confirm the selected runner matrix passed
+      - name: Confirm all applicable runner matrices passed
         env:
           OWNER_RESULT: ${{ needs.self-hosted.result }}
-          HOSTED_RESULT: ${{ needs.fork.result }}
+          HOSTED_RESULT: ${{ needs.hosted.result }}
         run: |
-          if [[ "$OWNER_RESULT" == success && "$HOSTED_RESULT" == skipped ]] ||
-             [[ "$OWNER_RESULT" == skipped && "$HOSTED_RESULT" == success ]]; then
+          if [[ "$HOSTED_RESULT" == success ]] &&
+             [[ "$OWNER_RESULT" == success || "$OWNER_RESULT" == skipped ]]; then
             exit 0
           fi
           echo "CI did not pass: owner=$OWNER_RESULT hosted=$HOSTED_RESULT"
