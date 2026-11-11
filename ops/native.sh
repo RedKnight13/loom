@@ -172,6 +172,8 @@ _loom_native_identity_live() {
     read -r child child_ticks < <(jq -r '[.pid,.start_ticks]|@tsv' "$id")
     if _loom_native_proc "$child"; then
         [[ ${_np[19]} == "$child_ticks" && ${_np[2]} == "$pgid" && ${_np[3]} == "$sid" && $(stat -c %u "/proc/$child") == "$EUID" ]] || return 1
+    else
+        [[ ! -d /proc/$child ]] || return 1
     fi
 }
 
@@ -184,7 +186,8 @@ _loom_native_observe() {
     fi
     if [[ ! -f $_nn_dir/completion ]] && ! _loom_native_identity_live "$_nn_dir/identity"; then
         fact=$(loom_state_operation "$actor" native.fact "$_nn_id:completion" 2>/dev/null) || fact=''
-        if [[ -n $fact ]]; then jq -c .outcome.result <<< "$fact" | loom_output_atomic "$_nn_dir/completion" || return 1; fi
+        if [[ -n $fact ]]; then jq -c .outcome.result <<< "$fact" | loom_output_atomic "$_nn_dir/completion" || return 1
+        else _loom_native_reconcile_kill || :; fi
     fi
     if [[ -f $_nn_dir/identity ]]; then identity=$(cat "$_nn_dir/identity"); fi
     if [[ -f $_nn_dir/completion ]]; then
@@ -403,6 +406,31 @@ _loom_native_group_empty() {
     done
 }
 
+# Read-only identity observation may settle a recorded self-group KILL even
+# when its original caller expired. Never signal a group from this path.
+_loom_native_reconcile_kill() {
+    local fact pid ticks result
+    [[ -f $_nn_dir/identity && -f $_nn_dir/signals && ! -f $_nn_dir/escaped ]] || return 1
+    jq -e '.==["TERM","KILL"]' "$_nn_dir/signals" >/dev/null || return 1
+    fact=$(loom_state_operation "$(jq -r .actor.id "$_nn_binding")" native.fact "$_nn_id:identity") || return 1
+    jq -e --argjson fact "$fact" --slurpfile c "$_nn_context" --slurpfile b "$_nn_binding" \
+      --arg nonce "$(cat "$_nn_dir/nonce")" --arg boot "$(cat /proc/sys/kernel/random/boot_id)" --argjson uid "$EUID" '
+      .==$fact.outcome.result and .boot_id==$boot and .uid==$uid and .launch_nonce==$nonce and
+      .host_installation_id==$c[0].installation_id and .transport_identity==$c[0].transport_identity and
+      .host_id==$b[0].target.host_id and .attempt_id==$b[0].target.attempt_id and
+      .pgid==.supervisor_pid and .sid==.pgid and (.pgid|type=="number" and .>1)' "$_nn_dir/identity" >/dev/null || return 1
+    read -r pid ticks < <(jq -r '[.supervisor_pid,.supervisor_start_ticks]|@tsv' "$_nn_dir/identity")
+    if _loom_native_proc "$pid"; then
+        [[ ${_np[19]} != "$ticks" || ${_np[0]} == Z || ${_np[0]} == X ]] || return 1
+    else
+        [[ ! -d /proc/$pid ]] || return 1
+    fi
+    _loom_native_group_empty "$(jq -r .pgid "$_nn_dir/identity")" || return 1
+    result=$(jq -cn --slurpfile id "$_nn_dir/identity" '{identity:$id[0],group_empty:true,escaped:false,terminal:{exit_code:null,signal:null,captured:false,evidence:[]}}') || return 1
+    _loom_native_fact completion "$result" || return 1
+    printf '%s\n' "$result" | loom_output_atomic "$_nn_dir/completion"
+}
+
 # Cache files are projections: reconstruct them from committed host history.
 _loom_native_restore_control() {
     local field=$1 cache=$2 record saved
@@ -444,19 +472,9 @@ _loom_native_stop() {
         if [[ $(jq -r .state <<< "$observation") == exited ]]; then
             confirmed=true; verified=true; group=exited; terminal=$(jq -c .terminal <<< "$observation"); break
         fi
-        if ! _loom_native_identity_live "$_nn_dir/identity"; then
-            # A lost keeper cannot authorize another signal. An independent
-            # observer can confirm an empty original group after recorded KILL.
-            if [[ -f $_nn_dir/signals ]] && jq -e 'index("KILL")!=null' "$_nn_dir/signals" >/dev/null &&
-               [[ $(jq -r .boot_id "$_nn_dir/identity") == "$(cat /proc/sys/kernel/random/boot_id)" && ! -f $_nn_dir/escaped ]] &&
-               _loom_native_group_empty "$(jq -r .pgid "$_nn_dir/identity")"; then
-                result=$(jq -cn --slurpfile id "$_nn_dir/identity" '{identity:$id[0],group_empty:true,escaped:false,terminal:{exit_code:null,signal:null,captured:false,evidence:[]}}')
-                _loom_native_fact completion "$result" || break
-                printf '%s\n' "$result" | loom_output_atomic "$_nn_dir/completion" || break
-                confirmed=true; verified=true; group=exited; terminal=$(jq -c .terminal <<< "$result")
-            fi
-            break
-        fi
+        # Observation owns post-KILL recovery, including calls made after this
+        # caller expires. A missing keeper never grants an external signal.
+        if ! _loom_native_identity_live "$_nn_dir/identity"; then break; fi
         verified=true; group=live
         sleep 0.05
     done

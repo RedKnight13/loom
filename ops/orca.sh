@@ -125,7 +125,8 @@ followup_link() {  # parent-view, child-view
 }
 
 # Adopt only after chain validation; caller holds the assignment lock. Preserve
-# the entire old record and evidence before clearing completion/collection flags.
+# the entire old record and evidence before clearing completion flags. Retain
+# the last collection separately as the guarded ref baseline.
 adopt_followup() {  # file, child-view, receipt, report boundary
     local file=$1 view=$2 receipt=$3 boundary=$4 archive old
     archive=$(mktemp -d "$LOOM_STATE/$id.history.XXXXXX")
@@ -140,6 +141,7 @@ adopt_followup() {  # file, child-view, receipt, report boundary
       .executor.dispatch = $v.dispatch | .executor.task = $v.task |
       .executor.state = "running" | .executor.followup_receipt = $receipt |
       .report_offset = $offset | .launched_at = (now | todateiso8601) |
+      .previous_collected_sha = (.collected_sha // .previous_collected_sha) |
       del(.executor.settled_at, .executor.released, .executor.released_at, .collected_sha, .acked)
     ' --argjson v "$view" --arg archive "${archive##*/}" --arg receipt "${receipt##*/}" --argjson offset "$boundary"
 }
@@ -231,6 +233,7 @@ start)
     loom_lock
     file=$(loom_record "$id")
     [[ $(jq -r '.executor.state' "$file") == pending ]] || loom_error "$id is not pending (state: $(jq -r '.executor.state' "$file"))"
+    loom_no_open_sibling "$file"
     loom_write "$file" '.executor.state = "starting"'
     loom_unlock
     checkout=$(jq -r '.checkout' "$file")
@@ -589,7 +592,13 @@ reconcile)
 
 ask)
     [[ $# == 3 && $2 == --question ]] || loom_error "$usage"
-    loom_orca orchestration ask --to "dispatch:$1" --question "$3" --json
+    loom_id "$1"
+    loom_init
+    file=$(loom_record "$1")
+    [[ $(loom_executor "$file") == orca ]] || loom_error "$1 is not an Orca assignment"
+    dispatch=$(jq -r '.executor.dispatch // empty' "$file")
+    [[ -n $dispatch ]] || loom_error "$1 has no Orca dispatch"
+    loom_orca orchestration ask --to "dispatch:$dispatch" --question "$3" --json
     ;;
 
 reply)

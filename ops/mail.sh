@@ -336,19 +336,64 @@ loom_mail_serve() (
 # Pump subtransactions persist exact outbound intent before SSH. Keys bind the
 # original pump operation and phase; lost replies never allocate a new message.
 _loom_mail_pump_store() {
-    local old=$1 data=$2 phase=$3 key prior
+    local old=$1 data=$2 phase=$3 key prior rc=0
     key=pump-$(jq -cn --arg op "$(jq -r .operation_id "$_lm_request")" --arg id "$(jq -r .id "$old")" --arg phase "$phase" '[$op,$id,$phase]' | _loom_mail_hash)
-    if prior=$(loom_state_operation "$(jq -r .actor.id "$_lm_request")" mail.transport "$key" 2>/dev/null); then
-        jq -c .outcome.result <<< "$prior" > "$_lm_tmp/pump-record"; return 0
-    fi
-    jq -cnS --slurpfile c "$_lm_context" --slurpfile q "$_lm_request" --slurpfile old "$old" --slurpfile data "$data" --slurpfile run "$_lm_tmp/run" --arg key "$key" '
-      $old[0] as $o | $q[0] as $q | ($o|.revision+=1|.data=$data[0]|.data.delivery.revision=.revision) as $new |
+    jq -cnS --slurpfile c "$_lm_context" --slurpfile q "$_lm_request" --slurpfile old "$old" --slurpfile data "$data" --slurpfile run "$_lm_tmp/run" --arg key "$key" --arg digest "$_lm_digest" --arg phase "$phase" '
+      $old[0] as $o | $q[0] as $q | ($o|.revision+=1|.epoch=$q.actor.epoch|.data=$data[0]|.data.delivery.revision=.revision) as $new |
       {schema:2,store_id:$c[0].store_id,operation_id:$key,idempotency_key:$key,op:"mail.transport",actor:$q.actor,target:$q.target,
       checks:[{kind:"run",id:$run[0].id,revision:$run[0].revision}],changes:[{kind:"delivery",id:$o.id,expected_revision:$o.revision,run_id:$o.run_id,epoch:$q.actor.epoch,data:$new.data}],
-      events:[{type:"mail.transport",entity_ids:[$o.id],payload:{},observed_at:null}],result:$new}' > "$_lm_tmp/pump-tx" || return 2
-    loom_state_transact "$_lm_tmp/pump-tx" > "$_lm_tmp/pump-outcome" || return $?
-    jq .result "$_lm_tmp/pump-outcome" > "$_lm_tmp/pump-record"
+      events:[{type:"mail.transport",entity_ids:[$o.id],payload:{},observed_at:null}],
+      result:{record:$new,wire_digest:$digest,phase:$phase}}' > "$_lm_tmp/pump-tx" || return 2
+    # The common first-write path needs one journal replay. A lost reply or
+    # already-completed phase is reconciled only after the transaction fails.
+    loom_state_transact "$_lm_tmp/pump-tx" > "$_lm_tmp/pump-outcome" 2> "$_lm_tmp/pump-error" || rc=$?
+    if (( rc!=0 )); then
+        if ! prior=$(loom_state_operation "$(jq -r .actor.id "$_lm_request")" mail.transport "$key" 2>/dev/null); then
+            cat "$_lm_tmp/pump-error" >&2; return "$rc"
+        fi
+        jq -e --slurpfile q "$_lm_request" --slurpfile old "$old" --arg key "$key" --arg digest "$_lm_digest" --arg phase "$phase" '
+          .outcome.operation_id==$key and .outcome.result.wire_digest==$digest and .outcome.result.phase==$phase and
+          .outcome.result.record.id==$old[0].id and .outcome.result.record.run_id==$q[0].actor.run_id and
+          .outcome.result.record.epoch==$q[0].actor.epoch
+        ' <<< "$prior" >/dev/null || { _loom_mail_error idempotency_conflict; return 2; }
+        # Historical phase completion cannot authorize a superseded owner.
+        loom_state_get run "$(jq -r .actor.run_id "$_lm_request")" > "$_lm_tmp/pump-authority" || return $?
+        jq -e --slurpfile q "$_lm_request" '.epoch==$q[0].actor.epoch and .data.owner_id==$q[0].actor.id' "$_lm_tmp/pump-authority" >/dev/null || { _loom_mail_error actor_denied; return 2; }
+        jq .outcome <<< "$prior" > "$_lm_tmp/pump-outcome"
+    fi
+    jq .result.record "$_lm_tmp/pump-outcome" > "$_lm_tmp/pump-record"
 }
+
+# Persist the complete semantic request before crossing the transport boundary.
+# Timeout is an execution budget excluded from wire digests; args and extensions
+# are immutable even if a previous pump imported only part of a response.
+_loom_mail_exchange_save() {
+    local request=$1 config_digest=$2 delivery_id=$3 key
+    key=$(jq -r .operation_id "$request")
+    jq -cnS --slurpfile c "$_lm_context" --slurpfile q "$_lm_request" --slurpfile x "$request" \
+      --slurpfile run "$_lm_tmp/run" --arg key "$key" --arg config "$config_digest" --arg did "$delivery_id" --arg digest "$_lm_digest" '
+      $q[0] as $q |
+      {schema:2,store_id:$c[0].store_id,operation_id:$key,idempotency_key:$key,op:"mail.exchange.prepare",
+       actor:$q.actor,target:$q.target,checks:[{kind:"run",id:$run[0].id,revision:$run[0].revision}],
+       changes:[{kind:"operation",id:$key,expected_revision:null,run_id:$q.actor.run_id,epoch:$q.actor.epoch,
+         data:{request:$x[0],config_digest:$config,delivery_id:$did,pump_digest:$digest}}],
+       events:[{type:"mail.exchange.prepared",entity_ids:[$key],payload:{},observed_at:null}],result:{exchange_id:$key}}' > "$_lm_tmp/exchange-tx" || return 2
+    loom_state_transact "$_lm_tmp/exchange-tx" > "$_lm_tmp/exchange-saved"
+}
+
+# Messages are immutable and deliveries pin their digest. A per-pump cache can
+# serve repeated reads only while both the identity and canonical bytes match.
+_loom_mail_pump_message() {
+    local delivery=$1 mid digest cache
+    mid=$(jq -r .data.delivery.message_id "$delivery")
+    digest=$(jq -r .data.delivery.message_digest "$delivery")
+    cache=$_lm_tmp/message-$(printf '%s\n' "$mid" | _loom_mail_hash)
+    if [[ ! -s $cache ]]; then loom_state_get message "$mid" > "$cache" || return $?; fi
+    jq -e --arg mid "$mid" --arg digest "$digest" '.id==$mid and .data.message.message_id==$mid and .data.digest==$digest' "$cache" >/dev/null &&
+      [[ $(jq -cS .data.message "$cache" | loom_policy_scope) == "$digest" ]] || { _loom_mail_error identity_mismatch; return 2; }
+    cp "$cache" "$_lm_tmp/pump-m"
+}
+
 _loom_mail_pump() {
     local ops route aid config now deadline id rc request_id directory attempt expected config_digest count=0 cursor='' route_after='' cursor_id
     [[ $(jq -r .role "$_lm_context") == owner ]] || return 2
@@ -366,7 +411,16 @@ _loom_mail_pump() {
     while IFS= read -r id; do
         (( $(_loom_mail_now)<deadline )) || break
         loom_state_get delivery "$id" > "$_lm_tmp/pump-d" || return $?
-        loom_state_get message "$(jq -r .data.delivery.message_id "$_lm_tmp/pump-d")" > "$_lm_tmp/pump-m" || return $?
+        # The list is only a candidate snapshot. Acknowledge/terminal transitions
+        # may have committed before this fresh read; CAS protects later changes.
+        jq -e '.data | (.delivery.state|IN("acked","dead_letter")|not) and (.facts.acked|not)' "$_lm_tmp/pump-d" >/dev/null || continue
+        # A pinned immutable intent can prove there is no expiry. Fresh delivery
+        # state was checked above; mismatched/missing intent falls back to S2.
+        if jq -e '.data.remote.intent.message | type=="object" and .expires_at==null' "$_lm_tmp/pump-d" >/dev/null &&
+          [[ $(jq -cS .data.remote.intent.message "$_lm_tmp/pump-d" | loom_policy_scope) == "$(jq -r .data.delivery.message_digest "$_lm_tmp/pump-d")" ]]; then
+            continue
+        fi
+        _loom_mail_pump_message "$_lm_tmp/pump-d" || return $?
         expected=$(jq -r .data.message.expires_at "$_lm_tmp/pump-m")
         if [[ $expected != null ]] && (( $(date -u -d "$expected" +%s)*1000<=$(_loom_mail_now) )); then
             jq '.data|.delivery.state="dead_letter"|.delivery.reason="deadline_expired"|.delivery.next_action="retry"' "$_lm_tmp/pump-d" > "$_lm_tmp/pump-data"
@@ -386,41 +440,56 @@ _loom_mail_pump() {
         directory=$(cat "$_lm_tmp/directory")
         printf '[]\n' > "$_lm_tmp/intents"
         id=''
-        # Use fresh state after expiry, and pin exactly one intent per exchange.
-        loom_state_list delivery "$cursor" 100 > "$_lm_tmp/current" || return $?
-        now=$(_loom_mail_now)
-        id=$(jq -r --argjson a "$attempt" --argjson now "$now" --slurpfile run "$_lm_tmp/run" '
-          [.items[]|select(.run_id==$run[0].id)|select(.data.delivery.state|IN("acked","dead_letter")|not)|
-           select(.data.facts.delivered!=true)|
-           select(.data.next_attempt_ms<=$now and (.data.claim.until_ms//0)<=$now)|
-           select(.data.delivery.recipient==("attempt:"+$a.attempt_id) or
-             (.data.delivery.recipient==("task:"+$a.task_id) and $run[0].data.tasks[$a.task_id].attempt_ids[-1]==$a.attempt_id))|
-           select(.data.remote==null or .data.remote.attempt_id==$a.attempt_id)]|first|.id//""' "$_lm_tmp/current")
-        if [[ -n $id ]]; then
-            loom_state_get delivery "$id" > "$_lm_tmp/pump-d" || return $?
-            loom_state_get message "$(jq -r .data.delivery.message_id "$_lm_tmp/pump-d")" > "$_lm_tmp/pump-m" || return $?
-            if [[ $(jq -r .data.remote "$_lm_tmp/pump-d") == null ]]; then
-                jq --arg aid "$aid" --arg config "$config_digest" --argjson dir "$directory" --slurpfile m "$_lm_tmp/pump-m" '
-                  .data|.delivery.attempt_id=$aid | .remote={attempt_id:$aid,config_digest:$config,directory:$dir,
-                    intent:{delivery:.delivery,message:$m[0].data.message,return_address:$m[0].data.return_address}}' "$_lm_tmp/pump-d" > "$_lm_tmp/pump-data"
-                _loom_mail_pump_store "$_lm_tmp/pump-d" "$_lm_tmp/pump-data" prepare || return $?
-                cp "$_lm_tmp/pump-record" "$_lm_tmp/pump-d"
-            fi
-            [[ $(jq -r .data.remote.config_digest "$_lm_tmp/pump-d") == "$config_digest" ]] || { _loom_mail_error identity_mismatch; return 2; }
-            jq '[.data.remote.intent]' "$_lm_tmp/pump-d" > "$_lm_tmp/intents"
-        fi
-        # Each exchange has a unique pump ID; intake dedupes immutable delivery
-        # intent independently. A lost transport reply keeps its original digest.
         request_id=exchange-$(jq -cn --arg op "$(jq -r .operation_id "$_lm_request")" --arg aid "$aid" '[$op,$aid]' | _loom_mail_hash)
-        jq -cn --slurpfile q "$_lm_request" --argjson a "$attempt" --argjson directory "$directory" --slurpfile ds "$_lm_tmp/intents" --slurpfile list "$_lm_tmp/current" --arg id "$request_id" --argjson remaining "$((deadline-$(_loom_mail_now)))" '
-          $q[0] | .actor=$a.binding.actor | .target=$a.binding.target | .operation_id=$id | .idempotency_key=$id | .request_id=$id |
-          .timeout_ms=([$remaining,300000]|min) | .args.deadline_ms=.timeout_ms | .expected_revision=0 |
-          .extensions={"loom.mail.exchange":{directory:$directory,deliveries:$ds[0],
-          confirm:[$list[0].items[]|select(.data.remote.attempt_id==$a.attempt_id and .data.facts.acked)|{delivery_id:.id,message_digest:.data.delivery.message_digest,acked:true}],outbox_confirm:[]}}' > "$_lm_tmp/exchange" || return 2
-        (( $(jq .timeout_ms "$_lm_tmp/exchange")>0 )) || break
+        if loom_state_get operation "$request_id" > "$_lm_tmp/exchange-old" 2>/dev/null; then
+            [[ $(jq -r .data.pump_digest "$_lm_tmp/exchange-old") == "$_lm_digest" ]] || { _loom_mail_error idempotency_conflict; return 2; }
+            [[ $(jq -r .data.config_digest "$_lm_tmp/exchange-old") == "$config_digest" ]] || { _loom_mail_error identity_mismatch; return 2; }
+            jq .data.request "$_lm_tmp/exchange-old" > "$_lm_tmp/exchange"
+            id=$(jq -r .data.delivery_id "$_lm_tmp/exchange-old")
+            if [[ -n $id ]]; then loom_state_get delivery "$id" > "$_lm_tmp/pump-d" || return $?; fi
+        else
+            # Use fresh state after expiry, and pin exactly one intent per exchange.
+            loom_state_list delivery "$cursor" 100 > "$_lm_tmp/current" || return $?
+            now=$(_loom_mail_now)
+            id=$(jq -r --argjson a "$attempt" --argjson now "$now" --slurpfile run "$_lm_tmp/run" '
+              [.items[]|select(.run_id==$run[0].id)|select(.data.delivery.state|IN("acked","dead_letter")|not)|
+               select(.data.facts.delivered!=true)|
+               select(.data.next_attempt_ms<=$now and (.data.claim.until_ms//0)<=$now)|
+               select(.data.delivery.recipient==("attempt:"+$a.attempt_id) or
+                 (.data.delivery.recipient==("task:"+$a.task_id) and $run[0].data.tasks[$a.task_id].attempt_ids[-1]==$a.attempt_id))|
+               select(.data.remote==null or .data.remote.attempt_id==$a.attempt_id)]|first|.id//""' "$_lm_tmp/current")
+            if [[ -n $id ]]; then
+                # This selection and its revision come from one locked snapshot.
+                # Prepare's CAS refuses a delivery transition after that snapshot.
+                jq -ce --arg id "$id" '.items[]|select(.id==$id)' "$_lm_tmp/current" > "$_lm_tmp/pump-d" || return 2
+                if [[ $(jq -r .data.remote "$_lm_tmp/pump-d") == null ]]; then
+                    _loom_mail_pump_message "$_lm_tmp/pump-d" || return $?
+                    jq --arg aid "$aid" --arg config "$config_digest" --argjson dir "$directory" --slurpfile m "$_lm_tmp/pump-m" '
+                      .data|.delivery.attempt_id=$aid | .remote={attempt_id:$aid,config_digest:$config,directory:$dir,
+                        intent:{delivery:.delivery,message:$m[0].data.message,return_address:$m[0].data.return_address}}' "$_lm_tmp/pump-d" > "$_lm_tmp/pump-data"
+                    _loom_mail_pump_store "$_lm_tmp/pump-d" "$_lm_tmp/pump-data" prepare || return $?
+                    cp "$_lm_tmp/pump-record" "$_lm_tmp/pump-d"
+                fi
+                [[ $(jq -r .data.remote.config_digest "$_lm_tmp/pump-d") == "$config_digest" ]] || { _loom_mail_error identity_mismatch; return 2; }
+                jq '[.data.remote.intent]' "$_lm_tmp/pump-d" > "$_lm_tmp/intents"
+            fi
+            # Each exchange has a unique pump ID; intake dedupes immutable delivery
+            # intent independently. A lost transport reply keeps its original digest.
+            jq -cn --slurpfile q "$_lm_request" --argjson a "$attempt" --argjson directory "$directory" --slurpfile ds "$_lm_tmp/intents" --slurpfile list "$_lm_tmp/current" --arg id "$request_id" --argjson remaining "$((deadline-$(_loom_mail_now)))" '
+              $q[0] | .actor=$a.binding.actor | .target=$a.binding.target | .operation_id=$id | .idempotency_key=$id | .request_id=$id |
+              .timeout_ms=([$remaining,300000]|min) | .expected_revision=0 |
+              .extensions={"loom.mail.exchange":{directory:$directory,deliveries:$ds[0],
+              confirm:[$list[0].items[]|select(.data.remote.attempt_id==$a.attempt_id and .data.facts.acked)|{delivery_id:.id,message_digest:.data.delivery.message_digest,acked:true}],outbox_confirm:[]}}' > "$_lm_tmp/exchange" || return 2
+            (( $(jq .timeout_ms "$_lm_tmp/exchange")>0 )) || break
+            _loom_mail_exchange_save "$_lm_tmp/exchange" "$config_digest" "$id" || return $?
+        fi
+        now=$(_loom_mail_now)
+        (( now<deadline )) || break
+        jq --argjson remaining "$((deadline-now))" '.timeout_ms=([$remaining,300000]|min)' "$_lm_tmp/exchange" > "$_lm_tmp/exchange-timed" || return 2
+        mv "$_lm_tmp/exchange-timed" "$_lm_tmp/exchange"
         rc=0; loom_ssh_handle "$config" "$_lm_tmp/exchange" > "$_lm_tmp/exchanged" || rc=$?
         if (( rc!=0 )); then
-            if [[ -n $id ]]; then
+            if [[ -n $id ]] && jq -e '.data | (.delivery.state|IN("acked","dead_letter")|not) and (.facts.acked|not)' "$_lm_tmp/pump-d" >/dev/null; then
                 jq --argjson now "$(_loom_mail_now)" '.data|.tries+=1|.next_attempt_ms=($now+([1000,2000,4000,8000,16000][([.tries-1,4]|min)]))|
                   .delivery.reason="host_unreachable_or_unknown"|.delivery.next_action="pump"|
                   if .tries>=5 then .delivery.state="dead_letter"|.delivery.reason="retry_exhausted"|.delivery.next_action="retry" else . end' "$_lm_tmp/pump-d" > "$_lm_tmp/pump-data"
@@ -458,7 +527,16 @@ _loom_mail_pump() {
         done < <(jq -c '.extensions["loom.mail.exchange"].outbox[]' "$_lm_tmp/exchanged")
         if [[ -s $_lm_tmp/outbox-confirm ]] && (( $(_loom_mail_now)<deadline )); then
             jq --slurpfile confirms "$_lm_tmp/outbox-confirm" '.operation_id+="-confirm"|.idempotency_key+="-confirm"|.request_id+="-confirm"|.extensions["loom.mail.exchange"].deliveries=[]|.extensions["loom.mail.exchange"].outbox_confirm=$confirms' "$_lm_tmp/exchange" > "$_lm_tmp/confirm"
-            loom_ssh_handle "$config" "$_lm_tmp/confirm" > "$_lm_tmp/confirmed" || :
+            if loom_state_get operation "$request_id-confirm" > "$_lm_tmp/confirm-old" 2>/dev/null; then
+                jq .data.request "$_lm_tmp/confirm-old" > "$_lm_tmp/confirm"
+            else
+                _loom_mail_exchange_save "$_lm_tmp/confirm" "$config_digest" '' || return $?
+            fi
+            now=$(_loom_mail_now)
+            if (( now<deadline )); then
+                jq --argjson remaining "$((deadline-now))" '.timeout_ms=([$remaining,300000]|min)' "$_lm_tmp/confirm" > "$_lm_tmp/confirm-timed" || return 2
+                loom_ssh_handle "$config" "$_lm_tmp/confirm-timed" > "$_lm_tmp/confirmed" || :
+            fi
         fi
     done < <(jq -c --arg after "$route_after" '.routes | (map(.attempt_id)|index($after)) as $i | if $i==null then .[] else (.[$i+1:]+.[:$i+1])[] end' "$_lm_context")
     jq --arg route_after "$route_after" '{cursor:.next_cursor,route_after:$route_after}' "$_lm_tmp/pump-list" > "$_lm_tmp/cursor-data"

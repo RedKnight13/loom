@@ -120,6 +120,14 @@ within() {  # within <secs> <cmd...>: fail instead of hanging
     fail "timed out after ${secs}s: $*"
 }
 rec() { printf '%s/%s.json' "$LOOM_STATE" "$1"; }
+# Explicitly retire only fixtures that never started a worker. Pending records
+# now reserve their ticket, so unrelated cases cannot silently supersede them.
+retire_pending() {
+    jq -e '.worker_pid == null and (.executor.state // "pending") == "pending"' "$(rec "$1")" >/dev/null || fail 'fixture is not pending'
+    jq 'if .executor.kind == "orca" then .executor.state = "abandoned" else . end |
+        .reports += [{at:(now|todateiso8601),state:"waiting",fact:"fixture reservation retired"}]' "$(rec "$1")" > "$scratch/retired"
+    mv "$scratch/retired" "$(rec "$1")"
+}
 age() {  # make an assignment look silent since 2000
     jq '.started_at = "2000-01-01T00:00:00Z" | if has("launched_at") then .launched_at = "2000-01-01T00:00:00Z" else . end | .reports |= map(.at = "2000-01-01T00:00:00Z")' "$(rec "$1")" > "$scratch/aged"
     mv "$scratch/aged" "$(rec "$1")"
@@ -604,7 +612,7 @@ git -C "$scratch/other" remote add origin https://github.com/example/other
 git -C "$scratch/other" commit -q --allow-empty -m other
 err=$(LOOM_REPO="$scratch/other" bash "$ops/dispatch.sh" "$scratch/consumer.toml" 7 2>&1) && fail 'a foreign checkout was accepted'
 [[ $err == *'not example/fixture'* ]] || fail "wrong refusal: $err"
-out=$(LOOM_ALLOW_ANY_CHECKOUT=1 LOOM_REPO="$scratch/other" bash "$ops/dispatch.sh" "$scratch/consumer.toml" 7) || fail 'explicit override refused'
+out=$(LOOM_ALLOW_ANY_CHECKOUT=1 LOOM_REPO="$scratch/other" bash "$ops/dispatch.sh" "$scratch/consumer.toml" 8) || fail 'explicit override refused'
 # Leave no record or workdir: later cases assert attempt numbering.
 rm -rf "${out%$'\n'*}" "$LOOM_STATE/${out##*$'\n'}.json"
 pass 'dispatch refuses a foreign checkout; the override is explicit (#54)'
@@ -700,16 +708,20 @@ bash "$ops/launch.sh" "$id3" -- bash "$scratch/bin/w-silent" >/dev/null
 jq -e '[.reports[].state] == ["failed","blocked","failed"]' "$(rec "$id3")" >/dev/null || fail 'old REPORT.md line was re-harvested'
 pass 'silent exit fails; blocked shows its one question; old lines never re-read'
 
-# --- launcher lost: harvest the report; a recycled PID is never signalled ---
+# --- unguarded launcher lost: report stays pending; recycled PID is untouched ---
 out=$(dispatch); work4=${out%$'\n'*}; id4=${out##*$'\n'}
 printf 'state: ready — finished before its launcher died\n' >> "$work4/REPORT.md"
 sleep 1000 & stranger=$!; pids+=("$stranger")
 jq --argjson pid "$stranger" '.worker_pid = $pid | .worker_start = "Thu Jan  1 00:00:00 2001" | .launched_at = "2000-01-01T00:00:00Z" | .report_offset = 0' "$(rec "$id4")" > "$scratch/lost"
 mv "$scratch/lost" "$(rec "$id4")"
-[[ $(bash "$ops/watchdog.sh" --limit-min 1) == "$id4 ready worker_gone" ]] || fail 'lost worker not harvested'
+[[ $(bash "$ops/watchdog.sh" --limit-min 1) == "$id4 pending settlement_unproven" ]] || fail 'lost worker must remain pending'
 kill -0 "$stranger" || fail 'watchdog signalled a recycled PID'
-jq -e '.worker_pid == null and .reports[-1].fact == "finished before its launcher died"' "$(rec "$id4")" >/dev/null || fail 'lost harvest record'
-pass 'lost launcher harvested; recycled PID left alone'
+jq -e '.worker_pid != null and (.reports | length) == 0' "$(rec "$id4")" >/dev/null || fail 'lost worker was harvested'
+# This fabricated record has no actual worker. Clear it explicitly so the
+# subsequent dispatch-numbering fixtures do not inherit a pending assignment.
+jq '.worker_pid = null | .worker_start = null | .reports = [{at:(now|todateiso8601),state:"failed",fact:"fixture retired"}]' "$(rec "$id4")" > "$scratch/lost"
+mv "$scratch/lost" "$(rec "$id4")"
+pass 'lost unguarded launcher stays pending; recycled PID left alone'
 
 # --- per-consumer watchdog limit (gap #7) and exact process start (gap #10) ---
 sed 's/^checks = "true"$/checks = "true"\nlimit_min = 60/' "$scratch/consumer.toml" > "$scratch/slow.toml"
@@ -749,6 +761,7 @@ id7=${out##*$'\n'}
 [[ $id7 == fixture-task.7 ]] || fail "short-name attempts must continue across tickets, got $id7"
 jq -e '.ticket == 8 and .attempt == 7' "$(rec "$id7")" >/dev/null || fail 'reused-name record'
 pass 'a corrected ticket reuses its short name with the next attempt'
+bash "$ops/report.sh" "$id7" waiting 'fixture reservation retired'
 
 # --- the conductor's re-check (gaps #9, #12, #13) ---
 sed 's/^checks = "true"$/checks = "test -f out.txt"/' "$scratch/consumer.toml" > "$scratch/checked.toml"
@@ -824,6 +837,7 @@ url=$(bash "$ops/ticket.sh" "$scratch/consumer.toml" --short rendered-task --tit
 [[ $url == */issues/9 ]] || fail "ticket.sh did not open the issue: $url"
 out=$(dispatch_n 9) || fail 'dispatch refused a rendered ticket'
 [[ ${out##*$'\n'} == rendered-task.1 ]] || fail 'rendered ticket dispatched under the wrong name'
+retire_pending "${out##*$'\n'}"
 pass 'ticket.sh renders the template; dispatch accepts it; text stays literal'
 
 # --- the heartbeat (gap #6) ---
@@ -861,8 +875,10 @@ git -C "$scratch/cfg" -c user.name=t -c user.email=t@example.invalid -c commit.g
 cfgsha=$(git -C "$scratch/cfg" rev-parse HEAD)
 out=$(bash "$ops/dispatch.sh" "$scratch/cfg/consumer.toml" 7) || fail 'committed config refused'
 jq -e --arg c "$cfgsha" '.config_commit == $c' "$(rec "${out##*$'\n'}")" >/dev/null || fail 'config commit not pinned in the record'
+retire_pending "${out##*$'\n'}"
 printf '# drift\n' >> "$scratch/cfg/consumer.toml"
-if bash "$ops/dispatch.sh" "$scratch/cfg/consumer.toml" 7 >/dev/null 2>&1; then fail 'uncommitted config accepted'; fi
+if out=$(bash "$ops/dispatch.sh" "$scratch/cfg/consumer.toml" 7 2>&1); then fail 'uncommitted config accepted'; fi
+[[ $out == *'consumer config has uncommitted changes'* ]] || fail "dirty config refused for the wrong reason: $out"
 jq -e '.config_commit == null' "$(rec "$id1")" >/dev/null || fail 'unversioned config must record null'
 pass 'versioned config: committed is pinned, uncommitted is refused'
 
@@ -1025,7 +1041,7 @@ EOF
 
     # Orca assignments cannot use the native launcher; local ones need no override
     bash "$ops/launch.sh" "$ido" -- bash "$scratch/bin/w-files" >/dev/null 2>&1 && fail 'launch.sh started an Orca assignment'
-    out=$(bash "$ops/dispatch.sh" "$scratch/consumer.toml" 7 --executor local); idl=${out##*$'\n'}
+    out=$(bash "$ops/dispatch.sh" "$scratch/consumer.toml" 8 --executor local); idl=${out##*$'\n'}
     bash "$ops/launch.sh" "$idl" -- bash "$scratch/bin/w-files" >/dev/null || fail 'explicit local launch refused while Orca is available'
 
     # start: refused when Orca is down; otherwise Orca's worktree is adopted
@@ -1482,6 +1498,7 @@ EOF
     out=$(bash "$ops/dispatch.sh" "$scratch/unplaced.toml" 8); idb=${out##*$'\n'}
     bash "$ops/orca.sh" start "$idb" >/dev/null 2>&1 && fail 'start on an unconnected host accepted'
     jq -e '.executor.state == "pending"' "$(rec "$idb")" >/dev/null || fail 'a refused placement changed state'
+    retire_pending "$idb"
     # #47: a connected host without the project is refused before worker-start.
     sed 's/^compute = "orca-host"$/compute = "orca-bare"/' "$scratch/placement.toml" > "$scratch/bare.toml"
     out=$(bash "$ops/dispatch.sh" "$scratch/bare.toml" 8); idn=${out##*$'\n'}
@@ -1489,6 +1506,7 @@ EOF
     [[ $err == *'no ready Orca project on orca-bare'* ]] || fail "wrong refusal: $err"
     [[ ! -f $GH_STATE/start-$idn.args ]] || fail 'worker-start called for a host without the project'
     jq -e '.executor.state == "pending"' "$(rec "$idn")" >/dev/null || fail 'a host without the project changed state'
+    retire_pending "$idn"
     # #48: a failed start is still one JSON object from the loom call.
     out=$(bash "$ops/dispatch.sh" "$scratch/placement.toml" 8); idz=${out##*$'\n'}
     obj=$(ORCA_STUB_FAIL=1 bash "$ops/loom" start "$idz") && fail 'failed start reported ok'
@@ -1613,12 +1631,14 @@ EOF
     grep -q '^== on compute host fake-build$' "$LOOM_STATE/$idc.checks-baseline.log" || fail 'log does not say where it ran'
     [[ -z $(ls -A "$GH_STATE/remote-home-fake-build/.loom-remote") ]] || fail 'remote workspace not cleaned up'
 
+    retire_pending "$idc"
     mk dead 'compute = "dead-build"'
     out=$(bash "$ops/dispatch.sh" "$scratch/dead.toml" 7); idd=${out##*$'\n'}
     err=$(bash "$ops/verify.sh" "$idd" --baseline 2>&1) && fail 'verify ran with no reachable compute host'
     [[ $err == *"refusing to run checks on the conductor's machine"* ]] || fail "wrong refusal: $err"
     jq -e '(.checks_runs // []) == []' "$(rec "$idd")" >/dev/null || fail 'a refused verify recorded a run'
 
+    retire_pending "$idd"
     # --on: a record without compute (dispatched before the consumer declared one)
     out=$(bash "$ops/dispatch.sh" "$scratch/consumer.toml" 7); idn=${out##*$'\n'}
     out=$(bash "$ops/verify.sh" "$idn" --baseline --on fake-build-2) || fail "--on run failed: $out"
@@ -1629,10 +1649,12 @@ EOF
     jq -e '.ok == true' <<< "$obj" >/dev/null || fail "loom verify --on not ok: $obj"
     jq -e '.checks_runs[-1].host == "fake-build-3"' "$(rec "$idn")" >/dev/null || fail 'loom verify --on did not reach the host'
 
+    retire_pending "$idn"
     mk badsetup 'compute = "fake-build"' 'false'
     out=$(bash "$ops/dispatch.sh" "$scratch/badsetup.toml" 7); idb=${out##*$'\n'}
     rc=0; bash "$ops/verify.sh" "$idb" --baseline >/dev/null 2>&1 || rc=$?
     [[ $rc == 126 ]] || fail "failed compute_setup must be could-not-run (126), got $rc"
+    retire_pending "$idb"
 )
 pass 'compute host: remote run with fallback, refusal when unreachable, setup failure is could-not-run'
 
@@ -1679,5 +1701,8 @@ if bash "$ops/loom" ignore --consumer "$scratch/consumer.toml" --short 'Bad Name
 obj=$(bash "$ops/loom" status)
 [[ $(jq -r '.cmd' <<< "$obj") == status && $(jq -r '.items | type' <<< "$obj") == array ]] || fail "status object: $obj"
 pass 'loom call: version, usage, ignore, status'
+
+bash "$ops/../tests/legacy/settlement.sh"
+bash "$ops/../tests/review/review-legacy.sh"
 
 printf 'PASS: dispatch → launch → report/harvest → watchdog → status → collect\n'

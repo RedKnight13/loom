@@ -60,6 +60,13 @@ jobs:
       - name: shellcheck
         run: shellcheck -x ops/*.sh ops/loom
 
+      - name: Native runtime regressions
+        if: runner.os == 'Linux'
+        run: |
+          bash tests/review/review-check-start.sh
+          bash tests/review/review-native.sh
+          bash tests/review/review-mail.sh
+
   hosted:
     name: gates (hosted ${{ matrix.os }})
     strategy:
@@ -94,6 +101,13 @@ jobs:
 
       - name: shellcheck
         run: shellcheck -x ops/*.sh ops/loom
+
+      - name: Native runtime regressions
+        if: runner.os == 'Linux'
+        run: |
+          bash tests/review/review-check-start.sh
+          bash tests/review/review-native.sh
+          bash tests/review/review-mail.sh
 
   required:
     name: Required CI

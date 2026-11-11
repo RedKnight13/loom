@@ -19,7 +19,7 @@ What works today, what does not, and what it was tested on. Version **0.6.0**.
 | Orca placement on `compute` | Available | first connected host wins; refuses when none |
 | Checks over SSH | Available | bundle over stdin, fresh tree, log back |
 | `--on HOST` for one verify run | Available | for assignments dispatched before a host was declared |
-| Watchdog (PID + start time, group kill) | Available | per-consumer `limit_min` |
+| Local watchdog and settlement | Available | per-consumer `limit_min`; verified group settlement is required before clearing the assignment |
 | Worker cap | Available | `workers`; `dispatch` refuses past it, `loom capacity` suggests one per connected host |
 | Stale Orca worker surfaced, never killed | Available | owner decides |
 | `ack` settling a handled result | Available | history kept; a kept-open workspace still shows |
@@ -43,8 +43,9 @@ it) works independently of Orca installation or runtime readiness. Dispatch
 records the selected executor; a local assignment stays local if Orca later
 appears. The native launcher never probes Orca, including for older local
 records without an executor field. `LOOM_ALLOW_LOCAL` remains accepted but is
-ignored; it grants no authority and is no longer needed. PID/start-time checks,
-process groups, report harvesting and watchdog behavior are unchanged.
+ignored; it grants no authority and is no longer needed. Local harvest requires
+positive group-completion evidence. Watchdog signal delivery alone does not
+settle an assignment; unreadable or missing supervision remains pending.
 
 Required `executor = "orca"` still refuses an unavailable runtime and never
 falls back to native execution. `auto` selection is unchanged: ready Orca wins
@@ -129,7 +130,7 @@ and stop delegation on failure. The comparison-to-delegation gap remains.
 Structural wiring, offline selftest/lint and live ticket-to-verification proof are separate
 evidence levels. The first two never imply the third. A prompt cannot establish
 universal security, automatic monitoring or full dependability. Setup uses
-selftest/lint; contributors and CI also use the longer portable mutation gate, locally or
+selftest/lint; contributors also use the longer portable mutation gate, locally or
 on a compute host with `bash ops/mutate.sh --on HOST`.
 
 ## Platform
@@ -163,8 +164,9 @@ Tracked as issues on the repository. At 0.6.0:
 - `dispatch` checks checkout origin against the ticket repository; the explicit
   `LOOM_ALLOW_ANY_CHECKOUT=1` override relaxes it and must not be enabled by
   bootstrap merely to bypass a mismatch.
-- CI runs selftest and ShellCheck on Linux and macOS. The mutation suite is a
-  separate contributor check, not a routine setup requirement.
+- CI runs selftest, ShellCheck and legacy lifecycle regressions on Linux and
+  macOS; native supervision and mail regressions run on Linux. The mutation
+  suite is a separate contributor check, not a routine setup requirement.
 - Native runtime follow-ups cover [state read latency](https://github.com/RedKnight13/loom/issues/122),
   [supervisor overhead](https://github.com/RedKnight13/loom/issues/123),
   [legacy settlement](https://github.com/RedKnight13/loom/issues/124) and

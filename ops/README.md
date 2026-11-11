@@ -40,13 +40,13 @@ scripts under `ops/` remain the mechanism; `ops/loom` is the contract.
 | `loom <verb> …` | The call. One JSON object on stdout, exit 0 iff `ok`. `version`, `accept`, `ignore`, `dispatch`, `launch`, `start`, `harvest`, `stop`, `release`, `watch`, `status`, `verify` (`--on HOST`), `collect`, `report`, `ack`, `detect`, `compute`, `capacity`, `hosts`, `show`, `read`, `abandon`, `keep-open`, `list`, `request`, `peek`, `inbox`, `send`, `ask`, `reply`, `gate`, `task`, `run`, `reference`, `worktree`, `repo`, `base-ref`, `automation`. See the specs. |
 | `ack.sh <id> "<why>"` | A person has dealt with this assignment: sets `.acked` once, refuses a live worker. Status drops the report row; history stays. |
 | `ticket.sh <consumer.toml> --short … --title … --scope … --out … --done … [--label NAME]… [--no-default-label]` | Renders the Mandate exactly from the template, proves dispatch's own parser accepts it, opens the issue with its labels. `loom-ready` is added by default when the repo has that label (#38). Ticket text is literal, never evaluated. `--dry-run` prints the body. |
-| `dispatch.sh <consumer.toml> <issue#>` | Reads the issue's Mandate via `gh`; refuses if the ticket already has a live worker. Creates `<worktrees>/<short>.<attempt>` as a **private clone** (own `.git`, **no remote**, so it can commit but cannot push), on branch `<short>` at the default branch, with the consumer's git identity. Writes `WORK.md` (mandate + laws + how to report), excluded from git. Records the assignment. |
-| `launch.sh <id> -- <cmd...>` | Runs the worker in its workdir with **no stdin** and its **own process group**; records PID + start time; logs to `$LOOM_STATE/<id>.log`. On exit, harvests the newest `state:` line the worker wrote **this launch** (older lines are skipped by offset). Exit with no line → `failed / worker_exit_no_report (exit N)`. |
-| `watchdog.sh [--limit-min N]` | Live worker silent past N minutes (default 30) → kills its **whole process group**, records `failed / watchdog_kill` once, keeps the workdir. Worker gone without its launcher (e.g. the conductor session died) → harvests its report or records `failed / worker_lost_no_report`. A recycled PID never matches the recorded start time and is never signalled. |
+| `dispatch.sh <consumer.toml> <issue#>` | Reads the issue's Mandate via `gh`; reserves the ticket at dispatch and refuses another open assignment, including one not yet launched. Creates `<worktrees>/<short>.<attempt>` as a **private clone** (own `.git`, **no remote**, so it can commit but cannot push), on branch `<short>` at the default branch, with the consumer's git identity. Writes `WORK.md` (mandate + laws + how to report), excluded from git. Records the assignment. |
+| `launch.sh <id> -- <cmd...>` | Runs the worker in its workdir with **no stdin** and its **own process group**; records PID + start time; logs to `$LOOM_STATE/<id>.log`. After positively observed process-group settlement, harvests the newest `state:` line the worker wrote **this launch** (older lines are skipped by offset). Settlement with no line → `failed / worker_exit_no_report (exit N)`. Unknown settlement retains the assignment. |
+| `watchdog.sh [--limit-min N]` | Local worker silent past N minutes (default 30) → verifies its identity and requests a **process-group kill**. Records `failed / watchdog_kill` only after observed settlement. A lost launcher can recover a matching group-completion receipt; disappearance alone never permits harvest. Unknown identity or settlement stays pending. Orca workers are surfaced for an owner decision, never signalled here. |
 | `heartbeat.sh --until <ID\|all> [--every SEC] [--limit-min N]` | The conductor's clock: runs the watchdog every SEC (default 60), prints only its actions, stops when the assignment (or all) has settled, then prints status. |
 | `status.sh` | One line per assignment whose latest report is `ready`, `blocked` or `failed` and has no live worker: `id<TAB>state<TAB>fact`. Silent when healthy. |
 | `verify.sh <id> [--baseline]` | Runs the consumer's `checks` in a **fresh clone** the worker never touched — at the base (`--baseline`) or at the ticket branch tip. After collect, uses the current consumer branch tip; before collect, uses the worker branch. Records every run and its full SHA; a branch run records a conductor report (`ready` = verified, `failed` = checks failed or branch moved). Exit 126/127 is reported as **could not run**, never as a test failure. |
-| `collect.sh <id>` | Fetches the ticket branch from the worker clone into the consumer checkout, prints the commits over the recorded base, and records `.collected_sha`. Never pushes. |
+| `collect.sh <id>` | Fetches the ticket branch from the worker clone, prints commits over the recorded base, and records `.collected_sha`. Refuses conflicting destination changes and branches checked out in consumer worktrees. A shared Orca branch already present is observed without moving it. Follow-up collection retains the previous SHA as its compare-and-swap baseline. Never pushes. |
 | `report.sh <id> <state> "<fact>"` | Conductor-side manual report (e.g. recording a review verdict). |
 
 After rebasing or otherwise moving a collected branch, run `loom verify <id>`
@@ -79,10 +79,14 @@ its workdir. Everything else is the conductor's.
 ## State
 
 `$LOOM_STATE` (default `~/.loom`), conductor-only: one JSON record per
-assignment plus its log. Writes take a lock that records its owner; a lock
-whose owner died is broken automatically, a live one is waited on for
-`LOOM_LOCK_WAIT` seconds (default 10). Records are validated on every read;
+assignment plus its log. Writes take a lock with a unique owner claim. Stale recovery removes only that
+claim; a delayed contender cannot remove a replacement owner's claim. A live
+owner is waited on for `LOOM_LOCK_WAIT` seconds (default 10). Records are validated on every read;
 a corrupt record stops the scripts instead of reading as healthy.
+
+Finish in-flight legacy state operations before upgrading: older clients use a
+different lock-owner convention. An orphan lock with no published owner is
+uncertain and requires investigation; it is not automatically removed.
 
 ## Consumer config
 

@@ -8,8 +8,9 @@ _loom_native_fault() {
 
 # An installed sibling descriptor opts this attempt into startup mail. Absence
 # is recorded as disabled, never advertised as a successful delivery boundary.
-_loom_native_startup_mail() {
-    local context=$1 dir=$2 descriptor bridge mail_context
+_loom_native_startup_mail() (
+    umask 077
+    local context=$1 dir=$2 descriptor bridge mail_context pending
     descriptor=${context}.mail
     if [[ ! -e $descriptor ]]; then
         printf '{"delivery_mode":"disabled","wake":"unsupported","messages":[]}\n' | loom_output_atomic "$dir/startup-mail"
@@ -24,13 +25,21 @@ _loom_native_startup_mail() {
     [[ $(loom_policy_digest "$bridge") == "$(jq -r .bridge_digest "$descriptor")" && $(loom_policy_digest "$mail_context") == "$(jq -r .context_digest "$descriptor")" ]] || return 2
     # A boundary for another assignment cannot release this child's gate.
     cmp -s <(jq -cS . "$_nn_binding") <(jq -cS . "$(jq -r .binding "$mail_context")") || return 2
-    timeout --kill-after=1 30 bash "$bridge" boundary "$mail_context" 20 > "$dir/startup-mail.pending" || return 2
-    jq -e '.delivery_mode=="next_boundary" and .wake=="unsupported" and (.messages|type=="array")' "$dir/startup-mail.pending" >/dev/null || return 2
-    loom_output_atomic "$dir/startup-mail" < "$dir/startup-mail.pending" || return 2
+    # Bridge reads never acknowledge mail. Keep its potentially large batch
+    # outside the spool; overflow remains unacked for a later boundary.
+    pending=$(mktemp -d) || return 2
+    trap 'rm -rf -- "$pending"' EXIT
+    timeout --kill-after=1 30 bash "$bridge" boundary "$mail_context" 20 > "$pending/batch" || return 2
+    jq -e '.delivery_mode=="next_boundary" and .wake=="unsupported" and (.messages|type=="array")' "$pending/batch" >/dev/null || return 2
+    # Count serialized UTF-8 bytes, including JSON escapes, envelope and newline.
+    jq -c 'reduce .messages[] as $m
+      ({delivery_mode:"next_boundary",wake:"unsupported",messages:[]};
+       (.messages += [$m]) as $next |
+       if ($next|tojson|utf8bytelength)+1 < 1048576 then $next else . end)' "$pending/batch" > "$pending/bounded" || return 2
+    loom_output_atomic "$dir/startup-mail" < "$pending/bounded" || return 2
     cp -- "$descriptor" "$dir/mail-descriptor" || return 2
     sync -f "$dir/mail-descriptor" && sync -f "$dir" || return 2
-    rm -f -- "$dir/startup-mail.pending"
-}
+)
 
 _loom_native_child() {
     local dir=$1 workspace prompt ingress executable arg

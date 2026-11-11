@@ -19,28 +19,50 @@ loom_init() {
     mkdir -p "$LOOM_STATE"
 }
 
-# A mkdir lock that records its owner. A lock whose owner is dead is broken;
-# a live owner is waited on for LOOM_LOCK_WAIT seconds (default 10).
+# Each acquisition publishes a uniquely named owner file. Only the contender
+# that successfully removes that exact file may remove the empty lock directory.
+# A delayed reaper/unlocker therefore cannot unlink a replacement owner's file.
 loom_lock() {
-    local tries=0 max owner
+    local tries=0 max owner pid start now claim
     max=$(( ${LOOM_LOCK_WAIT:-10} * 5 ))
+    # Unlike $$, this is the current shell even inside a Bash 3.2 subshell.
+    pid=$(exec bash -c 'printf "%s" "$PPID"')
+    # Restricted offline drills may omit ps; a PID-only claim is conservative.
+    start=$(LC_ALL=C loom_pstart "$pid") || start=
+    claim=$(mktemp "$LOOM_STATE/.lock-owner.$pid.XXXXXXXX") || loom_error 'cannot create lock claim'
+    printf '%s\n%s\n' "$pid" "$start" > "$claim"
     until mkdir "$LOOM_STATE/.lock" 2>/dev/null; do
-        owner=$(cat "$LOOM_STATE/.lock/owner" 2>/dev/null || :)
-        if [[ -n $owner ]] && ! kill -0 "$owner" 2>/dev/null; then
-            rm -f "$LOOM_STATE/.lock/owner"
-            rmdir "$LOOM_STATE/.lock" 2>/dev/null || :
-            continue
+        for owner in "$LOOM_STATE/.lock"/owner.* "$LOOM_STATE/.lock/owner"; do
+            [[ -f $owner && ! -L $owner ]] || continue
+            { IFS= read -r pid; IFS= read -r start || :; } < "$owner" || continue
+            [[ $pid =~ ^[1-9][0-9]*$ ]] || continue
+            now=$(LC_ALL=C loom_pstart "$pid") || now=
+            # A failed observation alone is not death; kill -0 is a second
+            # conservative check. Old PID-only owners remain supported.
+            if { [[ -n $start && -n $now && $start != "$now" ]]; } ||
+               { [[ -z $now ]] && ! kill -0 "$pid" 2>/dev/null; }; then
+                if rm -- "$owner" 2>/dev/null; then
+                    rmdir "$LOOM_STATE/.lock" 2>/dev/null || :
+                fi
+            fi
+        done
+        if (( tries++ >= max )); then
+            rm -f "$claim"
+            loom_error 'state is locked; retry after the active operation finishes'
         fi
-        (( tries++ < max )) || loom_error 'state is locked; retry after the active operation finishes'
         sleep 0.2
     done
-    printf '%s\n' "$$" > "$LOOM_STATE/.lock/owner"
+    LOOM_LOCK_OWNER="$LOOM_STATE/.lock/owner.${claim##*/}"
+    mv "$claim" "$LOOM_LOCK_OWNER"
     trap loom_unlock EXIT
 }
 
 loom_unlock() {
-    rm -f "$LOOM_STATE/.pending" "$LOOM_STATE/.lock/owner"
-    rmdir "$LOOM_STATE/.lock" 2>/dev/null || :
+    if [[ -n ${LOOM_LOCK_OWNER:-} ]] && rm -- "$LOOM_LOCK_OWNER" 2>/dev/null; then
+        rm -f "$LOOM_STATE/.pending"
+        rmdir "$LOOM_STATE/.lock" 2>/dev/null || :
+    fi
+    LOOM_LOCK_OWNER=
     trap - EXIT
 }
 
@@ -64,6 +86,11 @@ loom_validate() {
       (.base_sha | type == "string") and (.attempt | type == "number") and
       (.worker_pid == null or (.worker_pid | type == "number" and . > 1 and . == floor)) and
       (.worker_pid == null or (.worker_start | type == "string" and length > 0)) and
+      (.legacy_guard == null or (.legacy_guard | type == "object" and
+          (.identity | type == "string" and test("^([a-f0-9-]+:[0-9]+|ps:[A-Za-z0-9_:]+)$")) and
+          (.stop_requested == null or (.stop_requested | type == "boolean")) and
+          (.pgid | type == "number" and . > 1 and . == floor) and
+          (.directory | type == "string" and test("^[a-zA-Z0-9._-]+$") and (contains("..") | not)))) and
       (.started_at | iso) and
       ((has("launched_at") | not) or (.launched_at | iso)) and
       ((has("executor") | not) or (.executor | type == "object" and
@@ -89,6 +116,7 @@ loom_validate() {
       (.executor.continuation_pending == null or (.executor.continuation_pending | type == "boolean")) and
       (.executor.send_boundary == null or (.executor.send_boundary | type == "number" and . >= 0 and . == floor)) and
       ((has("collected_sha") | not) or (.collected_sha | type == "string" and test("^[0-9a-f]{40}$"))) and
+      ((has("previous_collected_sha") | not) or .previous_collected_sha == null or (.previous_collected_sha | type == "string" and test("^[0-9a-f]{40}$"))) and
       ((has("acked") | not) or (.acked | type == "object" and (.at | iso) and (.fact | type == "string" and length > 0))) and
       (.reports | type == "array") and
       all(.reports[]; (.at | iso) and
@@ -123,17 +151,207 @@ loom_pstart() {
     printf '%s' "$s"
 }
 
-loom_alive() {  # loom_alive <file>: the recorded worker is live (local process or Orca worker)
-    local pid start now
+# Linux keeps boot ID/start-tick identity; Darwin retains the existing ps start
+# time precision. Never downgrade Linux when /proc is inaccessible. The Darwin
+# guard pins its process group through completion, but ps is not an atomic or
+# high-resolution identity primitive (see tests/legacy/README.md).
+_loom_legacy_platform=
+loom_legacy_platform() {
+    # Merely sourcing lib.sh must work in the calibration drill's restricted
+    # tool environment, which does not perform process supervision.
+    [[ -n $_loom_legacy_platform ]] || _loom_legacy_platform=$(uname -s)
+}
+
+loom_legacy_ps() {  # complete snapshot: failure/malformed output is unknown
+    local rows pid pgid state extra
+    rows=$(LC_ALL=C ps -axo pid=,pgid=,stat= 2>/dev/null) || return 2
+    [[ -n $rows ]] || return 2
+    while read -r pid pgid state extra; do
+        # Darwin ps can report an indeterminate Mach state as '?'. Preserve
+        # that row as live rather than rejecting the entire process snapshot.
+        [[ $pid =~ ^[0-9]+$ && $pgid =~ ^[0-9]+$ && $state =~ ^[A-Za-z?] && -z $extra ]] || return 2
+    done <<< "$rows"
+    printf '%s\n' "$rows"
+}
+
+loom_legacy_proc() {  # sets _loom_proc: state, ppid, pgrp, ... start ticks
+    local stat rows pid pgid state
+    loom_legacy_platform || return 2
+    [[ $1 =~ ^[0-9]+$ ]] || return 2
+    case $_loom_legacy_platform in
+        Darwin)
+            rows=$(loom_legacy_ps) || return 2
+            while read -r pid pgid state; do
+                if [[ $pid == "$1" ]]; then
+                    _loom_proc=("${state:0:1}" 0 "$pgid")
+                    return 0
+                fi
+            done <<< "$rows"
+            return 1 ;;
+        Linux) ;;
+        *) return 2 ;;
+    esac
+    if ! IFS= read -r stat 2>/dev/null < "/proc/$1/stat"; then
+        [[ ! -d /proc/$1 ]] && return 1
+        return 2
+    fi
+    [[ $stat == *') '* ]] || return 2
+    read -r -a _loom_proc <<< "${stat##*) }"
+    [[ ${#_loom_proc[@]} -ge 20 && ${_loom_proc[2]} =~ ^[0-9]+$ && ${_loom_proc[19]} =~ ^[0-9]+$ ]] || return 2
+}
+
+loom_legacy_identity() {
+    local boot start
+    loom_legacy_platform || return 1
+    case $_loom_legacy_platform in
+        Darwin)
+            start=$(LC_ALL=C loom_pstart "$1") || return 1
+            printf 'ps:%s' "${start// /_}"
+            return ;;
+        Linux) ;;
+        *) return 1 ;;
+    esac
+    IFS= read -r boot < /proc/sys/kernel/random/boot_id || return 1
+    loom_legacy_proc "$1" || return 1
+    printf '%s:%s' "$boot" "${_loom_proc[19]}"
+}
+
+loom_legacy_group() {  # <pgid> [exclude-pid]: 0 live, 1 empty, 2 unknown
+    local pgid=$1 except=${2:-0} path pid found=1 rows group state
+    loom_legacy_platform || return 2
+    case $_loom_legacy_platform in
+        Darwin)
+            rows=$(loom_legacy_ps) || return 2
+            while read -r pid group state; do
+                if [[ $pid != "$except" && $group == "$pgid" && $state != Z* && $state != X* ]]; then
+                    found=0
+                fi
+            done <<< "$rows"
+            return "$found" ;;
+        Linux) ;;
+        *) return 2 ;;
+    esac
+    [[ -r /proc/self/stat ]] || return 2
+    for path in /proc/[0-9]*/stat; do
+        pid=${path#/proc/}; pid=${pid%/stat}
+        [[ $pid != "$except" ]] || continue
+        if ! loom_legacy_proc "$pid"; then
+            # A process may disappear during enumeration; unreadable survivors
+            # are uncertainty, not evidence of an empty group.
+            [[ ! -d /proc/$pid ]] && continue
+            return 2
+        fi
+        if [[ ${_loom_proc[2]} == "$pgid" && ${_loom_proc[0]} != Z && ${_loom_proc[0]} != X ]]; then
+            found=0
+        fi
+    done
+    return "$found"
+}
+
+loom_legacy_run() {  # <private launch dir> <workdir> <command...>
+    local dir=$1 workdir=$2 guard identity child rc=0 group parent=$$ parent_identity observer
+    shift 2
+    trap - EXIT
+    set +m
+    loom_legacy_platform || return 125
+    parent_identity=$(loom_legacy_identity "$parent") || return 125
+    # Parent records the stable group identity before any worker code runs.
+    while [[ ! -f $dir/start ]]; do
+        [[ $(loom_legacy_identity "$parent") == "$parent_identity" ]] || return 125
+        sleep .05
+    done
+    # The parent supplies $! atomically; BASHPID is unavailable in Bash 3.2.
+    read -r guard identity < "$dir/start" || return 125
+    [[ $(loom_legacy_identity "$guard") == "$identity" ]] || return 125
+    (cd "$workdir" && umask "$LOOM_CALLER_UMASK" && exec "$@") &
+    child=$!
+    wait "$child" || rc=$?
+    while :; do
+        group=0
+        if [[ $_loom_legacy_platform == Darwin ]]; then
+            # ps observes itself and its shell wrappers. Give the observer a
+            # separate group so it cannot keep the worker group alive forever.
+            set -m
+            (loom_legacy_group "$guard" "$guard") &
+            observer=$!
+            set +m
+            wait "$observer" 2>/dev/null || group=$?
+        else
+            loom_legacy_group "$guard" "$guard" || group=$?
+        fi
+        case $group in
+            0) sleep .1 ;;
+            1) break ;;
+            *) return 125 ;;
+        esac
+    done
+    # The guard pins the PGID until every other non-zombie member is gone.
+    # Publish only after that proof, and bind the receipt to this exact guard.
+    printf '%s %s %s\n' "$guard" "$identity" "$rc" > "$dir/settled.tmp"
+    mv "$dir/settled.tmp" "$dir/settled"
+    return "$rc"
+}
+
+loom_legacy_status() {  # running | settled | unknown; never infers completion
+    local file=$1 pid identity now dir receipt_pid receipt_identity rc extra group=0 observed=0
+    pid=$(jq -r '.worker_pid // empty' "$file")
+    identity=$(jq -r '.legacy_guard.identity // empty' "$file")
+    dir=$(jq -r '.legacy_guard.directory // empty' "$file")
+    if [[ -z $pid || -z $identity || ! $dir =~ ^[a-zA-Z0-9._-]+$ || $dir == *..* ]] ||
+        [[ $(jq -r '.legacy_guard.pgid // empty' "$file") != "$pid" ]]; then
+        printf 'unknown'; return
+    fi
+    loom_legacy_proc "$pid" || observed=$?
+    [[ $observed != 2 ]] || { printf 'unknown'; return; }
+    if [[ $observed == 0 ]]; then
+        now=$(loom_legacy_identity "$pid") || { printf 'unknown'; return; }
+        [[ $now == "$identity" ]] || { printf 'unknown'; return; }
+        loom_legacy_proc "$pid" || { printf 'unknown'; return; }
+        [[ ${_loom_proc[2]} == "$pid" ]] || { printf 'unknown'; return; }
+        if [[ ${_loom_proc[0]} != Z && ${_loom_proc[0]} != X ]]; then
+            printf 'running'; return
+        fi
+    fi
+    # A watchdog stop is bound to this guard while it is still verified live.
+    # Signal delivery alone is never settlement: retain ownership until a fresh
+    # scan proves every non-zombie group member gone, including the guard.
+    if jq -e '.legacy_guard.stop_requested == true' "$file" >/dev/null; then
+        loom_legacy_group "$pid" || group=$?
+        if [[ $group == 1 ]]; then printf 'settled'; else printf 'unknown'; fi
+        return
+    fi
+    # Even after loss of the launcher, a completed guard can prove settlement.
+    # Loss of the guard itself, or a stale/reused identity, cannot do so.
+    dir="$LOOM_STATE/$dir"
+    if [[ -L $dir || ! -f $dir/settled || -L $dir/settled ]] ||
+        ! read -r receipt_pid receipt_identity rc extra < "$dir/settled" ||
+        [[ $receipt_pid != "$pid" || $receipt_identity != "$identity" || ! $rc =~ ^(0|[1-9][0-9]{0,2})$ || -n $extra || $rc -gt 255 ]]; then
+        printf 'unknown'; return
+    fi
+    loom_legacy_group "$pid" || group=$?
+    if [[ $group == 1 ]]; then printf 'settled'; else printf 'unknown'; fi
+}
+
+loom_legacy_finish_stop() {  # caller holds the state lock; never harvest a kill
+    local file=$1 _
+    for _ in {1..20}; do
+        if [[ $(loom_legacy_status "$file") == settled ]]; then
+            loom_append "$file" failed watchdog_kill true
+            printf 'failed watchdog_kill'
+            return
+        fi
+        sleep .05
+    done
+    printf 'pending settlement_unproven'
+}
+
+loom_alive() {  # A local assignment owns its slot until positively settled.
     if jq -e '.executor.kind == "orca"' "$1" >/dev/null; then
         loom_orca_running "$1"
         return
     fi
-    pid=$(jq -r '.worker_pid // empty' "$1")
-    [[ -n $pid ]] || return 1
-    start=$(jq -r '.worker_start // empty' "$1")
-    now=$(loom_pstart "$pid") || return 1
-    [[ $now == "$start" ]]
+    # A lost guard is pending, not permission to relaunch, collect, or verify.
+    jq -e '.worker_pid != null' "$1" >/dev/null
 }
 
 # Workspace host (#47): an Orca worker placed with --on runs on that host, and
@@ -224,6 +442,12 @@ loom_report_boundary() {
 # (separator may be —, --, - or :).
 loom_harvest() {  # loom_harvest <file> <why-if-silent>
     local file=$1 silent=$2 workdir offset line state fact host
+    if [[ $(loom_executor "$file") == local && $(jq -r '.worker_pid // empty' "$file") ]]; then
+        jq -e '.legacy_guard.stop_requested != true' "$file" >/dev/null ||
+            loom_error 'watchdog stop must settle as failure; nothing harvested'
+        [[ $(loom_legacy_status "$file") == settled ]] ||
+            loom_error 'legacy worker settlement is unproven; nothing harvested'
+    fi
     local re='^state:[[:space:]]*(ready|blocked|failed|waiting)[[:space:]]*(—|--|-|:)?[[:space:]]*(.*)$'
     workdir=$(jq -r '.workdir' "$file")
     offset=$(jq -r '.report_offset // 0' "$file")
@@ -399,4 +623,20 @@ loom_orca_host() {  # loom_orca_host <name-or-id>
 # Existing legacy observations/stop/harvest remain available without migration.
 loom_legacy_dispatch_fence() {
     [[ ! -d ${LOOM_STATE:-$HOME/.loom}/v2 ]] || loom_error 'v2 authority present; legacy dispatch/launch refused; use an explicit native context'
+}
+
+# Dispatch reserves pending tickets; launch/start recheck under the same lock
+# so records created by older clients cannot produce simultaneous siblings.
+loom_no_open_sibling() {  # <record>; caller holds the state lock
+    local file=$1 sibling repo ticket
+    repo=$(jq -r '.repo' "$file")
+    ticket=$(jq -r '.ticket' "$file")
+    for sibling in "$LOOM_STATE"/*.json; do
+        [[ -f $sibling && $sibling != "$file" ]] || continue
+        loom_validate "$sibling"
+        if jq -e --arg repo "$repo" --argjson ticket "$ticket" '.repo == $repo and .ticket == $ticket' "$sibling" >/dev/null &&
+            loom_open "$sibling"; then
+            loom_error "ticket already has an open assignment: ${sibling##*/}"
+        fi
+    done
 }

@@ -29,7 +29,17 @@ loom_ws "$wh" "$workdir" git show-ref --verify --quiet "refs/heads/$short" || lo
 shared=false
 if [[ -z $wh ]] && [[ $(cd "$workdir" && cd "$(git rev-parse --git-common-dir)" && pwd -P) == "$(cd "$checkout" && cd "$(git rev-parse --git-common-dir)" && pwd -P)" ]]; then shared=true; fi
 if [[ $shared != true ]]; then
-    previous=$(jq -r '.collected_sha // empty' "$file")
+    # update-ref does not protect linked worktree indexes. Inspect the whole
+    # consumer repository before fetching and again immediately before moving.
+    refuse_checked_out() {
+        local worktrees
+        worktrees=$(git -C "$checkout" worktree list --porcelain) || loom_error 'cannot inspect consumer worktrees'
+        if grep -qxF "branch refs/heads/$short" <<< "$worktrees"; then
+            loom_error "branch $short is checked out in a consumer worktree"
+        fi
+    }
+    refuse_checked_out
+    previous=$(jq -r '.collected_sha // .previous_collected_sha // empty' "$file")
     destination="refs/heads/$short"
     current=$(git -C "$checkout" rev-parse --verify "$destination" 2>/dev/null || :)
     # A new attempt may supersede the last unchanged collection of this ticket.
@@ -51,14 +61,17 @@ if [[ $shared != true ]]; then
         git -C "$checkout" fetch -q "$workdir" "refs/heads/$short:$scratch_ref"
     fi
     incoming=$(git -C "$checkout" rev-parse --verify "$scratch_ref^{commit}")
+    refuse_checked_out
     git -C "$checkout" update-ref "$destination" "$incoming" "${current:-0000000000000000000000000000000000000000}" || loom_error 'collection destination moved concurrently'
+    git -C "$checkout" update-ref -d "$scratch_ref"
+    trap - EXIT
 fi
 if [[ $shared == true ]]; then sha=$(git -C "$checkout" rev-parse --verify "$short^{commit}"); else sha=$incoming; fi
 count=$(git -C "$checkout" rev-list --count "$base..$sha")
 loom_lock
 file=$(loom_record "$1")
 # shellcheck disable=SC2016
-loom_write "$file" '.collected_sha = $s' --arg s "$sha"
+loom_write "$file" '.collected_sha = $s | del(.previous_collected_sha)' --arg s "$sha"
 loom_unlock
 printf '%s: branch %s collected, %s commit(s) over base, latest report: %s\n' "$1" "$short" "$count" "$state"
 git -C "$checkout" log --oneline "$base..$sha"

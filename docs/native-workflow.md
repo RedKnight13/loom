@@ -141,7 +141,9 @@ checked/collected SHA before supplying an exact S6 acceptance proof.
 
 Evidence files are private reconstructable workflow receipts, while the S6 task
 transition retains its verified proof in the journal. Remote promotion reads the original immutable check artifact and refuses missing
-host intent/receipt; it never creates a check to recover lost proof. A crash
+host intent/receipt; it never creates a check to recover lost proof. If publication
+stops after the check artifact but before its metadata, replay validates the
+artifact against the original intent and receipt before rebuilding metadata. A crash
 between evidence capture and transition may require explicit inspection/replay; the facade does
 not promise automatic recovery at every workflow write boundary. The authority
 capacity slot remains reserved after process exit/acceptance until a separately
@@ -169,7 +171,9 @@ under the existing same-account model, not a cryptographic authorization token.
 
 The child receives `LOOM_STARTUP_MAIL_FILE`, `LOOM_MAIL_CONTEXT` and
 `LOOM_MAIL_BRIDGE` only when a startup boundary succeeded. The startup file holds
-escaped message data, claim tokens and read receipts. At a subsequent cooperative
+escaped message data, claim tokens and read receipts. Its serialized JSON is
+bounded below the spool file limit; overflow is not acknowledged and remains
+available to later boundaries. At a subsequent cooperative
 turn, invoke `bash "$LOOM_MAIL_BRIDGE" boundary "$LOOM_MAIL_CONTEXT" 20` or the
 facade's boundary command. Ack is a separate mail request with the token, message
 digest and current revision. With no startup descriptor the supervisor records
