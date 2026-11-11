@@ -1,3 +1,8 @@
+---
+layout: documentation
+title: "Native mail integration API"
+---
+
 # Native mail integration API
 
 S7 owns `ops/mail.sh` and `ops/worker-bridge.sh`. Shared CLI and supervisor

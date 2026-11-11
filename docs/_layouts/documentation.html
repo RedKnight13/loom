@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ page.title }} — Loom</title>
+  <meta name="description" content="{{ page.title | escape }}: Loom documentation, supported workflows and implementation limits.">
+  <link rel="stylesheet" href="assets/site.css">
+  <script src="assets/site.js" defer></script>
+</head>
+<body class="setup-page">
+<a class="skip" href="#main">Skip to content</a>
+<header class="site-header wrap">
+  <a class="brand" href="index.html" aria-label="Loom home"><span class="mark" aria-hidden="true">▥</span> loom</a>
+  <nav aria-label="Main navigation"><a href="index.html">Overview</a><a href="setup.html">Setup</a><a href="patterns.html">Patterns</a><a href="protocol.html">Protocol</a><a href="https://github.com/RedKnight13/loom">GitHub</a></nav>
+</header>
+<main id="main" class="wrap documentation-page" tabindex="-1">
+  <div class="documentation-grid">
+  <details class="documentation-menu" open><summary>Browse documentation</summary><nav class="documentation-nav" aria-label="Documentation navigation">
+    <p>Start here</p><a href="setup.html">Setup</a><a href="copy.html">Bootstrap prompt</a><a href="patterns.html">Patterns and roles</a><a href="support.html">Support and gaps</a>
+    <p>Native runtime · opt-in</p><a href="native-workflow.html">Workflow</a><a href="native-process.html">Processes</a><a href="native-ssh.html">SSH transport</a><a href="native-coordination.html">Coordination</a><a href="native-mail.html">Agent mail</a><a href="native-artifacts.html">Artifacts</a><a href="native-policy.html">Policy</a><a href="state-store.html">State store</a>
+    <p>Contracts</p><a href="protocol-contract.html">Protocol</a><a href="adapters.html">Adapter boundary</a>
+  </nav></details>
+  <article class="setup-doc">
+  {{ content }}
+  </article>
+  </div>
+</main>
+<footer class="wrap site-footer"><span>Loom · MIT</span><nav aria-label="Resources"><a href="https://github.com/RedKnight13/loom">GitHub</a><a href="protocol.html">Protocol</a><a href="https://github.com/RedKnight13/loom/blob/main/ops/README.md">Operations</a><a href="support.html">Support</a></nav></footer>
+</body>
+</html>

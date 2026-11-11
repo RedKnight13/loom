@@ -1,3 +1,8 @@
+---
+layout: documentation
+title: "Native SSH transport"
+---
+
 # Native SSH transport
 
 S5 is a source-safe transport around the S4 host API. It does not register shared

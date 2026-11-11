@@ -1,3 +1,8 @@
+---
+layout: documentation
+title: "Native process execution"
+---
+
 # Native process execution
 
 `ops/native.sh` is the source-safe Linux execution-provider surface. It does not

@@ -1,3 +1,8 @@
+---
+layout: documentation
+title: "Native coordination authority"
+---
+
 # Native coordination authority
 
 S6 implements the closed protocol 1 run, task and gate operations in

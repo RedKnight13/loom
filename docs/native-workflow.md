@@ -1,3 +1,8 @@
+---
+layout: documentation
+title: "Opt-in native CLI workflow"
+---
+
 # Opt-in native CLI workflow
 
 This slice connects the actual S1–S7 APIs to `ops/loom` and adds a process workflow
@@ -109,7 +114,7 @@ Explicitly install and pin the execution context afterward. Remote seal/check
 requires an owner helper installation with the approved workflow descriptor;
 worker routing alone grants neither operation. The facade negotiates all four
 seal/check/export/read capabilities, runs checks on that host and downloads only
-the resulting bounded immutable bundle. See [native-artifacts.md](native-artifacts.md)
+the resulting bounded immutable bundle. See [native-artifacts.md](native-artifacts.html)
 for the closed installation and operation interfaces. No execution operation
 installs authority or upgrades a preparation-only context.
 

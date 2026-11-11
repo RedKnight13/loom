@@ -2,41 +2,47 @@
 layout: setup
 title: Setup
 ---
-<section class="setup-hero" aria-labelledby="setup">
-  <div>
-    <p class="intro">Setup · Start with your project</p>
-    <h1 id="setup">Set up Loom.<br>Keep your context.</h1>
-    <p class="lead">Give your coding agent the bootstrap prompt. It updates the tools checkout to the latest <code>main</code>, inspects your project, reuses existing choices, and guides you through configuration and offline checks.</p>
-    <div class="actions"><button class="button primary" data-copy-bootstrap hidden>Copy bootstrap prompt</button><a class="button secondary" href="copy.html">Read the prompt</a></div>
-    <p class="copy-status" role="status" aria-live="polite" data-copy-status></p>
-    <p><a href="patterns.html">Compare coordination patterns and model roles</a>: name a catalog pattern or say you have no opinion and let the session propose and pick; you can also defer.</p>
-    <p class="fine"><a href="bootstrap.txt">Open raw prompt</a> to select and copy manually. Prefer hands-on setup? <a href="#manual-reference">Jump to the manual reference.</a></p>
-    <noscript><p>JavaScript is off. Open the raw prompt, select all its text, and copy it into your coding agent.</p></noscript>
+<section class="setup-entry" aria-labelledby="setup">
+  <h1 id="setup">Set up Loom in your project</h1>
+  <p class="lead">Open your project in a coding-agent session. The bootstrap prompt guides that session through setup; you review the result.</p>
+  <div class="setup-entry-grid">
+    <ol class="setup-path">
+      <li>
+        <div class="setup-step-heading"><span aria-hidden="true">1</span><h2>Copy the bootstrap prompt</h2></div>
+        <p>Use the current prompt from this site. You can inspect every instruction before copying.</p>
+        <div class="actions"><button class="button primary" data-copy-bootstrap hidden>Copy bootstrap prompt</button><a href="copy.html">Read the full prompt</a></div>
+        <p class="copy-status" role="status" aria-live="polite" data-copy-status></p>
+        <noscript><p>JavaScript is off. <a href="bootstrap.txt">Open the raw prompt</a>, select all and copy.</p></noscript>
+      </li>
+      <li>
+        <div class="setup-step-heading"><span aria-hidden="true">2</span><h2>Paste into your project session</h2></div>
+        <p>Use your CLI agent or tool-enabled chat with this repository open. The agent inspects existing configuration, safely updates Loom and runs the offline checks. It reuses choices and permissions already granted.</p>
+        <p class="fine">Keep your existing agent. Orca is optional. Plain chat without project access and execution tools cannot complete setup.</p>
+      </li>
+      <li>
+        <div class="setup-step-heading"><span aria-hidden="true">3</span><h2>Review the setup report</h2></div>
+        <p>Look for these three results. Missing evidence stays unverified; a copied prompt is not a completed setup.</p>
+        <dl class="setup-proof">
+          <div><dt>Project wiring</dt><dd>The configuration and session instructions were inspected. Fresh-session loading is confirmed separately.</dd></div>
+          <div><dt>Offline checks</dt><dd>Selftest and ShellCheck exited 0. Calibration reports ready after any drift was reviewed.</dd></div>
+          <div><dt>First real task</dt><dd>A worker result was harvested and checked at its exact revision—or explicitly reported as not run.</dd></div>
+        </dl>
+        <p>When you are ready to delegate, use the <a href="#8-first-ticket-checklist">first-ticket checklist</a>. Worker launches need task authorization; review still comes before shipping.</p>
+      </li>
+    </ol>
+    <aside class="setup-kit" aria-labelledby="bring-title">
+      <h2 id="bring-title">Have these ready</h2>
+      <ul><li>Your project repository</li><li>A session with file access and shell execution</li><li>The checks you trust for this project</li></ul>
+      <p class="fine">Standard setup uses Bash, Git, jq, GitHub CLI and ShellCheck. The prompt checks what is installed before proposing changes.</p>
+      <a href="#1-requirements">Full requirements</a>
+      <div class="setup-help"><h3>Already using Loom?</h3><p>Reuse your configuration and check calibration first. Review drift before recording a new baseline.</p><a href="#calibration-and-session-entry-schema-1">Check an existing setup</a></div>
+      <div class="setup-help"><h3>Something blocked?</h3><a href="#9-troubleshooting">Troubleshoot setup</a><br><a href="support.html">Platform support and gaps</a></div>
+    </aside>
   </div>
-  <aside class="setup-prerequisites" aria-labelledby="bring-title">
-    <p class="intro">Before you paste</p>
-    <h2 id="bring-title">A project. Trusted checks.<br>A capable session.</h2>
-    <p>Use a CLI agent or chat with project read/write access and shell execution. Bring the repository you want to delegate work in and the checks you trust.</p>
-    <p>Bash 3.2+, Git, jq 1.6+, authenticated GitHub CLI and ShellCheck. Orca is optional. <a href="#1-requirements">Full requirements</a> · <a href="support.html">Platform support</a></p>
-    <p class="fine">Plain chat without those capabilities stays unwired: nothing is installed or persisted. A session without shell execution reports calibration and command checks as not run.</p>
-  </aside>
-</section>
-
-<section class="setup-expectations" aria-labelledby="setup-outcome">
-  <div>
-    <h2 id="setup-outcome">Know what setup proves.</h2>
-    <p>The prompt reuses permissions already granted and asks only for unresolved choices or missing permission. It preserves existing configuration and project instructions, reusing a marked session-entry section where supported.</p>
-    <p>Opening an issue or launching a worker needs task-specific authorization; reuse it when already granted. Setup itself does not grant it.</p>
-  </div>
-  <ol class="setup-results">
-    <li><strong>Structural wiring</strong><span>Configuration and entry files inspected. Confirm actual loading in a fresh session before claiming continuity.</span></li>
-    <li><strong>Offline evidence</strong><span>Selftest, ShellCheck and calibration reported separately. Check existing evidence before reviewing and recording a new baseline.</span></li>
-    <li><strong>Live workflow proof</strong><span>Only an authorized real ticket, worker, harvest and verification sequence counts. Otherwise: not run. Human review still follows.</span></li>
-  </ol>
 </section>
 
 <div class="manual-heading">
-  <p class="intro">At your own pace</p>
+  <p class="intro">The setup reference</p>
   <h2 id="manual-reference">Manual reference</h2>
   <p>Start at requirements for a new setup, or jump to the part you need. Commands below use the trusted Loom checkout directly; no installed <code>loom</code> alias is assumed.</p>
 </div>
@@ -61,6 +67,16 @@ title: Setup
   </nav>
 </aside>
 <div class="setup-doc" markdown="1">
+
+## Current setup path
+
+The bootstrap uses the shipped schema-1 consumer flow and reads the prompt again
+after updating the tools checkout. Orca is optional. Verify agent access on the
+host that will run the work; a CLI being installed is not proof of usable access.
+
+The [native workflow](native-workflow.html) is an opt-in integration with separate
+provisioning and acceptance requirements. It does not replace this setup path.
+Experimental planner work is not a setup prerequisite.
 
 ## 1. Requirements
 {: id="1-requirements"}

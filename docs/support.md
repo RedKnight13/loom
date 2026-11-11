@@ -1,37 +1,42 @@
-# Support
+---
+layout: documentation
+title: "Platform support and known gaps"
+---
+
+# Platform support and known gaps
 
 What works today, what does not, and what it was tested on. Version **0.6.0**.
 
-## Matrix
+## Standard workflow
 
 | Capability | State | Notes |
 | --- | --- | --- |
-| Ticket rendering + Mandate parser | ✅ | `ticket.sh` proves its own output parses |
-| Ticket labels | ✅ | repeatable `--label`; `loom-ready` defaulted when present |
-| Eval record (`accept` / `ignore`) | ✅ | ignore is an append-only `decisions.jsonl` |
-| Local executor (private clone) | ✅ | no remote, own `.git`, git-free worker |
-| Orca executor ([MIT](https://github.com/stablyai/orca)) | ✅ | supervised worker, mail, release; requires 1.4.246+ and a running app |
-| Orca placement on `compute` | ✅ | first connected host wins; refuses when none |
-| Checks over SSH | ✅ | bundle over stdin, fresh tree, log back |
-| `--on HOST` for one verify run | ✅ | for assignments dispatched before a host was declared |
-| Watchdog (PID + start time, group kill) | ✅ | per-consumer `limit_min` |
-| Worker cap | ✅ | `workers`; `dispatch` refuses past it, `loom capacity` suggests one per connected host |
-| Stale Orca worker surfaced, never killed | ✅ | owner decides |
-| `ack` settling a handled result | ✅ | history kept; a kept-open workspace still shows |
-| Release after collect | ✅ | confirmed by Orca; never deletes worktrees |
-| Structured report harvest | ✅ | one state line per turn |
-| Consumer commit hooks | ✅ | fixers retried once; rejections logged |
-| Calibration and read-only drift check | ✅ | fixed offline drill; acceptance remains `not_run` |
-| The one-call JSON envelope | ✅ | every verb |
-| Orca read/write verbs (`send ask reply gate task run reference worktree repo base-ref automation`) | ✅ (thin) | pass-through; behaviour is Orca's, smoke-tested |
-| Orca task-DAG start (`--task --deps`) | ❌ | mapped, not wired |
-| Scheduled heartbeat / automations | ❌ | `automation` is a verb only; bring your own scheduler |
-| Push, PR, merge | ❌ | by design: conductor only |
-| Non-GitHub ticket source | ❌ | seam exists; not implemented |
-| Multi-conductor coordination | ❌ | one state dir, one conductor at a time |
-| Windows native | ❌ | bash 3.2+/POSIX shell expected; WSL untested |
+| Ticket rendering + Mandate parser | Available | `ticket.sh` proves its own output parses |
+| Ticket labels | Available | repeatable `--label`; `loom-ready` defaulted when present |
+| Eval record (`accept` / `ignore`) | Available | ignore is an append-only `decisions.jsonl` |
+| Local executor (private clone) | Available | no remote, own `.git`, git-free worker |
+| Orca executor ([MIT](https://github.com/stablyai/orca)) | Available | supervised worker, mail, release; requires 1.4.246+ and a running app |
+| Orca placement on `compute` | Available | first connected host wins; refuses when none |
+| Checks over SSH | Available | bundle over stdin, fresh tree, log back |
+| `--on HOST` for one verify run | Available | for assignments dispatched before a host was declared |
+| Watchdog (PID + start time, group kill) | Available | per-consumer `limit_min` |
+| Worker cap | Available | `workers`; `dispatch` refuses past it, `loom capacity` suggests one per connected host |
+| Stale Orca worker surfaced, never killed | Available | owner decides |
+| `ack` settling a handled result | Available | history kept; a kept-open workspace still shows |
+| Release after collect | Available | confirmed by Orca; never deletes worktrees |
+| Structured report harvest | Available | one state line per turn |
+| Consumer commit hooks | Available | fixers retried once; rejections logged |
+| Calibration and read-only drift check | Available | fixed offline drill; acceptance remains `not_run` |
+| The one-call JSON envelope | Available | every verb |
+| Orca read/write verbs (`send ask reply gate task run reference worktree repo base-ref automation`) | Adapter only | pass-through; behaviour is Orca's, smoke-tested |
+| Orca task-DAG start (`--task --deps`) | Not available | mapped, not wired |
+| Scheduled heartbeat / automations | External scheduler | `automation` is a verb only; bring your own scheduler |
+| Push, PR, merge | Conductor-owned | by design: conductor only |
+| Non-GitHub ticket source | Not available | seam exists; not implemented |
+| Multi-conductor coordination | Not available | one state dir, one conductor at a time |
+| Windows native | Unsupported | bash 3.2+/POSIX shell expected; WSL untested |
 
-## Native execution policy
+## Local execution and optional native runtime
 
 Explicit `executor = "local"` (or `--executor local` where the consumer permits
 it) works independently of Orca installation or runtime readiness. Dispatch
@@ -43,8 +48,9 @@ process groups, report harvesting and watchdog behavior are unchanged.
 
 Required `executor = "orca"` still refuses an unavailable runtime and never
 falls back to native execution. `auto` selection is unchanged: ready Orca wins
-at dispatch, otherwise local is selected. This slice adds no remote native
-executor or general orchestrator adapter.
+at dispatch, otherwise local is selected. The standard flow does not provide a general orchestrator adapter. The separate
+[native workflow](native-workflow.html) adds opt-in process and SSH capabilities
+with explicit provisioning and acceptance requirements.
 
 Explicit-local calibration excludes Orca discovery, executable path/bytes and
 `LOOM_ORCA` from the effective tools fingerprint. Installing, changing or
@@ -135,8 +141,9 @@ on a compute host with `bash ops/mutate.sh --on HOST`.
 | WSL | untested |
 | Windows native | unsupported |
 
-The selftest is offline and hermetic: a throwaway repo, stubbed `gh`, `orca`,
-`ssh`, and fake workers. It signals no real process.
+The selftest uses throwaway repositories, stubbed services and fixture workers.
+Process tests may start and signal fixture processes; passing them does not
+establish acceptance with a real coding agent.
 
 ## Versioning
 
@@ -156,7 +163,13 @@ Tracked as issues on the repository. At 0.6.0:
 - `dispatch` checks checkout origin against the ticket repository; the explicit
   `LOOM_ALLOW_ANY_CHECKOUT=1` override relaxes it and must not be enabled by
   bootstrap merely to bypass a mismatch.
-- No CI. The gate is `selftest` + `shellcheck` + `mutate`, run by the conductor locally or on a compute host.
+- CI runs selftest and ShellCheck on Linux and macOS. The mutation suite is a
+  separate contributor check, not a routine setup requirement.
+- Native runtime follow-ups cover [state read latency](https://github.com/RedKnight13/loom/issues/122),
+  [supervisor overhead](https://github.com/RedKnight13/loom/issues/123),
+  [legacy settlement](https://github.com/RedKnight13/loom/issues/124) and
+  [real SSH, adapters and calibration acceptance](https://github.com/RedKnight13/loom/issues/125).
+  Check each issue for its current status; opt-in availability is not rollout acceptance.
 
 ## Getting help
 

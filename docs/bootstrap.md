@@ -1,3 +1,8 @@
+---
+layout: documentation
+title: "Bootstrap prompt"
+---
+
 # Bootstrap prompt
 
 Copy [bootstrap.txt](bootstrap.txt) into the agent session for your project.
@@ -10,6 +15,16 @@ dirty tree, a non-main `HEAD` or any commit ahead of `origin/main`, and
 fast-forward only when cleanly behind. The prompt is written for the latest
 `main`, so a checkout that cannot move safely stops setup instead of testing
 stale code.
+
+## Current setup path
+
+The bootstrap uses the shipped schema-1 consumer flow and reads the prompt again
+after updating the tools checkout. Orca is optional. Verify agent access on the
+host that will run the work; a CLI being installed is not proof of usable access.
+
+The [native workflow](native-workflow.html) is an opt-in integration with separate
+provisioning and acceptance requirements. It does not replace this setup path.
+Experimental planner work is not a setup prerequisite.
 
 ## Capability paths
 
@@ -103,7 +118,7 @@ Report structural wiring, offline drills and live workflow proof separately.
 Selftest/lint and ticket rendering do not prove a real worker can finish and
 have its result harvested and verified. Use the absolute `LOOM_TOOLS`,
 `LOOM_REPO` and `FILE` paths resolved by the prompt or
-[manual setup](setup.md#4-register-a-consumer); no installed alias is assumed.
+[manual setup](setup.html#4-register-a-consumer); no installed alias is assumed.
 For fresh setup and existing installations, compare first:
 
 ```sh
@@ -141,6 +156,6 @@ The prompt renders a Mandate without opening an issue. Opening a ticket or
 starting workers requires task-specific authorization; existing authorization
 is retained. `accept` opens the reviewed ticket; it does not launch a worker or
 certify project acceptance. Authorized `dispatch` and `start`/`launch` are separate
-steps. See [setup.md](setup.md) for commands and [support.md](support.md)
+steps. See [setup.md](setup.html) for commands and [support.md](support.html)
 for residual gaps. Private consumer configs stay untracked; tracked configs
 need an authorized conductor's commit before calibration or dispatch.

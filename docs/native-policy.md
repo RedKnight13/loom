@@ -1,3 +1,8 @@
+---
+layout: documentation
+title: "Native configuration, policy and discovery"
+---
+
 # Native configuration, policy and discovery
 
 S3 is an isolated, sourceable policy layer. It requires Bash, jq, Git and existing

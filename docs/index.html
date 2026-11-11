@@ -11,33 +11,46 @@ layout: null
   <link rel="stylesheet" href="assets/site.css">
   <script src="assets/site.js" defer></script>
 </head>
-<body>
+<body class="landing">
 <a class="skip" href="#main">Skip to content</a>
 <header class="site-header wrap">
   <a class="brand" href="index.html" aria-label="Loom home"><span class="mark" aria-hidden="true">▥</span> loom</a>
-  <nav aria-label="Main navigation"><a href="#workflow">How it works</a><a href="setup.html">Setup</a><a href="https://github.com/RedKnight13/loom">GitHub</a></nav>
+  <nav aria-label="Main navigation"><a href="index.html" aria-current="page">Overview</a><a href="setup.html">Setup</a><a href="patterns.html">Patterns</a><a href="protocol.html">Protocol</a><a href="https://github.com/RedKnight13/loom">GitHub</a></nav>
 </header>
 <main id="main">
-  <section class="hero wrap">
+  <section class="hero wrap" aria-labelledby="hero-title">
     <div>
-      <p class="intro">For developers working with coding agents</p>
-      <h1>Delegate work.<br>Keep the review.</h1>
-      <p class="lead">Loom gives each task a scope, each worker a workspace, and each handoff a checkable result. Spend less attention chasing agents and more deciding what deserves to ship.</p>
-      <div class="actions"><button class="button primary" data-copy-bootstrap hidden>Copy bootstrap prompt</button><a class="button secondary" href="setup.html">Inspect setup</a></div>
-      <p class="copy-status" role="status" aria-live="polite" data-copy-status></p>
-      <p class="fine">Paste into a project session with execution tools: CLI or tool-enabled chat.<br><a href="copy.html">Read the prompt first</a> or <a href="bootstrap.txt">open bootstrap.txt</a>.</p>
+      <p class="intro">A shared way to work with coding agents</p>
+      <h1 id="hero-title">Give agents work.<br>Keep the thread.</h1>
+      <p class="lead">Scope the task. Give it a worker. Bring back evidence you can review. Loom keeps those handoffs connected, with the agent you already use.</p>
+      <div class="actions"><a class="button primary" href="setup.html">Set up Loom</a><a class="button secondary" href="#workflow">See how it works</a></div>
+      <p class="fine">Works with your existing coding agent. <a href="patterns.html">Explore ways to coordinate work</a>.</p>
     </div>
-    <aside class="ledger" aria-label="Illustrative task handoff">
-      <div class="ledger-heading"><span>One task, end to end</span><span class="example">Example</span></div>
-      <h2>Add JSON output to a CLI</h2>
-      <dl><div><dt>Scope</dt><dd>The CLI and its tests</dd></div><div><dt>Out of scope</dt><dd>Everything else</dd></div><div><dt>Done means</dt><dd>The agreed checks exit 0</dd></div></dl>
-      <div class="report"><span>Worker report</span><code>state: ready — added JSON output and tests</code></div>
-      <p class="review-note"><strong>Ready is a handoff.</strong><br>Fresh checks and review still come next.</p>
+    <aside class="handoff-scene" aria-label="Illustrated Loom workflow, not a live run" data-handoff>
+      <div class="scene-heading"><span>One task. A visible thread.</span><span>Illustration</span></div>
+      <div class="scene-workbench">
+        <div class="thread-track" aria-hidden="true"><span></span></div>
+        <article class="handoff-frame frame-scope">
+          <div class="frame-caption"><span class="thread-node" aria-hidden="true"></span><span>Scope the work</span><span class="frame-index">01</span></div>
+          <h2>Add JSON output to a CLI</h2>
+          <dl><div><dt>In scope</dt><dd>CLI and regression tests</dd></div><div><dt>Leave alone</dt><dd>Everything else</dd></div><div><dt>Done means</dt><dd>Agreed checks exit 0</dd></div></dl>
+        </article>
+        <article class="handoff-frame frame-worker">
+          <div class="frame-caption"><span class="thread-node" aria-hidden="true"></span><span>A separate workspace</span><span class="frame-index">02</span></div>
+          <div class="work-lines" aria-hidden="true"><span>+ JSON output</span><span>+ Regression tests</span></div>
+          <p><code>state: ready</code><span>Changes ready for review</span></p>
+        </article>
+        <article class="handoff-frame frame-review">
+          <div class="frame-caption"><span class="thread-node" aria-hidden="true"></span><span>Evidence comes back</span><span class="frame-index">03</span></div>
+          <p>Fresh checks. Exact revision.<br><strong>You decide what ships.</strong></p>
+        </article>
+      </div>
+      <div class="scene-footer"><span>Ready is a handoff, not approval.</span><button type="button" data-replay-handoff hidden>Replay handoff <span aria-hidden="true">↻</span></button></div>
     </aside>
   </section>
   <section class="workflow" id="workflow">
     <div class="wrap">
-      <div class="section-heading"><h2>A clear loop.<br>A smaller supervision burden.</h2><p>The aim: more accepted, verified tasks per hour of human attention. Start with one bounded task and checks you already trust.</p></div>
+      <div class="section-heading"><h2>From a request<br>to a reviewed result.</h2><p>The aim: more accepted, verified tasks per hour of human attention. Start with one bounded task and checks you already trust.</p></div>
       <ol class="steps">
         <li><span class="step-number">01</span><h3>Scope</h3><p>Write the mandate: allowed files, exclusions, and what counts as done.</p></li>
         <li><span class="step-number">02</span><h3>Assign</h3><p>Give the ticket a worker and a separate workspace with the mandate.</p></li>
@@ -49,17 +62,18 @@ layout: null
     </div>
   </section>
   <section class="wrap modes" aria-labelledby="modes-title">
-    <div class="section-heading"><h2 id="modes-title">Your agent.<br>Two ways to run.</h2><p>Loom coordinates the work. It does not supply a model or replace your agent’s permissions.</p></div>
+    <div class="section-heading"><h2 id="modes-title">Your agent.<br>Your workspace.</h2><p>Loom coordinates the work. It does not supply a model or replace your agent’s permissions.</p></div>
     <div class="mode-grid">
       <article><h3>Local</h3><p>A private clone with its own Git history and no configured remote. Launch your agent and run Loom’s watch loop to follow its reports.</p><p>The local watchdog applies while the watch loop is running. Removing a remote is not a security sandbox.</p><a href="setup.html#5-local-executor">Set up the local executor</a></article>
       <article><h3>With Orca</h3><p>Orca creates and supervises the worker workspace. Its app must be running; configured compute placement requires a connected host.</p><p>Loom surfaces silent Orca workers as stale for a decision. It does not signal them with the local watchdog.</p><a href="setup.html#6-orca-executor">Set up the Orca executor</a></article>
     </div>
+    <p class="native-note">Exploring the native runtime? It is an opt-in integration with separate provisioning and acceptance requirements. <a href="native-workflow.html">Read its current scope</a>.</p>
   </section>
-  <section class="wrap start" aria-labelledby="start-title">
-    <div><h2 id="start-title">Start with one useful task.</h2><p>Use a repository you know and checks you already trust. The bootstrap prompt brings the tools checkout to the latest <code>main</code> first, discovers existing tools and configuration, asks only about unresolved choices, runs Loom’s offline checks, and renders a first mandate.</p><p>Setup reuses granted installation permission and asks only for missing permission. Opening an issue or starting workers requires task-specific authorization: reuse it if already granted; otherwise review and approve the proposed action first.</p><p>Calibration checks existing evidence first. Missing or drifted evidence needs review before recording a baseline and checking again. Structural wiring, offline checks and the calibration drill remain distinct from live project proof.</p></div>
-    <div class="requirements"><h3>Bring your existing tools</h3><p>macOS or Linux<br>Bash 3.2+, Git, jq, GitHub CLI, ShellCheck<br>A project session with file access and execution tools</p><p class="fine">Use a CLI agent or tool-enabled chat. Plain chat remains unwired: nothing is installed or persisted.</p><a class="button secondary" href="copy.html">Read and copy the prompt</a><p class="fine"><a href="support.html">Platform support and known gaps</a></p></div>
+  <section class="wrap start overview-next" aria-labelledby="start-title">
+    <div><h2 id="start-title">Try it on work you can judge.</h2><p>A small bug fix. A missing test. A bounded CLI change. Start with a clear outcome and checks you trust, then decide whether Loom makes the handoff easier.</p></div>
+    <div class="overview-action"><a class="button primary" href="setup.html">Set up your project</a><a href="support.html">Check support and known gaps</a></div>
   </section>
 </main>
-<footer class="wrap site-footer"><span>Loom · MIT</span><nav aria-label="Resources"><a href="https://github.com/RedKnight13/loom/blob/main/PROTOCOL.md">Protocol</a><a href="https://github.com/RedKnight13/loom/blob/main/ops/README.md">Operations</a><a href="support.html">Support</a></nav></footer>
+<footer class="wrap site-footer"><span>Loom · MIT</span><nav aria-label="Resources"><a href="https://github.com/RedKnight13/loom">GitHub</a><a href="protocol.html">Protocol</a><a href="https://github.com/RedKnight13/loom/blob/main/ops/README.md">Operations</a><a href="support.html">Support</a></nav></footer>
 </body>
 </html>
