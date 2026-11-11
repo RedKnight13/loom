@@ -95,3 +95,21 @@ jobs:
 
       - name: shellcheck
         run: shellcheck -x ops/*.sh ops/loom
+
+  required:
+    name: Required CI
+    if: ${{ always() }}
+    needs: [self-hosted, fork]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Confirm the selected runner matrix passed
+        env:
+          OWNER_RESULT: ${{ needs.self-hosted.result }}
+          HOSTED_RESULT: ${{ needs.fork.result }}
+        run: |
+          if [[ "$OWNER_RESULT" == success && "$HOSTED_RESULT" == skipped ]] ||
+             [[ "$OWNER_RESULT" == skipped && "$HOSTED_RESULT" == success ]]; then
+            exit 0
+          fi
+          echo "CI did not pass: owner=$OWNER_RESULT hosted=$HOSTED_RESULT"
+          exit 1
