@@ -79,7 +79,19 @@ for _ in 1 2 3 4; do
         done
     ) & lock_pids+=("$!")
 done
-for lock_pid in "${lock_pids[@]}"; do wait "$lock_pid"; done
+# Join every contender before the EXIT cleanup can remove shared fixtures.
+lock_failed=0
+lock_index=0
+for lock_pid in "${lock_pids[@]}"; do
+    lock_index=$((lock_index + 1))
+    lock_rc=0
+    wait "$lock_pid" || lock_rc=$?
+    if [[ $lock_rc != 0 ]]; then
+        printf 'FAIL review-legacy contender %s: exit %s\n' "$lock_index" "$lock_rc" >&2
+        lock_failed=1
+    fi
+done
+[[ $lock_failed == 0 ]] || fail 'lock contention child failed'
 printf 'PASS review-legacy ownership-safe stale reclaim, unlock and contention\n'
 
 export LOOM_REPO="$scratch/repo" LOOM_ALLOW_ANY_CHECKOUT=1
