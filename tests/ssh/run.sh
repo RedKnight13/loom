@@ -26,7 +26,11 @@ call() {
     local expected=${2:-0} rc=0
     loom_ssh_handle "$dir/client" "$1" > "$dir/result" || rc=$?
     [[ $rc == "$expected" ]] || fail "$(jq -r .op "$1") exit=$rc expected=$expected $(cat "$dir/result")"
-    loom_protocol_validate response "$dir/result" "$1" || fail 'invalid normalized response'
+    if loom_protocol_validate request "$1"; then
+        loom_protocol_validate response "$dir/result" "$1" || { cat "$dir/result" >&2; fail "invalid normalized response for $(jq -r .op "$1")"; }
+    else
+        loom_protocol_validate response "$dir/result" || { cat "$dir/result" >&2; fail 'invalid refusal response'; }
+    fi
 }
 fixture() {
     dir=$scratch/$1
@@ -92,6 +96,7 @@ esac
 SH
 chmod 700 "$scratch/fake-ssh"
 export LOOM_SSH_EXECUTABLE=$scratch/fake-ssh FAKE_ARGV=$scratch/argv
+if [[ ${LOOM_SSH_FIXTURE_LIBRARY:-0} == 1 ]]; then return 0; fi
 fixture fake
 baseline_dir=$dir
 loom_ssh_preflight "$dir/client" > "$dir/preflight"

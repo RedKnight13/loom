@@ -2711,5 +2711,181 @@
       "observed_at": "2026-01-01T00:00:00Z",
       "extensions": {}
     }
+  },
+  {
+    "protocol": "execution",
+    "op": "workspace.seal",
+    "mode": "mutate",
+    "request": {
+      "protocol": "loom.execution",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": "operation-example",
+      "idempotency_key": "key-example",
+      "op": "workspace.seal",
+      "actor": {
+        "id": "Agni",
+        "run_id": null,
+        "epoch": 1
+      },
+      "target": {
+        "assignment_id": "example",
+        "attempt_id": "example",
+        "host_id": "example"
+      },
+      "expected_revision": 1,
+      "timeout_ms": 5000,
+      "args": {
+        "workspace_id": "example",
+        "base_sha": "1111111111111111111111111111111111111111",
+        "manifest_digest": "git-blob-sha1-v1:1111111111111111111111111111111111111111"
+      },
+      "extensions": {}
+    },
+    "response": {
+      "protocol": "loom.execution",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": "operation-example",
+      "op": "workspace.seal",
+      "target": {
+        "assignment_id": "example",
+        "attempt_id": "example",
+        "host_id": "example"
+      },
+      "ok": true,
+      "status": "completed",
+      "revision": null,
+      "durable": false,
+      "result": {
+        "sha": "1111111111111111111111111111111111111111",
+        "manifest_digest": "git-blob-sha1-v1:1111111111111111111111111111111111111111",
+        "report_digest": "git-blob-sha1-v1:1111111111111111111111111111111111111111",
+        "config_digest": "git-blob-sha1-v1:1111111111111111111111111111111111111111",
+        "source": {
+          "installation_id": "fixture",
+          "transport_identity": "fixture",
+          "boot_id": "fixture",
+          "helper_digest": "fixture",
+          "context_digest": "fixture"
+        },
+        "workspace_id": "example",
+        "base_sha": "1111111111111111111111111111111111111111",
+        "report_state": "ready",
+        "execution": {
+          "binding": {
+            "assignment_id": "example",
+            "attempt_id": "example",
+            "host_id": "example"
+          },
+          "state": "reserved",
+          "identity": null,
+          "identity_verified": false,
+          "terminal": null,
+          "source": "example",
+          "observed_at": "2026-01-01T00:00:00Z",
+          "resources": []
+        }
+      },
+      "error": null,
+      "effects": [],
+      "evidence": [],
+      "observed_at": "2026-01-01T00:00:00Z",
+      "extensions": {}
+    }
+  },
+  {
+    "protocol": "execution",
+    "op": "workspace.check",
+    "mode": "mutate",
+    "request": {
+      "protocol": "loom.execution",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": "operation-example",
+      "idempotency_key": "key-example",
+      "op": "workspace.check",
+      "actor": {
+        "id": "Agni",
+        "run_id": null,
+        "epoch": 1
+      },
+      "target": {
+        "assignment_id": "example",
+        "attempt_id": "example",
+        "host_id": "example"
+      },
+      "expected_revision": 1,
+      "timeout_ms": 5000,
+      "args": {
+        "sha": "1111111111111111111111111111111111111111",
+        "manifest_digest": "git-blob-sha1-v1:1111111111111111111111111111111111111111"
+      },
+      "extensions": {}
+    },
+    "response": {
+      "protocol": "loom.execution",
+      "version": {
+        "major": 1,
+        "minor": 0
+      },
+      "request_id": "request-example",
+      "operation_id": "operation-example",
+      "op": "workspace.check",
+      "target": {
+        "assignment_id": "example",
+        "attempt_id": "example",
+        "host_id": "example"
+      },
+      "ok": true,
+      "status": "completed",
+      "revision": null,
+      "durable": false,
+      "result": {
+        "sha": "1111111111111111111111111111111111111111",
+        "manifest_digest": "git-blob-sha1-v1:1111111111111111111111111111111111111111",
+        "report_digest": "git-blob-sha1-v1:1111111111111111111111111111111111111111",
+        "config_digest": "git-blob-sha1-v1:1111111111111111111111111111111111111111",
+        "source": {
+          "installation_id": "fixture",
+          "transport_identity": "fixture",
+          "boot_id": "fixture",
+          "helper_digest": "fixture",
+          "context_digest": "fixture"
+        },
+        "check_digest": "git-blob-sha1-v1:1111111111111111111111111111111111111111",
+        "check_exit": 0,
+        "captured": true,
+        "process": {
+          "captured": true,
+          "group_empty": true,
+          "escaped": false,
+          "timed_out": false,
+          "output_eof": true,
+          "exit_code": 0,
+          "total_output_bytes": 0,
+          "lost_prefix_bytes": 0,
+          "keeper": {
+            "pid": 123,
+            "start_ticks": "1",
+            "boot_id": "fixture"
+          }
+        }
+      },
+      "error": null,
+      "effects": [],
+      "evidence": [],
+      "observed_at": "2026-01-01T00:00:00Z",
+      "extensions": {}
+    }
   }
 ]

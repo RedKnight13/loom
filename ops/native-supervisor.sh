@@ -6,9 +6,35 @@ _loom_native_fault() {
     [[ ${LOOM_NATIVE_TEST_FAULT:-} != "$1" ]] || exit 91
 }
 
+# An installed sibling descriptor opts this attempt into startup mail. Absence
+# is recorded as disabled, never advertised as a successful delivery boundary.
+_loom_native_startup_mail() {
+    local context=$1 dir=$2 descriptor bridge mail_context
+    descriptor=${context}.mail
+    if [[ ! -e $descriptor ]]; then
+        printf '{"delivery_mode":"disabled","wake":"unsupported","messages":[]}\n' | loom_output_atomic "$dir/startup-mail"
+        return
+    fi
+    loom_policy_json "$descriptor" || return 2
+    jq -e 'keys==["bridge","bridge_digest","context","context_digest","schema"] and .schema==1 and all(.bridge,.bridge_digest,.context,.context_digest;type=="string")' "$descriptor" >/dev/null || return 2
+    bridge=$(jq -r .bridge "$descriptor"); mail_context=$(jq -r .context "$descriptor")
+    # The pinned runtime must also cover the bridge's adjacent dependencies.
+    [[ $bridge == "$(cd -- "${BASH_SOURCE[0]%/*}" && pwd -P)/worker-bridge.sh" ]] || return 2
+    loom_policy_file "$bridge" && loom_policy_json "$mail_context" || return 2
+    [[ $(loom_policy_digest "$bridge") == "$(jq -r .bridge_digest "$descriptor")" && $(loom_policy_digest "$mail_context") == "$(jq -r .context_digest "$descriptor")" ]] || return 2
+    # A boundary for another assignment cannot release this child's gate.
+    cmp -s <(jq -cS . "$_nn_binding") <(jq -cS . "$(jq -r .binding "$mail_context")") || return 2
+    timeout --kill-after=1 30 bash "$bridge" boundary "$mail_context" 20 > "$dir/startup-mail.pending" || return 2
+    jq -e '.delivery_mode=="next_boundary" and .wake=="unsupported" and (.messages|type=="array")' "$dir/startup-mail.pending" >/dev/null || return 2
+    loom_output_atomic "$dir/startup-mail" < "$dir/startup-mail.pending" || return 2
+    cp -- "$descriptor" "$dir/mail-descriptor" || return 2
+    sync -f "$dir/mail-descriptor" && sync -f "$dir" || return 2
+    rm -f -- "$dir/startup-mail.pending"
+}
+
 _loom_native_child() {
     local dir=$1 workspace prompt ingress executable arg
-    local -a argv=()
+    local -a argv=() mail_env=()
     while [[ ! -f $dir/gate ]]; do
         # Lost keeper leaves child positively gated; child exits without exec.
         _loom_native_identity_live "$dir/identity" || return 90
@@ -24,11 +50,14 @@ _loom_native_child() {
     _loom_native_fact exec_intent '{}' || return 90
     printf '{}\n' | loom_output_atomic "$dir/exec-intent" || return 90
     _loom_native_fault after_exec_intent
+    if [[ -f $dir/mail-descriptor ]]; then
+        mail_env=("LOOM_STARTUP_MAIL_FILE=$dir/startup-mail" "LOOM_MAIL_CONTEXT=$(jq -r .context "$dir/mail-descriptor")" "LOOM_MAIL_BRIDGE=$(jq -r .bridge "$dir/mail-descriptor")")
+    fi
     # Exec boundary is explicit, but this does not invent an agent readiness ack.
     if [[ $ingress == stdin ]]; then
-        exec env -i PATH=/usr/bin:/bin LANG=C.UTF-8 HOME="$workspace" LOOM_BINDING_FILE="$dir/binding" "${argv[@]}" < "$prompt"
+        exec env -i PATH=/usr/bin:/bin LANG=C.UTF-8 HOME="$workspace" LOOM_BINDING_FILE="$dir/binding" "${mail_env[@]}" "${argv[@]}" < "$prompt"
     else
-        exec env -i PATH=/usr/bin:/bin LANG=C.UTF-8 HOME="$workspace" LOOM_BINDING_FILE="$dir/binding" LOOM_PROMPT_FILE="$prompt" "${argv[@]}" </dev/null
+        exec env -i PATH=/usr/bin:/bin LANG=C.UTF-8 HOME="$workspace" LOOM_BINDING_FILE="$dir/binding" LOOM_PROMPT_FILE="$prompt" "${mail_env[@]}" "${argv[@]}" </dev/null
     fi
 }
 
@@ -90,6 +119,7 @@ _loom_native_keeper() {
     printf '%s\n' "$identity" | loom_output_atomic "$dir/identity" || return 2
     _loom_native_fault identity
     _loom_native_policy_check || return 2
+    _loom_native_startup_mail "$context" "$dir" || return 2
     printf '{}\n' | loom_output_atomic "$dir/gate" || return 2
     _loom_native_fault gate
     _nk_known[$child]=$child_ticks
