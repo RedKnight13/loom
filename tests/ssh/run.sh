@@ -102,7 +102,7 @@ baseline_dir=$dir
 loom_ssh_preflight "$dir/client" > "$dir/preflight"
 jq '.op="hello"|.operation_id=null|.idempotency_key=null|.args={versions:[{major:1,minor:0}],required_capabilities:["workspace.prepare.v1","execution.start.v1"]}' "$dir/start" > "$dir/hello"
 call "$dir/hello"
-pass 'pinned helper preflight and workspace/lifecycle capability negotiation using actual S1-S4 modules' 
+pass 'pinned helper preflight and workspace/lifecycle capability negotiation using actual S1-S4 modules'
 loom_ssh_upload "$dir/client" "$dir/input.bundle" "$(loom_protocol_digest "$dir/input.bundle")" >/dev/null
 FAULT=after call "$dir/prepare" 1; call "$dir/prepare"
 [[ $(jq -r .result.disposition "$dir/result") == existing ]] || fail 'prepare replay'
@@ -124,7 +124,7 @@ cmp "$dir/prompt" "$dir/workspaces/worker/prompt-copy"
 [[ ! -e $dir/workspaces/worker/injected ]] || fail injection
 call "$dir/read"
 jq -e 'all(.request.changes[]; .kind=="host" and .run_id==null) and .request.actor.run_id==null' "$dir/state/v2/journal/"*.json >/dev/null || fail 'remote authority mutation'
-pass 'lost reply keeps same-operation fence; literal argv/prompt; captured remote exit/read; spool-only journal facts' 
+pass 'lost reply keeps same-operation fence; literal argv/prompt; captured remote exit/read; spool-only journal facts'
 for fault in malformed oversize exit; do FAULT=$fault call "$dir/inspect" 1; done
 jq '.timeout_ms=200' "$dir/inspect" > "$dir/short"
 FAULT=hang call "$dir/short" 1
@@ -167,7 +167,7 @@ jq '.args.argv += ["nul\\u0000"]' "$dir/start" > "$dir/changed"
 sed 's/nul\\\\u0000/nul\\u0000/' "$dir/changed" > "$dir/nul"
 rc=0; loom_ssh_handle "$dir/client" "$dir/nul" > "$dir/result" || rc=$?
 [[ $rc == 2 ]] || fail 'NUL not refused'
-jq -e '.status=="refused"' "$dir/result" >/dev/null || fail 'NUL not refused' 
+jq -e '.status=="refused"' "$dir/result" >/dev/null || fail 'NUL not refused'
 [[ $(cat "$dir/workspaces/worker/launched") == x ]] || fail 'invalid request launched'
 pass 'changed argv/owner and NUL rejected without another launch'
 LOOM_SSH_TEST_TREE_BYTES=1 fixture tree_quota
