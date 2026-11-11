@@ -325,6 +325,7 @@ _loom_native_handle() (
         execution.stop) _loom_native_stop > "$temp/response" || rc=$? ;;
         execution.release)
             _loom_native_policy_check || { _loom_native_error policy_denied refused 'Pinned policy changed'; return; }
+            _loom_native_restore_control release_request "$_nn_dir/released" || return 1
             if [[ -f $_nn_dir/released ]]; then
                 [[ $(_loom_native_request_digest "$_nn_dir/released") == "$(_loom_native_request_digest "$_nn_request")" ]] || { _loom_native_error idempotency_conflict refused 'Release already recorded'; return; }
             else
@@ -402,6 +403,16 @@ _loom_native_group_empty() {
     done
 }
 
+# Cache files are projections: reconstruct them from committed host history.
+_loom_native_restore_control() {
+    local field=$1 cache=$2 record saved
+    [[ ! -e $cache ]] || return 0
+    record=$(loom_state_get host "$_nn_id") || return 1
+    saved=$(jq -c --arg field "$field" '.data[$field] // null' <<< "$record") || return 1
+    [[ $saved != null ]] || return 0
+    printf '%s\n' "$saved" | loom_output_atomic "$cache"
+}
+
 _loom_native_stop() {
     local observation digest saved deadline record data result signals='[]' verified=false confirmed=false group=unknown terminal=null
     _loom_native_policy_check || { _loom_native_error policy_denied refused 'Pinned policy changed'; return; }
@@ -410,6 +421,7 @@ _loom_native_stop() {
     digest=$(_loom_native_request_digest "$_nn_request")
     [[ -d $_nn_dir && ! -L $_nn_dir ]] || { _loom_native_error identity_mismatch refused 'No reserved native attempt'; return; }
     exec 9> "$_nn_dir/control.lock"; flock -w 2 9 || return 1
+    _loom_native_restore_control stop_request "$_nn_dir/stop" || return 1
     if [[ -f $_nn_dir/stop ]]; then
         saved=$(_loom_native_request_digest "$_nn_dir/stop")
         [[ $saved == "$digest" ]] || { _loom_native_error idempotency_conflict refused 'Stop already reserved; reconcile original operation'; return; }

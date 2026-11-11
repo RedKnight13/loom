@@ -131,7 +131,7 @@ else
   elif $q.op=="task.update" then
     $old.tasks[$q.args.task_id] as $t | checkrev($q;$t) |
     $q.args.transition as $to |
-    need(($t.state|IN("succeeded","cancelled"))|not;"terminal_task") |
+    need($t.state!="succeeded" and ($t.state!="cancelled" or $to=="cancelled");"terminal_task") |
     need($to!="running";"launch_authorization_required") |
     if $to=="ready" then
       need(($t.state|IN("pending","ready")) and ready($old;$t);"prerequisites_unmet")
@@ -148,10 +148,13 @@ else
     elif $to=="failed" then
       proof($c;$q;$t;"settlement") as $p |
       need(($t.state|IN("running","waiting","review")) and ($t.attempt_ids|length)>0 and $p!=null and $p.confirmed_stopped==true and $p.quiescent==true;"settlement_proof_required")
+    elif $t.state=="cancelled" then
+      proof($c;$q;$t;"settlement") as $p |
+      need(($t.attempt_ids|length)>0 and $p!=null and $p.confirmed_stopped==true and $p.quiescent==true;"settlement_proof_required")
     else need($to=="waiting" or $to=="cancelled";"invalid_transition") end |
     ($old | .tasks[$t.task_id].state=$to |
       if $to=="succeeded" then .tasks[$t.task_id].accepted_result=proof($c;$q;$t;"accept").evidence_ref else . end |
-      if $to=="review" or $to=="failed" then
+      if $to=="review" or $to=="failed" or ($t.state=="cancelled" and $to=="cancelled") then
         .attempts[$t.attempt_ids[-1]].execution_state="exited" |
         .attempts[$t.attempt_ids[-1]].confirmed_stopped=true else . end | refresh) as $d |
     {data:$d,result:$d.tasks[$t.task_id]}
@@ -201,6 +204,17 @@ end |
 JQ
 }
 
+# A historical outcome never grants a former owner current mutation authority.
+_loom_coord_replay_authorized() {
+    local context=$1 request=$2 current
+    current=$(loom_state_get run "$(jq -r .actor.run_id "$request")") || return 2
+    jq -e --slurpfile c "$context" --slurpfile q "$request" '
+      .epoch==$q[0].actor.epoch and
+      (.data.owner_id==$c[0].actor_id or
+       ($q[0].op=="gate.resolve" and .data.gates[$q[0].args.gate_id].resolver_id==$c[0].actor_id))
+    ' <<< "$current" >/dev/null || { printf 'owner_fenced\n' >&2; return 2; }
+}
+
 _loom_coord_mutate() {
     local context=$1 request=$2 prior rc=0 key digest run op actor
     key=$(_loom_coord_key "$request") || return 2
@@ -211,6 +225,7 @@ _loom_coord_mutate() {
     # dedupe entry alone can proceed, while corrupt/unavailable stores fail later.
     if prior=$(loom_state_operation "$actor" "$op" "$(jq -r .idempotency_key "$request")" 2>"$_cq_tmp/lookup-error"); then
         [[ $(jq -r .outcome.result.wire_digest <<< "$prior") == "$digest" ]] || { printf 'idempotency_conflict\n' >&2; return 2; }
+        _loom_coord_replay_authorized "$context" "$request" || return 2
         jq -cS .outcome.result.response <<< "$prior" > "$_cq_tmp/result"
         return 0
     fi
@@ -286,7 +301,8 @@ _loom_coord_handle() (
     if (( rc!=0 )) && [[ $durable == true ]] &&
       jq -e --slurpfile q "$request" 'if $q[0].op=="run.create" then .create_runs else (.runs|index($q[0].actor.run_id))!=null end' "$context" >/dev/null; then
         if prior=$(loom_state_operation "$(jq -r .actor.id "$request")" "$op" "$(jq -r .idempotency_key "$request")" 2>/dev/null) &&
-          [[ $(jq -r .outcome.result.wire_digest <<< "$prior") == "$(_loom_coord_digest "$request")" ]]; then
+          [[ $(jq -r .outcome.result.wire_digest <<< "$prior") == "$(_loom_coord_digest "$request")" ]] &&
+          _loom_coord_replay_authorized "$context" "$request"; then
             jq -cS .outcome.result.response <<< "$prior" > "$_cq_tmp/result"
             rc=0
         fi

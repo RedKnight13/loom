@@ -34,6 +34,7 @@ file=$(loom_record "$1")
 # A baseline runs at base_sha in a fresh clone and never reads the worker's
 # workspace, so it may run at any time; a branch check needs the worker settled.
 [[ $kind == baseline ]] || ! loom_alive "$file" || loom_error 'worker is still running; verify after it reports'
+[[ $kind == baseline ]] || ! jq -e ' .seal_failed == true ' "$file" >/dev/null || loom_error 'worker changes were not sealed; resolve commit rejection before verification'
 checks=$(jq -r '.checks // empty' "$file")
 [[ -n $checks ]] || loom_error 'consumer declares no checks; nothing to verify'
 checkout=$(jq -r '.checkout' "$file")

@@ -205,15 +205,19 @@ calibration/real-agent readiness. Explicit wire APIs cover run/task/gate/mail an
 native lifecycle, including unsupported capability refusals. There is no claim of
 S9 adapters, S10 calibration or full S8/S12 acceptance.
 
-Independent frozen-runtime review findings remain release blockers: stale-owner
-mutation retries after epoch takeover, stop/release cache-loss recovery, cancelled
-task settlement, remote delivery and route fairness, full-journal replay under
-exclusive read locks, host-wide keeper scanning, retained-output scan cost, and
-sparse-output/drain throughput. Legacy report sealing, child-group settlement
-and force collection findings remain assigned to their existing owners. These
-modules require separate corrections and integration reruns; passing this slice's
-fixtures does not close them. The corrupt legacy status envelope is corrected
-here and covered by malformed, unreadable and healthy record tests.
+The merge includes fixes for stale-owner mutation replay, cancelled-attempt
+settlement, stop/release control-cache recovery, delivery/route fairness, sparse
+output publication and EOF-read scanning. Legacy sealing failures now block
+verification/collection, and collection protects conductor-edited references.
+These fixes do not establish production acceptance.
+
+Remaining tracked limits are [state replay latency and contention](https://github.com/RedKnight13/loom/issues/122),
+[supervisor scan CPU](https://github.com/RedKnight13/loom/issues/123),
+[legacy local descendant settlement](https://github.com/RedKnight13/loom/issues/124),
+and [real SSH, adapters, calibration and rollout acceptance](https://github.com/RedKnight13/loom/issues/125).
+The native runtime remains an explicitly provisioned, opt-in integration surface.
+Do not select it automatically from installation presence or claim the missing
+acceptance checks have passed.
 
 Remote fixture evidence is written under `.loom/artifacts/`, with source hashes,
 normal facade timings and fault timings recorded separately. The transport is a

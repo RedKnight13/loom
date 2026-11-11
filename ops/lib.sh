@@ -258,9 +258,12 @@ loom_harvest() {  # loom_harvest <file> <why-if-silent>
         for try in 1 2; do
             if { loom_ws "$host" "$workdir" git add -A &&
                  loom_ws "$host" "$workdir" git -c commit.gpgsign=false commit -q -m "loom($id): $state — $fact"; } >> "$clog" 2>&1; then
+                loom_write "$file" 'del(.seal_failed)'
                 break
             fi
             if [[ $try == 2 ]]; then
+                state=failed
+                loom_write "$file" ' .seal_failed = true '
                 fact="$fact [loom commit rejected by the consumer's hooks: ${clog##*/}]"
             fi
         done

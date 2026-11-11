@@ -350,7 +350,7 @@ _loom_mail_pump_store() {
     jq .result "$_lm_tmp/pump-outcome" > "$_lm_tmp/pump-record"
 }
 _loom_mail_pump() {
-    local ops route aid config now deadline id rc request_id directory attempt expected config_digest count=0 cursor='' cursor_id
+    local ops route aid config now deadline id rc request_id directory attempt expected config_digest count=0 cursor='' route_after='' cursor_id
     [[ $(jq -r .role "$_lm_context") == owner ]] || return 2
     jq -e --slurpfile r "$_lm_tmp/run" '.args.run_id==.actor.run_id and .expected_revision==$r[0].revision' "$_lm_request" >/dev/null || { _loom_mail_error revision_conflict; return 2; }
     ops=$(cd -- "${BASH_SOURCE[0]%/*}" && pwd -P)
@@ -359,7 +359,7 @@ _loom_mail_pump() {
     deadline=$(( $(_loom_mail_now)+$(jq '[.args.deadline_ms,.timeout_ms]|min' "$_lm_request") ))
     : > "$_lm_tmp/pump-views"
     cursor_id=mail-cursor-$(jq -r .actor.run_id "$_lm_request" | _loom_mail_hash)
-    if loom_state_get operation "$cursor_id" > "$_lm_tmp/cursor-old" 2>/dev/null; then cursor=$(jq -r '.data.cursor//""' "$_lm_tmp/cursor-old")
+    if loom_state_get operation "$cursor_id" > "$_lm_tmp/cursor-old" 2>/dev/null; then cursor=$(jq -r '.data.cursor//""' "$_lm_tmp/cursor-old"); route_after=$(jq -r '.data.route_after//""' "$_lm_tmp/cursor-old")
     else printf 'null\n' > "$_lm_tmp/cursor-old"; fi
     loom_state_list delivery "$cursor" 100 > "$_lm_tmp/pump-list" || return $?
     # Expiry is an explicit pump action; ordinary observers do not mutate mail.
@@ -377,7 +377,7 @@ _loom_mail_pump() {
     while IFS= read -r route; do
         (( $(_loom_mail_now)<deadline && count<20 )) || break
         count=$((count+1))
-        aid=$(jq -r .attempt_id <<< "$route"); config=$(jq -r .config <<< "$route")
+        aid=$(jq -r .attempt_id <<< "$route"); route_after=$aid; config=$(jq -r .config <<< "$route")
         _loom_ssh_config "$config" || return 2
         config_digest=$(loom_policy_digest "$config")
         attempt=$(jq -ce --arg aid "$aid" '.data.attempts[$aid]|select(.launch_authorized==true and .binding!=null)' "$_lm_tmp/run") || return 2
@@ -391,6 +391,7 @@ _loom_mail_pump() {
         now=$(_loom_mail_now)
         id=$(jq -r --argjson a "$attempt" --argjson now "$now" --slurpfile run "$_lm_tmp/run" '
           [.items[]|select(.run_id==$run[0].id)|select(.data.delivery.state|IN("acked","dead_letter")|not)|
+           select(.data.facts.delivered!=true)|
            select(.data.next_attempt_ms<=$now and (.data.claim.until_ms//0)<=$now)|
            select(.data.delivery.recipient==("attempt:"+$a.attempt_id) or
              (.data.delivery.recipient==("task:"+$a.task_id) and $run[0].data.tasks[$a.task_id].attempt_ids[-1]==$a.attempt_id))|
@@ -459,8 +460,8 @@ _loom_mail_pump() {
             jq --slurpfile confirms "$_lm_tmp/outbox-confirm" '.operation_id+="-confirm"|.idempotency_key+="-confirm"|.request_id+="-confirm"|.extensions["loom.mail.exchange"].deliveries=[]|.extensions["loom.mail.exchange"].outbox_confirm=$confirms' "$_lm_tmp/exchange" > "$_lm_tmp/confirm"
             loom_ssh_handle "$config" "$_lm_tmp/confirm" > "$_lm_tmp/confirmed" || :
         fi
-    done < <(jq -c '.routes[]' "$_lm_context")
-    jq '{cursor:.next_cursor}' "$_lm_tmp/pump-list" > "$_lm_tmp/cursor-data"
+    done < <(jq -c --arg after "$route_after" '.routes | (map(.attempt_id)|index($after)) as $i | if $i==null then .[] else (.[$i+1:]+.[:$i+1])[] end' "$_lm_context")
+    jq --arg route_after "$route_after" '{cursor:.next_cursor,route_after:$route_after}' "$_lm_tmp/pump-list" > "$_lm_tmp/cursor-data"
     _loom_mail_change "$_lm_tmp/cursor-old" "$_lm_tmp/cursor-data" operation "$cursor_id" || return $?
     jq -cn --slurpfile ds "$_lm_tmp/pump-views" --argjson deadline "$deadline" --argjson now "$(_loom_mail_now)" --slurpfile list "$_lm_tmp/pump-list" '{deliveries:($ds|unique_by(.delivery_id)),next_cursor:$list[0].next_cursor,deadline_reached:($now>=$deadline)}' > "$_lm_tmp/result"
 }

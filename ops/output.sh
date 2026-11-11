@@ -20,7 +20,7 @@ loom_output_drain() (
     printf '{"generation":"%s","first":0,"end":0,"eof":false}\n' "$generation" | loom_output_atomic "$dir/index" || return 1
     while :; do
         # fd 0 is a FIFO opened once by the caller; reopening could strand writers.
-        dd bs=4096 count=1 iflag=fullblock status=none > "$dir/incoming" || return 1
+        dd bs=65536 count=1 status=none > "$dir/incoming" || return 1
         size=$(stat -c %s "$dir/incoming")
         (( size>0 )) || break
         flock -x 8 || return 1
@@ -62,6 +62,7 @@ loom_output_read() (
     n=$((limit/4*3)); (( n<=end-offset )) || n=$((end-offset))
     tmp=$(mktemp "$dir/.read.XXXXXXXXXXXX") || return 1
     trap 'rm -f -- "$tmp"' EXIT
+    if (( n>0 )); then
     while IFS= read -r file; do
         start=${file%.chunk}; file=$dir/$file
         [[ $start =~ ^[0-9]+$ && ! -L $file ]] || return 2
@@ -69,9 +70,11 @@ loom_output_read() (
         (( start+size>offset && n>0 )) || continue
         skip=$((offset-start)); (( skip>=0 )) || return 2
         take=$((size-skip)); (( take<=n )) || take=$n
-        dd if="$file" bs=1 skip="$skip" count="$take" status=none >> "$tmp" || return 1
+        dd if="$file" bs=65536 iflag=skip_bytes,count_bytes skip="$skip" count="$take" status=none >> "$tmp" || return 1
         offset=$((offset+take)); n=$((n-take))
-    done < <(find "$dir" -maxdepth 1 -name '*.chunk' -type f -printf '%f\n' | sort -n)
+        (( n>0 )) || break
+    done < <(find "$dir" -maxdepth 1 -name '*.chunk' -type f -printf '%f\n' | sort -n | awk -v offset="$offset" '{split($0,a,"."); if (a[1]+0<=offset) {previous=$0; next} if (previous!="") {print previous; previous=""} print} END {if(previous!="") print previous}')
+    fi
     data=$(base64 -w0 < "$tmp") || return 1
     jq -cn --arg source combined.base64 --arg generation "$generation" --arg data "$data" --arg cursor "$generation:$offset" --argjson eof "$eof" --argjson end "$end" --argjson offset "$offset" --argjson gap "$gap" '{source:$source,generation:$generation,data:$data,next_cursor:$cursor,eof:($eof and $offset==$end),truncated:($gap!=null),gap:$gap}'
 )

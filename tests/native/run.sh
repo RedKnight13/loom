@@ -149,7 +149,10 @@ for _ in {1..100}; do [[ ! -f $dir/workspaces/worker/started ]] || break; sleep 
 stop_request false; call "$dir/stop"
 jq -e '.result.confirmed_stopped==true and .result.requested_signals==["TERM"]' "$dir/result" >/dev/null || fail 'TERM confirmation'
 call "$dir/stop"
-pass 'durable guarded TERM, captured exit and stop replay'
+rm "$spool/stop"
+call "$dir/stop"
+jq -e '.result.confirmed_stopped==true' "$dir/result" >/dev/null || fail 'stop journal replay after cache loss'
+pass 'durable guarded TERM, captured exit and stop replay after cache loss'
 
 fixture kill 'trap "" TERM; touch started; sleep 4'
 call "$dir/start"
