@@ -54,8 +54,11 @@ loom_workflow_route() {
 }
 loom_workflow_selected() {
     local arg
-    for arg in "$@"; do [[ $arg != --context && $arg != --protocol ]] || return 0; done
     if [[ $# -ge 2 && -f ${LOOM_STATE:-$HOME/.loom}/$2.json && $2 != */* ]]; then return 1; fi
+    for arg in "$@"; do
+        [[ $arg != -- ]] || break
+        [[ $arg != --context && $arg != --protocol ]] || return 0
+    done
     [[ $# -lt 2 ]] || ! loom_workflow_route "$2" >/dev/null || return 0
     case ${1:-} in
         mail|events|boundary) return 0 ;;
@@ -543,7 +546,17 @@ _loom_rw_check() {
 }
 _loom_rw_publish_check() {
     local receipt=$1
-    [[ ! -e $_rh_spool/workflow-check ]] || return 0
+    if [[ -e $_rh_spool/workflow-check ]]; then
+        # Publication can stop between artifact and metadata. Validate the
+        # immutable bytes against intent and receipt before rebuilding metadata.
+        [[ $(jq -cS '.request|del(.request_id,.timeout_ms)' "$_rh_spool/workflow-check" | git hash-object --stdin) == "$(cat "$_rh_spool/workflow-check-intent")" ]] || return 2
+        cmp -s <(jq -cS .receipt.result "$_rh_spool/workflow-check") <(jq -cS . "$receipt") || return 2
+        [[ ! -e $_rh_spool/workflow-check-meta ]] || return 0
+        _rw_sha=$(jq -r .sha "$receipt")
+        cp -- "$_rh_spool/workflow-check" "$_rw_tmp/check-artifact" || return 1
+        _loom_rw_artifact workflow-check "$_rw_tmp/check-artifact" "$(jq '[.artifact_bytes,49152]|min' "$_rh_workflow")"
+        return $?
+    fi
     _rw_sha=$(jq -r .sha "$receipt")
     _loom_rw_response "$receipt" true > "$_rw_tmp/check-response" || return 1
     jq -cn --slurpfile request "$_rw_request" --slurpfile receipt "$_rw_tmp/check-response" '{request:$request[0],receipt:$receipt[0]}' > "$_rw_tmp/check-artifact" || return 1
@@ -740,7 +753,7 @@ _loom_workflow_check_keeper() {
     set -uo pipefail
     umask 077
     local plan=$1 ops workspace script dir deadline output child ticks own_ticks code=0 waited=false live path pid escaped=false
-    local writer generation fd empty_seen=false
+    local writer generation fd empty_seen=false scan_unknown child_done
     local -a _np
     local -A known=()
     for path in /proc/self/fd/*; do
@@ -766,20 +779,27 @@ _loom_workflow_check_keeper() {
     _loom_native_proc "$child" || return 2
     ticks=${_np[19]}; known[$child]=$ticks
     while :; do
-        live=0
+        live=0; scan_unknown=false
         for path in /proc/[0-9]*/stat; do
             pid=${path#/proc/}; pid=${pid%/stat}
             [[ $pid != "$$" && $pid != "$BASHPID" && $pid != "$writer" ]] || continue
-            _loom_native_proc "$pid" || continue
+            _loom_native_proc "$pid" || { [[ ! -d /proc/$pid ]] || scan_unknown=true; continue; }
             [[ ${_np[0]} != Z && ${_np[0]} != X ]] || continue
             if [[ ${_np[2]} == "$$" ]]; then known[$pid]=${_np[19]}; live=$((live+1))
             elif [[ ${known[$pid]:-} == "${_np[19]}" ]]; then escaped=true; fi
         done
-        if [[ $waited == false ]] && { ! _loom_native_proc "$child" || [[ ${_np[19]} != "$ticks" || ${_np[0]} == Z ]]; }; then
-            wait "$child" || code=$?
-            waited=true
+        if [[ $waited == false ]]; then
+            child_done=false
+            if _loom_native_proc "$child"; then
+                if [[ ${_np[19]} != "$ticks" || ${_np[0]} == Z || ${_np[0]} == X ]]; then child_done=true; fi
+            elif [[ ! -d /proc/$child ]]; then child_done=true
+            else scan_unknown=true; fi
+            if [[ $child_done == true ]]; then
+                wait "$child" || code=$?
+                waited=true
+            fi
         fi
-        if [[ $waited == true && $live == 0 ]]; then
+        if [[ $waited == true && $live == 0 && $scan_unknown == false ]]; then
             [[ $empty_seen == false ]] || break
             empty_seen=true
         else empty_seen=false; fi
