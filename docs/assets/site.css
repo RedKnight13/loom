@@ -636,16 +636,16 @@ h2 { letter-spacing:-.02em; }
 .landing .hero .secondary { border-color:#52606e; color:#eef2f7; background:transparent; }
 .landing .hero .secondary:hover { background:#23313f; }
 .landing .hero :focus-visible { outline-color:#c7d9f8; }
-.handoff-scene { min-width:0; perspective:1000px; }
+.handoff-scene { min-width:0; }
 .scene-heading,.scene-footer { display:flex; justify-content:space-between; align-items:center; gap:16px; font-size:.75rem; color:#b3c0cd; }
 .scene-heading { padding:0 0 20px; }
 .scene-heading span:first-child { color:#eef2f7; font-size:.9rem; }
-.scene-workbench { position:relative; padding-left:32px; }
+.scene-workbench { position:relative; padding-left:32px; display:grid; grid-auto-rows:1fr; gap:16px; }
 .thread-track { position:absolute; left:8px; top:24px; bottom:48px; width:2px; background:#3a4858; }
 .thread-track span { display:block; height:100%; background:#8eaff0; transform-origin:top; }
 .handoff-frame { position:relative; border:1px solid #3a4858; border-radius:12px; padding:20px 24px; background:#1c2937; }
-.frame-scope { margin-right:32px; }
-.frame-worker { margin:16px 16px 16px 0; }
+.frame-scope { margin:0; }
+.frame-worker { margin:0; }
 .frame-review { background:#24364b; }
 .frame-caption { display:flex; align-items:center; gap:12px; color:#c7d9f8; font-size:.75rem; margin-bottom:16px; }
 .frame-index { margin-left:auto; color:#b3c0cd; font-variant-numeric:tabular-nums; }
@@ -675,8 +675,8 @@ h2 { letter-spacing:-.02em; }
   .is-playing .frame-review { animation:handoff-arrive 900ms 2500ms var(--ease) both; }
   .is-playing .thread-track span { animation:handoff-thread 3600ms var(--ease) both; }
   @keyframes handoff-arrive {
-    from { opacity:0; transform:translateY(16px) rotateX(-8deg); }
-    to { opacity:1; transform:translateY(0) rotateX(0); }
+    from { opacity:0; transform:translateY(8px); }
+    to { opacity:1; transform:translateY(0); }
   }
   @keyframes handoff-thread {
     0% { transform:scaleY(0); }
@@ -696,8 +696,8 @@ h2 { letter-spacing:-.02em; }
   .landing .hero .lead { max-width:560px; }
   .handoff-scene { max-width:560px; width:100%; }
   .scene-heading { padding-bottom:16px; }
-  .frame-scope { margin-right:16px; }
-  .frame-worker { margin-right:8px; }
+  .frame-scope { margin:0; }
+  .frame-worker { margin:0; }
   .handoff-frame dl div { grid-template-columns:80px 1fr; gap:8px; }
   .handoff-frame { padding:16px; }
   .handoff-frame h2 { font-size:1.05rem; }
