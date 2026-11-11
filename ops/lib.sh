@@ -167,7 +167,9 @@ loom_legacy_ps() {  # complete snapshot: failure/malformed output is unknown
     rows=$(LC_ALL=C ps -axo pid=,pgid=,stat= 2>/dev/null) || return 2
     [[ -n $rows ]] || return 2
     while read -r pid pgid state extra; do
-        [[ $pid =~ ^[0-9]+$ && $pgid =~ ^[0-9]+$ && $state =~ ^[A-Za-z] && -z $extra ]] || return 2
+        # Darwin ps can report an indeterminate Mach state as '?'. Preserve
+        # that row as live rather than rejecting the entire process snapshot.
+        [[ $pid =~ ^[0-9]+$ && $pgid =~ ^[0-9]+$ && $state =~ ^[A-Za-z?] && -z $extra ]] || return 2
     done <<< "$rows"
     printf '%s\n' "$rows"
 }

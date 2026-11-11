@@ -280,7 +280,7 @@ printf 'PASS legacy failed signals, PID-only fallback and post-kill observation 
     [[ $(loom_pstart 42) == 'Sat Nov  7 05:26:31 2026' ]] || fail 'process start time not trimmed'
     _loom_legacy_platform=Darwin
     # shellcheck disable=SC2317 # invoked through the observation helper
-    ps() { printf '  42 42 S+\n 43 42 Z+\n 44 44 R\n'; }
+    ps() { printf '  0 0 ?<L\n 42 42 S+\n 43 42 Z+\n 44 44 R\n'; }
     loom_legacy_proc 42 || fail 'Darwin process lookup failed'
     [[ ${_loom_proc[2]} == 42 && ${_loom_proc[0]} == S ]] || fail 'Darwin process fields wrong'
     rc=0; loom_legacy_group 42 42 || rc=$?
@@ -288,6 +288,10 @@ printf 'PASS legacy failed signals, PID-only fallback and post-kill observation 
     loom_legacy_group 42 || fail 'Darwin live group missed'
     rc=0; loom_legacy_proc 99 || rc=$?
     [[ $rc == 1 ]] || fail 'Darwin missing PID not distinguished'
+    # An indeterminate state in the target group cannot prove settlement.
+    # shellcheck disable=SC2317 # invoked through the observation helper
+    ps() { printf '42 42 S+\n43 42 ?E\n'; }
+    loom_legacy_group 42 42 || fail 'Darwin indeterminate state treated as empty'
     # shellcheck disable=SC2317 # invoked through the observation helper
     ps() { printf '42 invalid S\n'; }
     rc=0; loom_legacy_group 42 || rc=$?
