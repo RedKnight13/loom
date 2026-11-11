@@ -30,7 +30,7 @@ jobs:
         label: [agni2, mac]
     runs-on: [self-hosted, "${{ matrix.label }}"]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # A launchagents-managed runner starts with /usr/bin:/bin only.
       - name: Homebrew on PATH
@@ -69,7 +69,7 @@ jobs:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # A launchagents-managed runner starts with /usr/bin:/bin only.
       - name: Homebrew on PATH
