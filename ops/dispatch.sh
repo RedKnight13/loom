@@ -79,7 +79,7 @@ shopt -s nullglob
 for file in "$LOOM_STATE"/*.json; do
     loom_validate "$file"
     if jq -e --arg repo "$repo" --argjson ticket "$2" '.repo == $repo and .ticket == $ticket' "$file" >/dev/null; then
-        ! loom_alive "$file" || loom_error "ticket already has a live assignment: $(basename "$file" .json)"
+        ! loom_open "$file" || loom_error "ticket already has an open assignment: $(basename "$file" .json)"
     fi
     # Global cap for this consumer, when `workers` is declared.
     if jq -e --arg repo "$repo" '.repo == $repo' "$file" >/dev/null && loom_open "$file"; then

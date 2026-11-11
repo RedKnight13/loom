@@ -7,6 +7,7 @@
 #   bash ops/mutate.sh --on HOST     run the whole check on a compute host (#42)
 #
 # LOOM_MUTATE_PREFIX optionally selects a mutant ID prefix (e.g. mlife).
+# LOOM_MUTATE_LEGACY_ONLY=1 runs the focused legacy ownership/settlement mutants.
 # LOOM_MUTATE_JOBS caps parallel mutants (default: CPU count). Exit 0 = every
 # mutant caught; 1 = a mutant survived, did not apply, or was not valid bash;
 # 2 = the harness itself is broken (the unmutated copy fails its selftest).
@@ -41,7 +42,7 @@ tree_files() {
     if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
         git ls-files -z
         # Include the new source before Loom harvests it.
-        for source in ops/calibrate.sh templates/LOOM_SESSION.md; do
+        for source in ops/calibrate.sh templates/LOOM_SESSION.md tests/legacy/settlement.sh tests/legacy/README.md tests/review/review-legacy.sh; do
             if [[ -f $source ]] && ! git ls-files --error-unmatch "$source" >/dev/null 2>&1; then
                 printf '%s\0' "$source"
             fi
@@ -50,15 +51,31 @@ tree_files() {
 }
 copy_tree() { mkdir -p "$1" && tree_files | xargs -0 tar cf - | (cd "$1" && tar xf -); }
 
+# Focused legacy tests also run for their mutants in the combined matrix.
+mutation_test() {  # <tree> <mutant-id>, empty id selects the control
+    local tree=$1 name=${2:-}
+    case $name in
+        mlegacy*|m23|m46) bash "$tree/tests/review/review-legacy.sh" ;;
+        m1|m2|m4|m7|m14|msettle*) bash "$tree/tests/legacy/settlement.sh" ;;
+        '')
+            if [[ ${LOOM_MUTATE_LEGACY_ONLY:-0} == 1 ]]; then
+                bash "$tree/tests/review/review-legacy.sh" && bash "$tree/tests/legacy/settlement.sh"
+            else
+                bash "$tree/ops/selftest.sh"
+            fi ;;
+        *) bash "$tree/ops/selftest.sh" ;;
+    esac
+}
+
 # Control: the unmutated copy must pass, or every "caught" below proves nothing.
 copy_tree "$base/control"
-if ! bash "$base/control/ops/selftest.sh" >/dev/null 2>"$base/control/err"; then
+if ! mutation_test "$base/control" >/dev/null 2>"$base/control/err"; then
     echo "HARNESS BROKEN: the unmutated copy fails its selftest -> $(grep FAIL "$base/control/err" | tail -1)"
     exit 2
 fi
 
 one() {  # one <file> <sed> <description> <name>: writes $base/<name>/result
-    local m="$base/$4" r
+    local m="$base/$4" r rc
     copy_tree "$m"
     # Portable in-place edit (GNU and BSD sed).
     sed -i.orig "$2" "$m/ops/$1" && rm -f "$m/ops/$1.orig"
@@ -67,24 +84,28 @@ one() {  # one <file> <sed> <description> <name>: writes $base/<name>/result
     # A mutant that breaks the syntax would be "caught" for the wrong reason.
     elif ! bash -n "$m/ops/$1" 2>/dev/null; then
         r="MUTANT IS NOT VALID BASH: $3"
-    elif LOOM_STATE="$m/state" bash "$m/ops/selftest.sh" >/dev/null 2>"$m/err"; then
+    elif LOOM_STATE="$m/state" mutation_test "$m" "$4" >/dev/null 2>"$m/err"; then
         r="MUTANT SURVIVED: $3"
     else
-        r="caught: $3 -> $(tail -1 "$m/err")"
+        rc=$?
+        r="caught: $3 (exit $rc) -> $(tail -1 "$m/err")"
     fi
     printf '%s\n' "$r" > "$m/result"
 }
 run() {
     if [[ ${LOOM_MUTATE_CALIBRATION_ONLY:-0} == 1 && $4 != mcal* ]]; then return 0; fi
+    if [[ ${LOOM_MUTATE_LEGACY_ONLY:-0} == 1 ]]; then
+        case $4 in mlegacy*|msettle*|m1|m2|m4|m7|m14|m23|m46) ;; *) return 0 ;; esac
+    fi
     [[ -z ${LOOM_MUTATE_PREFIX:-} || $4 == "$LOOM_MUTATE_PREFIX"* ]] || return 0
     while [[ $(jobs -rp | wc -l) -ge $jobs_max ]]; do sleep 0.2; done
     order+=("$4")
     one "$@" &
 }
 run watchdog.sh 's/kill -KILL -- "-$pid" 2>\/dev\/null || //' "no process-group kill" m1
-run lib.sh 's/\[\[ $now == "$start" \]\]/true/' "no PID start-time check" m2
+run lib.sh 's/\[\[ $now == "$identity" \]\]/true/' "no guard identity check" m2
 run lib.sh 's/tail -n +"$((offset + 1))"/cat/' "report_offset ignored" m3
-run launch.sh 's/if \[\[ $(jq -r .\.worker_pid \/\/ empty. "$file") == "$child" \]\]; then/if true; then/' "launcher double-reports after watchdog" m4
+run launch.sh 's/^if \[\[ .* == "$child" \&\&$/if [[ true \&\&/' "launcher ignores watchdog settlement" m4
 run dispatch.sh 's/git -C "$workdir" remote remove origin/true/' "clone keeps a push remote" m5
 run watchdog.sh 's/($override \/\/ .limit_min \/\/ 30)/($override \/\/ 30)/' "watchdog ignores consumer limit" m6
 run lib.sh '/s="${s%"${s##\*\[!\[:space:\]\]}"}"/d' "start time not trimmed at the end" m7
@@ -94,7 +115,7 @@ run verify.sh 's/(cd "$scratch\/tree" \&\& umask/(cd "$workdir" \&\& umask/' "ve
 run verify.sh 's/^    126|127|255) verdict=.*/    126|127|255) verdict="checks exit $rc" ;;/' "could-not-run reported as a test failure" m11
 run heartbeat.sh 's/acted=$(bash "$ops\/watchdog.sh" .*/acted=/' "heartbeat never runs the watchdog" m12
 run ticket.sh '/does not survive dispatch.s parser/d' "ticket.sh skips the parser self-check" m13
-run launch.sh 's/ \&\& umask "$LOOM_CALLER_UMASK"//' "worker inherits loom's umask" m14
+run lib.sh 's/ \&\& umask "$LOOM_CALLER_UMASK"//' "worker inherits loom's umask" m14
 run verify.sh 's/ \&\& umask "$LOOM_CALLER_UMASK"//' "checks inherit loom's umask" m15
 run dispatch.sh '/consumer config has uncommitted changes/d' "dispatch accepts an uncommitted config" m16
 run lib.sh 's/for try in 1 2; do/for try in 2; do/' "no retry after a fixer hook" m17
@@ -117,7 +138,7 @@ run orca.sh "s/if \[\[ \$rc != 0 \]\] || grep -q 'stop_unknown' \"\$receipt\"; t
 run status.sh 's/select($last <= (now - $limit \* 60))/select(false)/' "stale Orca worker never surfaced" m20
 run dispatch.sh "s#\[\[ -n \$orca_runtime \]\] || loom_error 'executor orca required[^;]*; ##" "required Orca not enforced" m21
 run lib.sh 's/        loom_orca_running "$1"/        false/' "a running Orca worker is not live" m22
-run collect.sh 's/^elif \[\[ $(cd "$workdir" \&\& cd/elif true || [[ $(cd "$workdir" \&\& cd/' "collect fetches into a shared-repo branch" m23
+run collect.sh 's/if \[\[ $shared != true \]\]; then/if true; then/' "collect fetches into a shared-repo branch" m23
 run verify.sh 's/^\[\[ $kind == baseline \]\] || ! loom_alive/! loom_alive/' "baseline refused while the worker runs" m24
 run orca.sh 's/workdir=\${workspace##\*::}/workdir=/' "workspace split removed" m25
 run orca.sh '/branch is not collected/d' "release allowed before collect" m26
@@ -142,7 +163,7 @@ run orca.sh 's/^        repo_sel="path:\$rpath"$/        :/' "remote worker give
 run orca.sh 's/^    ws_host=\$placement_host$/    ws_host=""/' "remote workspace treated as local (#47)" m43
 run lib.sh 's/^    host=\$(loom_ws_host "\$file")$/    host=""/' "harvest reads the workspace here, not on its host (#47)" m44
 run loom "s/items:\$items, actions:\$actions}' >\&3/items:\$items, actions:\$actions}'/" "failure JSON swallowed by the capture (#48)" m45
-run collect.sh 's/^    loom_git_ssh -C "\$checkout" fetch/    : fetch/' "collect skips the remote fetch (#47)" m46
+run collect.sh 's/^        loom_git_ssh -C "\$checkout" fetch/        : fetch/' "collect skips the remote fetch (#47)" m46
 run orca.sh 's/\[\[ -n \$rpath \]\] || loom_error/[[ -n $rpath ]] || :/' "start without the project on the host (#47)" m47
 run orca.sh 's/\.executor\.dispatch = (if \$d == "" then null else \$d end)/.executor.dispatch = null/' "failed start drops its dispatch (#50)" m48
 run orca.sh 's/\[\[ \$xstate == running || ( \$xstate == failed_start \&\& -n \$dispatch ) \]\]/[[ $xstate == running ]]/' "abandon refuses a failed start (#50)" m49
@@ -190,6 +211,18 @@ run orca.sh '/def live_completion:/,/;$/s/\.live_status == "fresh"/true/' "live 
 run orca.sh '/def live_completion:/,/;$/s/(\.completed_at |.*);/true;/' "live proof accepts missing completion timestamp" mproof9
 run orca.sh '/def live_completion:/,/;$/s/\.liveness == "live"/(.liveness | IN("live", "working", "running"))/' "live proof accepts explicitly working liveness" mproof10
 run orca.sh 's/\[\[ -n \$agent \]\] || agent=\$(jq -r /agent=\$(jq -r /' "CLI agent override ignored" m68
+
+run lib.sh 's/rm -- "$owner"/rm -f -- "$owner"/' "stale reaper removes replacement owner" mlegacy1
+run lib.sh 's/rm -- "$LOOM_LOCK_OWNER"/rm -f "$LOOM_STATE\/.lock"\/owner*/' "stale unlock removes replacement owner" mlegacy2
+run dispatch.sh 's/! loom_open "$file"/! loom_alive "$file"/' "pending ticket not reserved" mlegacy3
+run launch.sh '/^loom_no_open_sibling /d' "local launch ignores pending sibling" mlegacy4
+run orca.sh '/^    loom_no_open_sibling /d' "Orca start ignores pending sibling" mlegacy5
+run collect.sh '/^    refuse_checked_out$/d' "collection overwrites linked checkout" mlegacy6
+run orca.sh 's/orchestration ask --to "dispatch:$dispatch"/orchestration ask --to "dispatch:$1"/' "ask addresses assignment instead of dispatch" mlegacy7
+run orca.sh 's/\.previous_collected_sha = (.collected_sha \/\/ .previous_collected_sha)/.previous_collected_sha = null/' "followup forgets prior collection" mlegacy8
+run lib.sh '/^    loom_legacy_platform || return 125$/d' "Darwin guard forgets platform initialization" msettle1
+run lib.sh 's/\[\[ $(loom_legacy_status "$file") == settled \]\]/true/' "harvest skips positive settlement" msettle2
+run lib.sh 's/if \[\[ $group == 1 \]\]/if [[ $group != 0 ]]/' "uncertain group scan proves settlement" msettle3
 
 wait
 [[ ${#order[@]} -gt 0 ]] || { echo "HARNESS BROKEN: no mutants match the selected prefix"; exit 2; }
