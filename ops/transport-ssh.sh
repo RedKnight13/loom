@@ -145,6 +145,40 @@ _loom_ssh_control() (
 loom_ssh_preflight() { _loom_ssh_control "$1" preflight; }
 loom_ssh_upload() { _loom_ssh_control "$1" upload "$2" "$3"; }
 
+# Download only a validated immutable descriptor through existing bounded reads.
+# The destination is a trusted local caller choice, never sent to the host.
+loom_ssh_download() (
+    umask 077
+    local config=$1 request=$2 descriptor=$3 destination=$4 temp bytes digest artifact cursor='' prior='' total=0 size deadline remaining
+    _loom_ssh_load && _loom_ssh_config "$config" || return 2
+    loom_protocol_validate response "$descriptor" "$request" || return 2
+    jq -e --slurpfile c "$config" '.ok and .op=="workspace.export" and .extensions["loom.ssh"].identity==$c[0].identity and .result.bytes<=$c[0].bundle_bytes' "$descriptor" >/dev/null || return 2
+    [[ $destination == /* && $(realpath -m -- "$destination") == "$destination" && ! -e $destination && ! -L $destination ]] || return 2
+    _loom_ssh_private "${destination%/*}" dir || return 2
+    temp=$(mktemp -d "${destination%/*}/.download.XXXXXXXXXXXX") || return 1
+    trap 'rm -rf -- "$temp"' EXIT
+    bytes=$(jq -r .result.bytes "$descriptor"); digest=$(jq -r .result.digest "$descriptor"); artifact=$(jq -r .result.artifact "$descriptor")
+    deadline=$(( $(date +%s%3N)+$(jq -r .timeout_ms "$config") ))
+    : > "$temp/artifact"
+    while :; do
+        remaining=$((deadline-$(date +%s%3N))); (( remaining>0 )) || return 1
+        jq --arg artifact "$artifact" --arg cursor "$cursor" --argjson timeout "$remaining" '.op="workspace.read"|.operation_id=null|.idempotency_key=null|.expected_revision=null|.timeout_ms=$timeout|.args={artifact:$artifact,cursor:(if $cursor=="" then null else $cursor end),limit_bytes:65536}' "$request" > "$temp/request"
+        loom_ssh_handle "$config" "$temp/request" > "$temp/response" || return $?
+        jq -e --arg artifact "$artifact" --arg generation "${digest#*:}" '.result.source==$artifact and .result.generation==$generation and .result.gap==null and .result.truncated==false' "$temp/response" >/dev/null || return 2
+        jq -j .result.data "$temp/response" | base64 -d > "$temp/chunk" || return 2
+        size=$(stat -c %s "$temp/chunk"); total=$((total+size))
+        (( total<=bytes )) || return 2
+        cat "$temp/chunk" >> "$temp/artifact" || return 1
+        cursor=$(jq -r .result.next_cursor "$temp/response")
+        [[ $cursor == "${digest#*:}:$total" && $cursor != "$prior" ]] || return 2
+        prior=$cursor
+        [[ $(jq -r .result.eof "$temp/response") != true ]] || break
+        (( size>0 && total<bytes )) || return 2
+    done
+    [[ $total == "$bytes" && $(loom_protocol_digest "$temp/artifact") == "$digest" ]] || return 2
+    sync -f "$temp/artifact" && mv -T -- "$temp/artifact" "$destination" && sync -f "${destination%/*}"
+)
+
 if [[ ${BASH_SOURCE[0]} == "$0" ]]; then
     case ${1:-} in
         handle) loom_ssh_handle "${2:-}" "${3:-}" ;;

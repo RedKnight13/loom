@@ -10,7 +10,7 @@ _loom_remote_load() {
     _loom_ssh_private "$root" dir && _loom_ssh_private "$root/installation.json" || return 2
     _rh_config=$root/installation.json
     # Strict lexical checking is performed once the trusted S1 module is loaded.
-    jq -e 'keys==["bundle_bytes","contexts","runtime","schema"] and .schema==1 and
+    jq -e '(keys==["bundle_bytes","contexts","runtime","schema"] or (keys==["bundle_bytes","contexts","runtime","schema","workflow_access"] and .workflow_access=="owner")) and .schema==1 and
       (.runtime|type=="string") and (.bundle_bytes|type=="number" and floor==. and .>=1 and .<=1073741824) and
       (.contexts|type=="object" and length>0 and length<=100 and all(to_entries[];
         (.key|test("^[A-Za-z0-9_-]{1,128}$")) and (.value|keys==["context","prepare"])))' "$_rh_config" >/dev/null || return 2
@@ -31,17 +31,38 @@ _loom_remote_load() {
 _loom_remote_identity() {
     local root=$1 id=$2 file context plan
     context=$(jq -er --arg id "$id" '.contexts[$id].context' "$_rh_config") || return 2
-    _loom_native_context "$context" || return 2
+    _rh_prepare_only=false
+    if [[ ! -e $(jq -r .authorization "$context") ]]; then
+        _loom_native_context "$context" hello || return 2
+        _loom_ssh_private "${context}.prepare" && loom_policy_json "${context}.prepare" || return 2
+        jq -e --slurpfile b "$_nn_binding" 'keys==["actor","base_sha","manifest_digest","schema","target"] and .schema==1 and .actor==$b[0].actor and .target==$b[0].target and .manifest_digest==$b[0].manifest_digest and (.base_sha|test("^[0-9a-f]{40}$"))' "${context}.prepare" >/dev/null || return 2
+        _rh_prepare_only=true
+    else
+        _loom_native_context "$context" || return 2
+    fi
     [[ $(jq -r .transport "$_nn_pin") == ssh && $(jq -r .host.helper.version "$_nn_pin") == 1 &&
        $(jq -r .host.helper.digest "$_nn_pin") == "$(loom_protocol_digest "$root/remote-helper.sh")" ]] || return 2
     _rh_context=$context
+    _rh_workflow=null
+    if [[ $(jq -r '.workflow_access//"none"' "$_rh_config") == owner && -e ${context}.workflow ]]; then
+        _loom_ssh_private "${context}.workflow" && loom_policy_json "${context}.workflow" || return 2
+        _loom_ssh_private "$_rh_runtime/ops/workflow.sh" || return 2
+        _rh_workflow=${context}.workflow
+        # shellcheck disable=SC1090,SC1091
+        source "$_rh_runtime/ops/workflow.sh" || return 2
+        _loom_remote_workflow_config "$_rh_workflow" || return 2
+    fi
     plan=$(jq -c --arg id "$id" '.contexts[$id].prepare' "$_rh_config")
     _rh_plan=$plan
+    if [[ $_rh_prepare_only == true ]]; then
+        jq -e --argjson plan "$plan" '.base_sha==$plan.args.base_sha and .manifest_digest==$plan.args.manifest_digest' "${context}.prepare" >/dev/null || return 2
+    fi
     # Hash exact installed code, schemas and context inputs, including copied
     # authority receipts. A modified helper/context/boot never inherits a pin.
     local helper_digest context_digest
     helper_digest=$({
         sha256sum "$root/remote-helper.sh" "$root/transport-ssh.sh" "$_rh_config"
+        [[ $_rh_workflow == null ]] || sha256sum "$_rh_runtime/ops/workflow.sh"
         for file in native.sh native-supervisor.sh output.sh protocol.sh policy.sh state.sh mail.sh worker-bridge.sh; do sha256sum "$_rh_runtime/ops/$file"; done
         while IFS= read -r -d '' file; do
             _loom_ssh_private "$file" || return 2
@@ -50,7 +71,22 @@ _loom_remote_identity() {
     } | sha256sum | cut -d ' ' -f1) || return 2
     context_digest=$({
         sha256sum "$context"
-        for file in config hosts profiles pin binding authorization; do sha256sum "$(jq -r --arg key "$file" '.[$key]' "$context")"; done
+        if [[ $_rh_workflow != null ]]; then
+            sha256sum "$_rh_workflow" "$(jq -r .manifest "$_rh_workflow")" "$(jq -r .check_script "$_rh_workflow")" /usr/bin/bash
+        fi
+        if [[ -e ${context}.mail ]]; then
+            _loom_ssh_private "${context}.mail" && loom_policy_json "${context}.mail" || return 2
+            sha256sum "${context}.mail"
+            [[ $(jq -r .bridge "${context}.mail") == "$_rh_runtime/ops/worker-bridge.sh" ]] || return 2
+            for file in context bridge; do
+                file=$(jq -r --arg key "$file" '.[$key]' "${context}.mail")
+                _loom_ssh_private "$file" || return 2
+                sha256sum "$file"
+            done
+        fi
+        for file in config hosts profiles pin binding; do sha256sum "$(jq -r --arg key "$file" '.[$key]' "$context")"; done
+        if [[ $_rh_prepare_only == true ]]; then sha256sum "${context}.prepare"
+        else sha256sum "$(jq -r .authorization "$context")"; fi
         _loom_ssh_private "$(jq -r .prompt "$_nn_binding")" || return 2
         sha256sum "$(jq -r .prompt "$_nn_binding")"
         if [[ $plan != null ]]; then
@@ -68,7 +104,8 @@ _loom_remote_identity() {
     mkdir -p -- "$_rh_spool" || return 2
     _loom_ssh_private "$_rh_spool" dir || return 2
     while IFS= read -r -d '' file; do
-        _loom_ssh_private "$file" || return 2
+        if [[ -d $file ]]; then _loom_ssh_private "$file" dir || return 2
+        else _loom_ssh_private "$file" || return 2; fi
     done < <(find "$_rh_spool" -mindepth 1 -maxdepth 1 -print0)
 }
 
@@ -100,7 +137,79 @@ _loom_remote_control_reply() {
     jq -cn --argjson identity "$_rh_identity" --argjson ok "$1" --arg error "${2:-}" \
       '{schema:1,ok:$ok,status:(if $ok then "completed" else "refused" end),identity:$identity,error:(if $error=="" then null else $error end)}'
 }
-_loom_remote_git() { env -i PATH=/usr/bin:/bin LANG=C.UTF-8 HOME=/nonexistent GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null git -c core.hooksPath=/dev/null "$@"; }
+# Repository configuration is executable input (filters, fsmonitor, transports).
+# Read keys outside the repository, without includes, before any repository Git.
+# Only the fixed standalone/bare repository layouts created here are supported.
+_loom_remote_git_guard() (
+    umask 077
+    local repo=$1 metadata key file path attr value
+    [[ -d $repo && ! -L $repo && $(realpath -e "$repo") == "$repo" ]] || return 2
+    metadata=$repo/.git
+    if [[ ! -e $metadata ]]; then metadata=$repo; fi
+    [[ -d $metadata && ! -L $metadata && -f $metadata/HEAD && ! -L $metadata/HEAD && -d $metadata/objects && ! -L $metadata/objects && ! -e $metadata/commondir ]] || return 2
+    file=$metadata/config
+    [[ -f $file && ! -L $file && $(stat -c %s "$file") -le 65536 ]] || return 2
+    local tmp
+    tmp=$(mktemp -d) || return 1
+    trap 'rm -rf -- "$tmp"' EXIT
+    env -i PATH=/usr/bin:/bin HOME=/nonexistent GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null git -C / config --no-includes --file "$file" --null --name-only --list > "$tmp/keys" || return 2
+    while IFS= read -r -d '' key; do
+        case $key in
+            core.repositoryformatversion|core.filemode|core.bare|core.logallrefupdates|core.ignorecase|core.precomposeunicode|user.name|user.email|remote.origin.url|remote.origin.fetch|branch.*.remote|branch.*.merge) ;;
+            *) printf 'loom Git: unsupported repository configuration key %s\n' "$key" >&2; return 2 ;;
+        esac
+    done < "$tmp/keys"
+    # Alternates and replacement objects change the apparent immutable source.
+    [[ ! -e $metadata/objects/info/alternates && ! -e $metadata/info/grafts && ! -e $metadata/config.worktree ]] || return 2
+    if [[ $metadata != "$repo" ]]; then
+        env -i PATH=/usr/bin:/bin HOME=/nonexistent GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_ATTR_NOSYSTEM=1 GIT_NO_REPLACE_OBJECTS=1 git -c core.fsmonitor=false -c core.hooksPath=/dev/null -c core.attributesFile=/dev/null -C "$repo" ls-files -z --cached --others --exclude-standard > "$tmp/files" || return 2
+        env -i PATH=/usr/bin:/bin HOME=/nonexistent GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_ATTR_NOSYSTEM=1 GIT_NO_REPLACE_OBJECTS=1 git -c core.fsmonitor=false -c core.hooksPath=/dev/null -c core.attributesFile=/dev/null -C "$repo" check-attr -z --stdin filter working-tree-encoding eol < "$tmp/files" > "$tmp/attrs" || return 2
+        while IFS= read -r -d '' path && IFS= read -r -d '' attr && IFS= read -r -d '' value; do
+            [[ $value == unspecified || $value == unset || ( $attr == eol && $value == lf ) ]] || { printf 'loom Git: unsupported %s attribute\n' "$attr" >&2; return 2; }
+        done < "$tmp/attrs"
+    fi
+)
+# A no-checkout clone has no live attributes yet. Resolve target attributes from
+# an isolated index, without -u, before any operation can materialize its bytes.
+_loom_remote_git_tree_guard() (
+    umask 077
+    local repo=$1 tree=$2 tmp path attr value
+    [[ $tree =~ ^[0-9a-f]{40}$ || $tree == HEAD ]] || return 2
+    tmp=$(mktemp -d) || return 1
+    trap 'rm -rf -- "$tmp"' EXIT
+    local -a safe=(env -i PATH=/usr/bin:/bin HOME=/nonexistent GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_ATTR_NOSYSTEM=1 GIT_NO_REPLACE_OBJECTS=1 "GIT_INDEX_FILE=$tmp/index" git -c core.fsmonitor=false -c core.hooksPath=/dev/null -c core.attributesFile=/dev/null -C "$repo")
+    "${safe[@]}" read-tree "$tree" || return 2
+    "${safe[@]}" ls-files -z --cached > "$tmp/files" || return 2
+    "${safe[@]}" check-attr --cached -z --stdin filter working-tree-encoding eol < "$tmp/files" > "$tmp/attrs" || return 2
+    while IFS= read -r -d '' path && IFS= read -r -d '' attr && IFS= read -r -d '' value; do
+        [[ $value == unspecified || $value == unset || ( $attr == eol && $value == lf ) ]] || { printf 'loom Git: unsupported target-tree %s attribute\n' "$attr" >&2; return 2; }
+    done < "$tmp/attrs"
+)
+_loom_remote_git() {
+    local -a args=("$@")
+    local repo='' command='' value
+    while (( $# )); do
+        case $1 in
+            -C) repo=$2; shift 2 ;;
+            -c) shift 2 ;;
+            *) command=$1; shift; break ;;
+        esac
+    done
+    [[ -z $repo ]] || _loom_remote_git_guard "$repo" || return 2
+    if [[ $command == checkout || $command == read-tree || $command == reset ]]; then
+        value=${!#}
+        [[ $value == --empty ]] || { [[ -n $repo ]] && _loom_remote_git_tree_guard "$repo" "$value"; } || return 2
+    fi
+    if [[ $command == clone ]]; then
+        [[ " $* " == *' --no-checkout '* ]] || return 2
+        for value in "$@"; do
+            [[ $value == -* ]] && continue
+            _loom_remote_git_guard "$value" || return 2
+            break
+        done
+    fi
+    env -i PATH=/usr/bin:/bin LANG=C.UTF-8 HOME=/nonexistent GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_ATTR_NOSYSTEM=1 GIT_NO_REPLACE_OBJECTS=1 git -c core.hooksPath=/dev/null -c core.fsmonitor=false -c core.attributesFile=/dev/null -c protocol.allow=never -c protocol.file.allow=always "${args[@]}"
+}
 _loom_remote_prepare() (
     set -euo pipefail
     local request=$1 plan=$_rh_plan workspace root bundle base branch digest record max_files max_bytes entry metadata name mode type _object size count=0 bytes=0 tmp
@@ -220,7 +329,9 @@ loom_remote_serve() (
             jq -c .request "$temp/header" > "$temp/request"
             loom_protocol_check_request "$temp/request" > "$temp/response" || rc=$?
             if (( rc==0 )); then
-                if [[ $(jq -r .protocol "$temp/request") == loom.coordination ]]; then
+                if [[ $_rh_prepare_only == true && $(jq -r .op "$temp/request") != hello && $(jq -r .op "$temp/request") != workspace.prepare ]]; then
+                    loom_protocol_receipt "$temp/request" refused policy_denied 'Preparation authorization cannot execute, check, signal or receive mail' > "$temp/response"; rc=2
+                elif [[ $(jq -r .protocol "$temp/request") == loom.coordination ]]; then
                     if [[ $(jq -r .op "$temp/request") == mail.pump ]]; then
                         # Load S7 only after the pinned helper/context identity is
                         # authenticated. Mail commands from workers never select
@@ -234,10 +345,27 @@ loom_remote_serve() (
                     fi
                 elif [[ $(jq -r .op "$temp/request") == workspace.prepare ]]; then
                     /bin/bash "$root/remote-helper.sh" _prepare "$root" "$(jq -r .context_id "$temp/header")" "$temp/request" > "$temp/response" || rc=$?
-                elif [[ $(jq -r .op "$temp/request") == hello && $_rh_plan != null ]]; then
-                    jq '.args.required_capabilities -= ["workspace.prepare.v1"]' "$temp/request" > "$temp/native-request"
-                    loom_native_handle "$_rh_context" "$temp/native-request" > "$temp/native-response" || rc=$?
-                    jq 'if .ok then .result.capabilities += [{name:"workspace.prepare.v1",state:"supported",evidence:[],limits:{max_bytes:65536,max_items:1}}] else . end' "$temp/native-response" > "$temp/response"
+                elif [[ $(jq -r .op "$temp/request") == workspace.seal || $(jq -r .op "$temp/request") == workspace.check || $(jq -r .op "$temp/request") == workspace.read || $(jq -r .op "$temp/request") == workspace.export ]]; then
+                    if [[ $_rh_workflow == null ]]; then
+                        loom_protocol_receipt "$temp/request" refused unsupported_capability 'Workflow artifacts are not provisioned' "$(jq -r .op "$temp/request").v1" > "$temp/response"; rc=2
+                    else
+                        /bin/bash "$root/remote-helper.sh" _workflow "$root" "$(jq -r .context_id "$temp/header")" "$temp/request" > "$temp/response" || rc=$?
+                    fi
+                elif [[ $(jq -r .op "$temp/request") == hello ]]; then
+                    # Old clients keep their original closed capability response.
+                    # New workflow capabilities are explicitly negotiated opt-in.
+                    local caps missing
+                    caps=$(jq -cn --argjson prepare "$(if [[ $_rh_plan == null ]]; then echo false; else echo true; fi)" --argjson workflow "$(if [[ $_rh_workflow == null || $_rh_prepare_only == true ]]; then echo false; else echo true; fi)" --slurpfile q "$temp/request" '
+                      (if $prepare then ["workspace.prepare.v1"] else [] end)+
+                      (if $workflow then [$q[0].args.required_capabilities[]|select(IN("workspace.seal.v1","workspace.check.v1","workspace.export.v1","workspace.read.v1"))] else [] end)|unique')
+                    if [[ $_rh_prepare_only == true ]] && ! jq -e --argjson caps "$caps" '(.args.required_capabilities-$caps)|length==0' "$temp/request" >/dev/null; then
+                        missing=$(jq -r --argjson caps "$caps" '(.args.required_capabilities-$caps)[0]' "$temp/request")
+                        loom_protocol_receipt "$temp/request" refused unsupported_capability 'Preparation context supports only workspace preparation' "$missing" > "$temp/response"; rc=2
+                    else
+                        jq --argjson caps "$caps" '.args.required_capabilities -= $caps' "$temp/request" > "$temp/native-request"
+                        loom_native_handle "$_rh_context" "$temp/native-request" > "$temp/native-response" || rc=$?
+                        jq --argjson caps "$caps" --argjson prepare_only "$_rh_prepare_only" 'if .ok then .result.capabilities = ((if $prepare_only then [] else .result.capabilities end)+($caps|map({name:.,state:"supported",evidence:[],limits:{max_bytes:65536,max_items:1}}))) else . end' "$temp/native-response" > "$temp/response"
+                    fi
                 else
                     loom_native_handle "$_rh_context" "$temp/request" > "$temp/response" || rc=$?
                 fi
@@ -250,6 +378,11 @@ if [[ ${BASH_SOURCE[0]} == "$0" ]]; then
     case ${1:-serve} in
         serve) loom_remote_serve "$(_loom_remote_root)" ;;
         install) loom_remote_install "${2:-}" "${3:-}" ;;
+        _workflow)
+            _loom_remote_load "${2:-}" || exit 2
+            _loom_remote_identity "${2:-}" "${3:-}" || exit 2
+            [[ $_rh_workflow != null ]] || exit 2
+            _loom_remote_workflow_handle "${4:-}" ;;
         _prepare)
             _loom_remote_load "${2:-}" || exit 2
             _loom_remote_identity "${2:-}" "${3:-}" || exit 2

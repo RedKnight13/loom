@@ -2443,7 +2443,9 @@
             "ui.keep_open.v1",
             "workspace.export.v1",
             "workspace.prepare.v1",
-            "workspace.read.v1"
+            "workspace.read.v1",
+            "workspace.seal.v1",
+            "workspace.check.v1"
           ]
         },
         "state": {
@@ -3159,6 +3161,78 @@
               }
             }
           }
+        },
+        {
+          "properties": {
+            "op": {
+              "const": "workspace.seal"
+            },
+            "args": {
+              "$ref": "#/$defs/args.workspace.seal"
+            },
+            "operation_id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "x-loom-maxUtf8Bytes": 128,
+              "pattern": "^[^\u0000]*$",
+              "examples": [
+                "example"
+              ]
+            },
+            "idempotency_key": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "x-loom-maxUtf8Bytes": 128,
+              "pattern": "^[^\u0000]*$",
+              "examples": [
+                "example"
+              ]
+            },
+            "expected_revision": {
+              "const": 1
+            },
+            "target": {
+              "$ref": "#/$defs/binding"
+            }
+          }
+        },
+        {
+          "properties": {
+            "op": {
+              "const": "workspace.check"
+            },
+            "args": {
+              "$ref": "#/$defs/args.workspace.check"
+            },
+            "operation_id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "x-loom-maxUtf8Bytes": 128,
+              "pattern": "^[^\u0000]*$",
+              "examples": [
+                "example"
+              ]
+            },
+            "idempotency_key": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "x-loom-maxUtf8Bytes": 128,
+              "pattern": "^[^\u0000]*$",
+              "examples": [
+                "example"
+              ]
+            },
+            "expected_revision": {
+              "const": 1
+            },
+            "target": {
+              "$ref": "#/$defs/binding"
+            }
+          }
         }
       ]
     },
@@ -3485,6 +3559,26 @@
                     "$ref": "#/$defs/result.workspace.export"
                   }
                 }
+              },
+              {
+                "properties": {
+                  "op": {
+                    "const": "workspace.seal"
+                  },
+                  "result": {
+                    "$ref": "#/$defs/result.workspace.seal"
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "op": {
+                    "const": "workspace.check"
+                  },
+                  "result": {
+                    "$ref": "#/$defs/result.workspace.check"
+                  }
+                }
               }
             ]
           },
@@ -3606,6 +3700,400 @@
           }
         }
       ]
+    },
+    "args.workspace.seal": {
+      "type": "object",
+      "properties": {
+        "workspace_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "x-loom-maxUtf8Bytes": 128,
+          "pattern": "^[^\u0000]*$",
+          "examples": [
+            "example"
+          ]
+        },
+        "base_sha": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40,
+          "x-loom-maxUtf8Bytes": 40,
+          "pattern": "^[0-9a-f]{40}$",
+          "examples": [
+            "1111111111111111111111111111111111111111"
+          ]
+        },
+        "manifest_digest": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 57,
+          "x-loom-maxUtf8Bytes": 57,
+          "pattern": "^git-blob-sha1-v1:[0-9a-f]{40}$",
+          "examples": [
+            "git-blob-sha1-v1:1111111111111111111111111111111111111111"
+          ]
+        }
+      },
+      "required": [
+        "workspace_id",
+        "base_sha",
+        "manifest_digest"
+      ],
+      "additionalProperties": false
+    },
+    "result.workspace.seal": {
+      "type": "object",
+      "properties": {
+        "sha": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40,
+          "x-loom-maxUtf8Bytes": 40,
+          "pattern": "^[0-9a-f]{40}$",
+          "examples": [
+            "1111111111111111111111111111111111111111"
+          ]
+        },
+        "manifest_digest": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 57,
+          "x-loom-maxUtf8Bytes": 57,
+          "pattern": "^git-blob-sha1-v1:[0-9a-f]{40}$",
+          "examples": [
+            "git-blob-sha1-v1:1111111111111111111111111111111111111111"
+          ]
+        },
+        "report_digest": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 57,
+          "x-loom-maxUtf8Bytes": 57,
+          "pattern": "^git-blob-sha1-v1:[0-9a-f]{40}$",
+          "examples": [
+            "git-blob-sha1-v1:1111111111111111111111111111111111111111"
+          ]
+        },
+        "config_digest": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 57,
+          "x-loom-maxUtf8Bytes": 57,
+          "pattern": "^git-blob-sha1-v1:[0-9a-f]{40}$",
+          "examples": [
+            "git-blob-sha1-v1:1111111111111111111111111111111111111111"
+          ]
+        },
+        "source": {
+          "type": "object",
+          "properties": {
+            "installation_id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "x-loom-maxUtf8Bytes": 256
+            },
+            "transport_identity": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "x-loom-maxUtf8Bytes": 256
+            },
+            "boot_id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "x-loom-maxUtf8Bytes": 256
+            },
+            "helper_digest": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "x-loom-maxUtf8Bytes": 256
+            },
+            "context_digest": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "x-loom-maxUtf8Bytes": 256
+            }
+          },
+          "required": [
+            "installation_id",
+            "transport_identity",
+            "boot_id",
+            "helper_digest",
+            "context_digest"
+          ],
+          "additionalProperties": false
+        },
+        "workspace_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "x-loom-maxUtf8Bytes": 128,
+          "pattern": "^[^\u0000]*$",
+          "examples": [
+            "example"
+          ]
+        },
+        "base_sha": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40,
+          "x-loom-maxUtf8Bytes": 40,
+          "pattern": "^[0-9a-f]{40}$",
+          "examples": [
+            "1111111111111111111111111111111111111111"
+          ]
+        },
+        "report_state": {
+          "enum": [
+            "ready",
+            "blocked",
+            "failed",
+            "waiting"
+          ]
+        },
+        "execution": {
+          "$ref": "#/$defs/observation"
+        }
+      },
+      "required": [
+        "sha",
+        "manifest_digest",
+        "report_digest",
+        "config_digest",
+        "source",
+        "workspace_id",
+        "base_sha",
+        "report_state",
+        "execution"
+      ],
+      "additionalProperties": false
+    },
+    "args.workspace.check": {
+      "type": "object",
+      "properties": {
+        "sha": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40,
+          "x-loom-maxUtf8Bytes": 40,
+          "pattern": "^[0-9a-f]{40}$",
+          "examples": [
+            "1111111111111111111111111111111111111111"
+          ]
+        },
+        "manifest_digest": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 57,
+          "x-loom-maxUtf8Bytes": 57,
+          "pattern": "^git-blob-sha1-v1:[0-9a-f]{40}$",
+          "examples": [
+            "git-blob-sha1-v1:1111111111111111111111111111111111111111"
+          ]
+        }
+      },
+      "required": [
+        "sha",
+        "manifest_digest"
+      ],
+      "additionalProperties": false
+    },
+    "result.workspace.check": {
+      "type": "object",
+      "properties": {
+        "sha": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40,
+          "x-loom-maxUtf8Bytes": 40,
+          "pattern": "^[0-9a-f]{40}$",
+          "examples": [
+            "1111111111111111111111111111111111111111"
+          ]
+        },
+        "manifest_digest": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 57,
+          "x-loom-maxUtf8Bytes": 57,
+          "pattern": "^git-blob-sha1-v1:[0-9a-f]{40}$",
+          "examples": [
+            "git-blob-sha1-v1:1111111111111111111111111111111111111111"
+          ]
+        },
+        "report_digest": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 57,
+          "x-loom-maxUtf8Bytes": 57,
+          "pattern": "^git-blob-sha1-v1:[0-9a-f]{40}$",
+          "examples": [
+            "git-blob-sha1-v1:1111111111111111111111111111111111111111"
+          ]
+        },
+        "config_digest": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 57,
+          "x-loom-maxUtf8Bytes": 57,
+          "pattern": "^git-blob-sha1-v1:[0-9a-f]{40}$",
+          "examples": [
+            "git-blob-sha1-v1:1111111111111111111111111111111111111111"
+          ]
+        },
+        "source": {
+          "type": "object",
+          "properties": {
+            "installation_id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "x-loom-maxUtf8Bytes": 256
+            },
+            "transport_identity": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "x-loom-maxUtf8Bytes": 256
+            },
+            "boot_id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "x-loom-maxUtf8Bytes": 256
+            },
+            "helper_digest": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "x-loom-maxUtf8Bytes": 256
+            },
+            "context_digest": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "x-loom-maxUtf8Bytes": 256
+            }
+          },
+          "required": [
+            "installation_id",
+            "transport_identity",
+            "boot_id",
+            "helper_digest",
+            "context_digest"
+          ],
+          "additionalProperties": false
+        },
+        "check_digest": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 57,
+          "x-loom-maxUtf8Bytes": 57,
+          "pattern": "^git-blob-sha1-v1:[0-9a-f]{40}$",
+          "examples": [
+            "git-blob-sha1-v1:1111111111111111111111111111111111111111"
+          ]
+        },
+        "check_exit": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 255
+        },
+        "captured": {
+          "const": true
+        },
+        "process": {
+          "type": "object",
+          "properties": {
+            "captured": {
+              "const": true
+            },
+            "group_empty": {
+              "const": true
+            },
+            "escaped": {
+              "const": false
+            },
+            "timed_out": {
+              "const": false
+            },
+            "output_eof": {
+              "const": true
+            },
+            "exit_code": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 255
+            },
+            "total_output_bytes": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "lost_prefix_bytes": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "keeper": {
+              "type": "object",
+              "properties": {
+                "pid": {
+                  "type": "integer",
+                  "minimum": 2,
+                  "maximum": 9007199254740991
+                },
+                "start_ticks": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64,
+                  "pattern": "^[0-9]+$"
+                },
+                "boot_id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                }
+              },
+              "required": [
+                "pid",
+                "start_ticks",
+                "boot_id"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "captured",
+            "group_empty",
+            "escaped",
+            "timed_out",
+            "output_eof",
+            "exit_code",
+            "total_output_bytes",
+            "lost_prefix_bytes",
+            "keeper"
+          ]
+        }
+      },
+      "required": [
+        "sha",
+        "manifest_digest",
+        "report_digest",
+        "config_digest",
+        "source",
+        "check_digest",
+        "check_exit",
+        "captured",
+        "process"
+      ],
+      "additionalProperties": false
     }
   },
   "x-loom-operations": {
@@ -3683,6 +4171,16 @@
       "protocol": "execution",
       "mode": "read",
       "capability": "workspace.export.v1"
+    },
+    "workspace.seal": {
+      "protocol": "execution",
+      "mode": "mutate",
+      "capability": "workspace.seal.v1"
+    },
+    "workspace.check": {
+      "protocol": "execution",
+      "mode": "mutate",
+      "capability": "workspace.check.v1"
     }
   },
   "x-loom-maxEnvelopeBytes": 1048576,

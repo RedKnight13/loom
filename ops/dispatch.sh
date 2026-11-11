@@ -11,6 +11,10 @@ if [[ $# == 4 && $3 == --executor ]]; then want=$4; set -- "$1" "$2"; fi
 [[ -f $1 ]] || loom_error 'consumer config not found'
 
 config=$(loom_config "$1")
+if [[ $(jq -r '.schema // 1' <<< "$config") == 2 ]]; then
+    loom_error 'schema-2 ticket dispatch requires a provisioned workflow context; GitHub ticket/default-branch discovery remains a separate dependency'
+fi
+loom_legacy_dispatch_fence
 # A config under version control must be committed: the record pins the exact
 # config the assignment ran under (gap #20). Ignored and untracked configs
 # have no commit to pin, even inside a work tree (gap #68).
