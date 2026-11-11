@@ -1,0 +1,56 @@
+{
+  "name": "Bug report",
+  "description": "Report incorrect behavior with a reproducible example.",
+  "body": [
+    {
+      "type": "markdown",
+      "attributes": {
+        "value": "Remove credentials, private paths and personal data from examples. Report security vulnerabilities privately using the Security link in the issue chooser."
+      }
+    },
+    {
+      "type": "textarea",
+      "id": "environment",
+      "attributes": {
+        "label": "Version and environment",
+        "description": "Loom version or commit, OS, agent, executor, and local or SSH placement."
+      },
+      "validations": {
+        "required": true
+      }
+    },
+    {
+      "type": "textarea",
+      "id": "reproduce",
+      "attributes": {
+        "label": "Steps to reproduce",
+        "description": "Give the smallest safe reproduction and the exact command."
+      },
+      "validations": {
+        "required": true
+      }
+    },
+    {
+      "type": "textarea",
+      "id": "behavior",
+      "attributes": {
+        "label": "Expected and actual behavior",
+        "description": "Describe the expected result and what happened instead."
+      },
+      "validations": {
+        "required": true
+      }
+    },
+    {
+      "type": "textarea",
+      "id": "evidence",
+      "attributes": {
+        "label": "Evidence",
+        "description": "Include redacted JSON output and captured exit codes. Say not run for anything not executed."
+      },
+      "validations": {
+        "required": false
+      }
+    }
+  ]
+}

@@ -1,0 +1,56 @@
+{
+  "name": "Setup help",
+  "description": "Get help with bootstrap, calibration or agent wiring.",
+  "body": [
+    {
+      "type": "markdown",
+      "attributes": {
+        "value": "Remove credentials, private paths and personal data from examples. Report security vulnerabilities privately using the Security link in the issue chooser."
+      }
+    },
+    {
+      "type": "textarea",
+      "id": "environment",
+      "attributes": {
+        "label": "Environment",
+        "description": "Loom version, OS, agent, executor and intended execution host."
+      },
+      "validations": {
+        "required": true
+      }
+    },
+    {
+      "type": "textarea",
+      "id": "step",
+      "attributes": {
+        "label": "Where setup stopped",
+        "description": "Name the bootstrap step or command and describe the blocker."
+      },
+      "validations": {
+        "required": true
+      }
+    },
+    {
+      "type": "textarea",
+      "id": "evidence",
+      "attributes": {
+        "label": "Redacted evidence",
+        "description": "Paste the relevant result and exit code, or say not run. Do not paste credentials."
+      },
+      "validations": {
+        "required": true
+      }
+    },
+    {
+      "type": "textarea",
+      "id": "expected",
+      "attributes": {
+        "label": "Intended workflow",
+        "description": "What should this setup let you do?"
+      },
+      "validations": {
+        "required": false
+      }
+    }
+  ]
+}

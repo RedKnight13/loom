@@ -1,0 +1,56 @@
+{
+  "name": "Feature request",
+  "description": "Propose a bounded improvement to Loom.",
+  "body": [
+    {
+      "type": "markdown",
+      "attributes": {
+        "value": "Remove credentials, private paths and personal data from examples. Report security vulnerabilities privately using the Security link in the issue chooser."
+      }
+    },
+    {
+      "type": "textarea",
+      "id": "problem",
+      "attributes": {
+        "label": "Problem",
+        "description": "Describe the task or workflow that is difficult today."
+      },
+      "validations": {
+        "required": true
+      }
+    },
+    {
+      "type": "textarea",
+      "id": "proposal",
+      "attributes": {
+        "label": "Proposed behavior",
+        "description": "Explain the desired result and what should remain out of scope."
+      },
+      "validations": {
+        "required": true
+      }
+    },
+    {
+      "type": "textarea",
+      "id": "acceptance",
+      "attributes": {
+        "label": "How to judge success",
+        "description": "Give a concrete example or acceptance criteria."
+      },
+      "validations": {
+        "required": true
+      }
+    },
+    {
+      "type": "textarea",
+      "id": "alternatives",
+      "attributes": {
+        "label": "Alternatives considered",
+        "description": "Existing approaches or workarounds."
+      },
+      "validations": {
+        "required": false
+      }
+    }
+  ]
+}
