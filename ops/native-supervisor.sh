@@ -69,7 +69,9 @@ _loom_native_scan() {
     for path in /proc/[0-9]*/stat; do
         pid=${path#/proc/}; pid=${pid%/stat}
         [[ $pid != "$$" && $pid != "$BASHPID" ]] || continue
-        _loom_native_proc "$pid" || continue
+        # A vanished entry is normal churn; an existing unreadable identity is
+        # unknown, not evidence of an empty group.
+        _loom_native_proc "$pid" || { [[ ! -d /proc/$pid ]] && continue; return 1; }
         [[ ${_np[0]} != Z && ${_np[0]} != X ]] || continue
         ticks=${_np[19]}
         if [[ ${_np[2]} == "$_nk_group" ]]; then
@@ -78,6 +80,17 @@ _loom_native_scan() {
             printf '{}\n' | loom_output_atomic "$_nn_dir/escaped" || return 1
         fi
     done
+}
+
+# Linux uptime is monotonic and readable without a clock subprocess. Keep the
+# 50 ms control poll cheap even on hosts with many unrelated processes. Uptime
+# has centisecond precision; reject an unavailable clock rather than letting a
+# cached group observation authorize completion indefinitely.
+_loom_native_scan_clock() {
+    local uptime _
+    IFS=' ' read -r uptime _ < /proc/uptime || return 1
+    [[ $uptime =~ ^([0-9]+)\.([0-9]{2})$ ]] || return 1
+    _nk_now=$((10#${BASH_REMATCH[1]} * 1000 + 10#${BASH_REMATCH[2]} * 10))
 }
 
 _loom_native_guard() {
@@ -93,7 +106,7 @@ _loom_native_guard() {
 
 _loom_native_keeper() {
     local context=$1 dir=$2 ops child child_ticks own_ticks nonce identity rc=0 waited=false stopping=false kill_at=0 allow_kill=false output_pid
-    local _nn_root _nn_store _nn_binding _nn_pin _nn_dir _nn_id _nn_context _nk_group _nk_live
+    local _nn_root _nn_store _nn_binding _nn_pin _nn_dir _nn_id _nn_context _nk_group _nk_live _nk_now next_scan=0
     local -a _np
     local -A _nk_known=()
     _loom_native_context "$context" || return 2
@@ -124,15 +137,27 @@ _loom_native_keeper() {
     _loom_native_fault gate
     _nk_known[$child]=$child_ticks
     while :; do
-        _loom_native_scan || return 1
-        if [[ $waited == false ]] && { ! _loom_native_proc "$child" || [[ ${_np[19]} != "$child_ticks" || ${_np[0]} == Z ]]; }; then
-            wait "$child" || rc=$?
-            waited=true
-            # Shell wait status is captured exactly. 128+n is not proof of a
-            # signal versus an explicit exit of that value, so signal stays null.
-            printf '{"exit_code":%s,"signal":null,"captured":true,"evidence":[]}\n' "$rc" | loom_output_atomic "$dir/child-exit" || return 1
+        if [[ $waited == false ]]; then
+            # Do not block in wait or invent exit when /proc is unavailable.
+            _loom_native_proc "$child" || { [[ ! -d /proc/$child ]] || return 1; _np=(); }
+            if [[ ${_np[19]:-} != "$child_ticks" || ${_np[0]:-} == Z || ${_np[0]:-} == X ]]; then
+                wait "$child" || rc=$?
+                waited=true
+                next_scan=0
+                # Shell wait status is captured exactly. 128+n is not proof of a
+                # signal versus an explicit exit of that value, so signal stays null.
+                printf '{"exit_code":%s,"signal":null,"captured":true,"evidence":[]}\n' "$rc" | loom_output_atomic "$dir/child-exit" || return 1
+            fi
         fi
-        if [[ $waited == true && $_nk_live == 0 ]]; then break; fi
+        _loom_native_scan_clock || return 1
+        # Full observations are at most 500 ms apart plus scheduling/scan time.
+        # Leader exit and new stop requests bypass that cadence. Only a scan
+        # in this iteration can prove settlement, never the cached live count.
+        if (( _nk_now>=next_scan )) || [[ -f $dir/stop && $stopping == false ]]; then
+            _loom_native_scan || return 1
+            next_scan=$((_nk_now+500))
+            if [[ $waited == true && $_nk_live == 0 ]]; then break; fi
+        fi
         if [[ -f $dir/stop && $stopping == false ]]; then
             _loom_native_guard || return 1
             _loom_native_fault before_term
