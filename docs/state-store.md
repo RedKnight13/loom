@@ -1,3 +1,8 @@
+---
+layout: documentation
+title: "Native durable state store (schema 2)"
+---
+
 # Native durable state store (schema 2)
 
 S2 provides storage, not task scheduling, authorization, provider calls or launch

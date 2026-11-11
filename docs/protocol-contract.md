@@ -1,3 +1,8 @@
+---
+layout: documentation
+title: "Normative protocol 1.0 resolutions"
+---
+
 # Normative protocol 1.0 resolutions
 
 This appendix freezes the previously unspecified S1 wire shapes. The architect

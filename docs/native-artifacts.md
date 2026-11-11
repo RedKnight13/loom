@@ -1,3 +1,8 @@
+---
+layout: documentation
+title: "Pinned native artifact and check interface"
+---
+
 # Pinned native artifact and check interface
 
 Status: implemented S8 extension under fixture validation and independent review.

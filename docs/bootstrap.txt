@@ -83,6 +83,10 @@ prompt is not proof of dependable operation.
    there are ignored, except the tracked examples. A tracked consumer config
    must be committed before calibration or dispatch; leave that to its
    authorized conductor.
+   This standard setup uses the shipped schema-1 consumer flow. The native
+   schema-2 workflow is opt-in with separate provisioning and acceptance:
+   read docs/native-workflow.md before proposing it. Do not switch an existing
+   consumer to it or treat experimental planner code as a setup prerequisite.
    Do not commit, push, merge or publish as part of this bootstrap.
    Set FILE to the absolute path of the resolved config and export LOOM_REPO
    as the absolute consumer checkout path, distinct from LOOM_TOOLS. Keep these
@@ -101,6 +105,10 @@ prompt is not proof of dependable operation.
    Orca installation/readiness; LOOM_ALLOW_LOCAL is an ignored legacy variable.
    Respect the approved execution host; native independence does not authorize
    running on a forbidden host. Existing assignments keep their pinned executor.
+   Inspect agent availability and authentication on the actual execution host,
+   not only the conductor machine. An installed CLI or a cached logged-in label
+   does not prove a model request works; report launch verification as not run
+   until an authorized launch succeeds. Keep account/token details private.
    These separately authorized connectivity observations are not probes performed
    by calibration: calibration never calls gh auth, compute probes or a model.
 

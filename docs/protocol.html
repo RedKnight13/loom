@@ -1,0 +1,49 @@
+---
+layout: null
+---
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Loom protocol — From assignment to evidence</title>
+<meta name="description" content="How Loom separates authorized work, worker reports, fresh verification and the decision to ship.">
+<link rel="stylesheet" href="assets/site.css"><script src="assets/site.js" defer></script>
+</head>
+<body class="protocol-page">
+<a class="skip" href="#main">Skip to content</a>
+<header class="site-header wrap">
+  <a class="brand" href="index.html" aria-label="Loom home"><span class="mark" aria-hidden="true">▥</span> loom</a>
+  <nav aria-label="Main navigation"><a href="index.html">Overview</a><a href="setup.html">Setup</a><a href="patterns.html">Patterns</a><a href="protocol.html" aria-current="page">Protocol</a><a href="https://github.com/RedKnight13/loom">GitHub</a></nav>
+</header>
+<main id="main">
+<section class="wrap protocol-intro">
+<p class="intro">The Loom protocol</p>
+<h1>A worker finishes.<br>Who checks the work?</h1>
+<p class="protocol-deck">Loom gives each handoff a record: what was allowed, what changed, what was checked, and who can accept it.</p>
+<a href="https://github.com/RedKnight13/loom/blob/main/PROTOCOL.md">Read the full protocol on GitHub</a>
+</section>
+<section class="protocol-film" aria-labelledby="film-title" data-handoff>
+<div class="wrap">
+<div class="protocol-film-heading"><h2 id="film-title">Follow one change</h2><span>Illustrated task · not a live run</span></div>
+<p class="protocol-task">Add JSON output to a command-line tool</p>
+<ol class="protocol-sequence">
+<li style="--beat:0s"><span class="protocol-number">01 / Mandate</span><h3>Draw the boundary</h3><p>Change the output formatter and its tests. Keep the existing text output intact.</p><small>Conductor records the scope</small></li>
+<li style="--beat:.8s"><span class="protocol-number">02 / Assignment</span><h3>Work inside it</h3><p>One worker takes the ticket in a separate workspace and returns the diff.</p><small>Worker reports <code>ready</code></small></li>
+<li style="--beat:1.6s"><span class="protocol-number">03 / Verification</span><h3>Check the result</h3><p>The conductor runs the agreed checks and records their actual exit codes.</p><small>Evidence accompanies the revision</small></li>
+<li style="--beat:2.4s"><span class="protocol-number">04 / Review</span><h3>Decide what ships</h3><p>Review the diff and evidence. The conductor publishes only under the owner’s authority.</p><small>Approval remains a separate decision</small></li>
+</ol>
+<div class="protocol-film-end"><p><code>ready</code> means there is something to review</p><button type="button" data-replay-handoff hidden>Replay the handoff</button></div>
+</div></section>
+<section class="wrap protocol-roles">
+<div><p class="intro">Responsibility stays visible</p><h2>Three roles.<br>Different authority.</h2></div>
+<dl><div><dt>Owner</dt><dd>Sets the intent and constraints, resolves decisions, and controls what ships.</dd></div><div><dt>Conductor</dt><dd>Writes the mandate, assigns the worker, checks the result, and handles GitHub publication under the owner’s authority.</dd></div><div><dt>Worker</dt><dd>Works within the assignment and reports facts. Does not push or take over another ticket.</dd></div></dl>
+</section>
+<section class="wrap protocol-reports" aria-labelledby="reports-title">
+<h2 id="reports-title">Four reports. Four next steps.</h2>
+<p>The conductor reads structured state. It does not guess completion from a confident paragraph.</p>
+<dl><div><dt><code>ready</code></dt><dd>A reviewable result exists.</dd><dd>Run the checks and inspect the work.</dd></div><div><dt><code>blocked</code></dt><dd>A decision is needed.</dd><dd>Answer the concrete question or take it to the owner.</dd></div><div><dt><code>failed</code></dt><dd>The approach failed.</dd><dd>Read what happened before deciding how to continue.</dd></div><div><dt><code>waiting</code></dt><dd>The turn is done; work may continue.</dd><dd>Leave the assignment for its next authorized step.</dd></div></dl>
+</section>
+<section class="wrap protocol-close"><h2>Evidence has limits</h2><p>A passing test tells you what that test checked. A separate workspace does not replace a security sandbox. Loom keeps the scope, reports and verification explicit; it cannot make an incomplete check prove correctness.</p><div class="actions"><a class="button primary" href="setup.html">Set up one task</a><a href="patterns.html#explore">Explore coordination patterns</a></div><p class="protocol-reference">Building an integration? Read the <a href="protocol-contract.html">wire contract</a> and <a href="adapters.html">adapter boundary</a>. See <a href="support.html">support and known gaps</a> before choosing a runtime.</p></section>
+</main>
+<footer class="wrap site-footer"><span>Loom · MIT</span><nav aria-label="Resources"><a href="https://github.com/RedKnight13/loom">GitHub</a><a href="protocol.html">Protocol</a><a href="https://github.com/RedKnight13/loom/blob/main/ops/README.md">Operations</a><a href="support.html">Support</a></nav></footer>
+</body></html>

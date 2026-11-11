@@ -1,3 +1,8 @@
+---
+layout: documentation
+title: "Protocol 1.0 adapter boundary"
+---
+
 # Protocol 1.0 adapter boundary
 
 Runtime routing is pending. `ops/loom`, dispatch, native execution, coordination,
@@ -7,10 +12,10 @@ command-adapter boundary. The offline fixtures use Agni fake adapters only;
 real-provider compatibility and real-agent smoke are **not run**.
 
 The normative structural contracts are
-[`execution-v1/contract.json`](../schemas/execution-v1/contract.json) and
-[`coordination-v1/contract.json`](../schemas/coordination-v1/contract.json).
+[`execution-v1/contract.json`](https://github.com/RedKnight13/loom/blob/main/schemas/execution-v1/contract.json) and
+[`coordination-v1/contract.json`](https://github.com/RedKnight13/loom/blob/main/schemas/coordination-v1/contract.json).
 `request.json` and `response.json` are standard 2020-12 entry points. The
-[contract appendix](protocol-contract.md) resolves the architect's previously
+[contract appendix](protocol-contract.html) resolves the architect's previously
 unspecified nested records, enums and capability names. Protocol version, state
 schema and provider release version remain separate.
 
