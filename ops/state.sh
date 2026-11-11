@@ -110,17 +110,21 @@ _loom_state_fault() {
 }
 
 _loom_state_atomic() {
-    local dest=$1 content=$2 label=$3 tmp
+    local dest=$1 content=$2 label=$3 tmp rc=0
     tmp=$(mktemp "${dest%/*}/.tmp.XXXXXXXXXXXX") || return 1
-    _loom_state_fault "$label.before_write" || return 1
-    printf '%s\n' "$content" > "$tmp" || return 1
-    _loom_state_fault "$label.after_write" || return 1
-    sync -f -- "$tmp" || return 1
-    _loom_state_fault "$label.after_file_flush" || return 1
-    mv -T -- "$tmp" "$dest" || return 1
-    _loom_state_fault "$label.after_rename" || return 1
-    sync -f -- "${dest%/*}" || return 1
-    _loom_state_fault "$label.after_directory_flush" || return 1
+    # Every ordinary failure removes only the scratch name, never the destination
+    # (a rename may already have committed a journal whose reply was lost).
+    _loom_state_fault "$label.before_write" &&
+        printf '%s\n' "$content" > "$tmp" &&
+        _loom_state_fault "$label.after_write" &&
+        sync -f -- "$tmp" &&
+        _loom_state_fault "$label.after_file_flush" &&
+        mv -T -- "$tmp" "$dest" &&
+        _loom_state_fault "$label.after_rename" &&
+        sync -f -- "${dest%/*}" &&
+        _loom_state_fault "$label.after_directory_flush" || rc=1
+    rm -f -- "$tmp" || return 1
+    return "$rc"
 }
 
 _loom_state_unlock() {
@@ -182,6 +186,18 @@ _loom_state_layout() {
     while IFS= read -r -d '' path; do
         if [[ -d $path && ! -L $path ]]; then _loom_state_private "$path" dir || return 2
         else _loom_state_private "$path" file || { _loom_state_error unsafe_path; return 2; }; fi
+    done < "$_ls_work/paths"
+    # The exclusive guard proves no writer still owns these scratch paths.
+    # Validate the entire tree first; only exact reserved names are reclaimable.
+    while IFS= read -r -d '' path; do
+        case $path in
+            "$_ls_v2"/.work.*)
+                if [[ ${path#"$_ls_v2/"} =~ ^\.work\.[a-zA-Z0-9]{12}$ && $path != "$_ls_work" ]]; then
+                    rm -rf -- "$path" || return 1
+                fi ;;
+            "$_ls_v2"/.tmp.*|"$_ls_v2/journal"/.tmp.*)
+                if [[ ${path##*/} =~ ^\.tmp\.[a-zA-Z0-9]{12}$ ]]; then rm -f -- "$path" || return 1; fi ;;
+        esac
     done < "$_ls_work/paths"
 }
 

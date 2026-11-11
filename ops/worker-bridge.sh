@@ -167,7 +167,8 @@ loom_worker_bridge_exchange() (
     digest=$(_loom_bridge_wire_digest "$request")
     if prior=$(loom_state_operation "$(jq -r .actor.id "$request")" mail.pump.spool "$(jq -r .idempotency_key "$request")" 2>/dev/null); then
         [[ $(jq -r .outcome.result.wire_digest <<< "$prior") == "$digest" ]] || return 2
-        # Replay never reimports, but returns the current durable read/ack snapshot.
+        # Replay never rotates again or reimports; facts can still advance.
+        jq -c '.outcome.result.response' <<< "$prior" > "$_wb_tmp/result"
     else
         # Full message shape is validated as an S1 mail.send request below.
         jq -c '.extensions["loom.mail.exchange"].deliveries[]' "$request" > "$_wb_tmp/intents"
@@ -201,13 +202,23 @@ loom_worker_bridge_exchange() (
         ' "$_wb_tmp/data" > "$_wb_tmp/new" || return 2
         mv "$_wb_tmp/new" "$_wb_tmp/data"
         jq -e '(.deliveries|length)<=100 and (.outbox|length)<=100' "$_wb_tmp/data" >/dev/null || return 2
-        printf '{}\n' > "$_wb_tmp/result"
+        # Rotate only for a new durable exchange. Rejected entries remain queued
+        # as evidence, but cannot monopolize the one-entry transport window.
+        jq -c '
+          .outbox_after as $after |
+          [.outbox|to_entries[]|select(.value.authority_sync=="queued_for_authority")]|sort_by(.key) |
+          (map(select(.key>($after//"")))+map(select(.key<=($after//""))))|.[:1] |
+          {outbox:map(.value|{request,request_digest}),outbox_after:(.[0].key//$after)}
+        ' "$_wb_tmp/data" > "$_wb_tmp/result" || return 2
+        jq --slurpfile r "$_wb_tmp/result" '.outbox_after=$r[0].outbox_after' "$_wb_tmp/data" > "$_wb_tmp/new" || return 2
+        mv "$_wb_tmp/new" "$_wb_tmp/data"
         _loom_bridge_commit "$request" "$digest" || rc=$?
         if (( rc!=0 )); then loom_protocol_receipt "$request" unknown outcome_unknown 'Spool CAS or write uncertain; replay same exchange'; return 1; fi
     fi
+    cp "$_wb_tmp/result" "$_wb_tmp/selection"
     jq -c '{deliveries:[.deliveries[]|.delivery],next_cursor:null,deadline_reached:false}' "$_wb_tmp/data" > "$_wb_tmp/result"
     _loom_mail_response "$request" "$_wb_tmp/result" true |
-      jq -c --slurpfile d "$_wb_tmp/data" '.extensions["loom.mail.exchange"]={receipts:[$d[0].deliveries[]|{delivery_id:.delivery.delivery_id,message_digest:.delivery.message_digest,attempt_id:.delivery.attempt_id,facts}],outbox:([$d[0].outbox[]|select(.authority_sync=="queued_for_authority")|{request,request_digest}]|.[:1])}'
+      jq -c --slurpfile d "$_wb_tmp/data" --slurpfile selected "$_wb_tmp/selection" '.extensions["loom.mail.exchange"]={receipts:[$d[0].deliveries[]|{delivery_id:.delivery.delivery_id,message_digest:.delivery.message_digest,attempt_id:.delivery.attempt_id,facts}],outbox:($selected[0].outbox//[])}'
 )
 
 loom_worker_bridge_handle() (

@@ -205,11 +205,13 @@ JQ
 }
 
 # A historical outcome never grants a former owner current mutation authority.
+# A claim consumes the old epoch; its replay is fenced by the resulting epoch.
 _loom_coord_replay_authorized() {
-    local context=$1 request=$2 current
+    local context=$1 request=$2 prior=$3 current
     current=$(loom_state_get run "$(jq -r .actor.run_id "$request")") || return 2
-    jq -e --slurpfile c "$context" --slurpfile q "$request" '
-      .epoch==$q[0].actor.epoch and
+    jq -e --slurpfile c "$context" --slurpfile q "$request" --argjson prior "$prior" '
+      .epoch==(if $q[0].op=="run.claim" then $prior.outcome.result.response.epoch else $q[0].actor.epoch end) and
+      ($q[0].op!="run.claim" or $prior.outcome.result.response.owner_id==$c[0].actor_id) and
       (.data.owner_id==$c[0].actor_id or
        ($q[0].op=="gate.resolve" and .data.gates[$q[0].args.gate_id].resolver_id==$c[0].actor_id))
     ' <<< "$current" >/dev/null || { printf 'owner_fenced\n' >&2; return 2; }
@@ -225,7 +227,7 @@ _loom_coord_mutate() {
     # dedupe entry alone can proceed, while corrupt/unavailable stores fail later.
     if prior=$(loom_state_operation "$actor" "$op" "$(jq -r .idempotency_key "$request")" 2>"$_cq_tmp/lookup-error"); then
         [[ $(jq -r .outcome.result.wire_digest <<< "$prior") == "$digest" ]] || { printf 'idempotency_conflict\n' >&2; return 2; }
-        _loom_coord_replay_authorized "$context" "$request" || return 2
+        _loom_coord_replay_authorized "$context" "$request" "$prior" || return 2
         jq -cS .outcome.result.response <<< "$prior" > "$_cq_tmp/result"
         return 0
     fi
@@ -302,7 +304,7 @@ _loom_coord_handle() (
       jq -e --slurpfile q "$request" 'if $q[0].op=="run.create" then .create_runs else (.runs|index($q[0].actor.run_id))!=null end' "$context" >/dev/null; then
         if prior=$(loom_state_operation "$(jq -r .actor.id "$request")" "$op" "$(jq -r .idempotency_key "$request")" 2>/dev/null) &&
           [[ $(jq -r .outcome.result.wire_digest <<< "$prior") == "$(_loom_coord_digest "$request")" ]] &&
-          _loom_coord_replay_authorized "$context" "$request"; then
+          _loom_coord_replay_authorized "$context" "$request" "$prior"; then
             jq -cS .outcome.result.response <<< "$prior" > "$_cq_tmp/result"
             rc=0
         fi
