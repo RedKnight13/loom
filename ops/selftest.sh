@@ -143,8 +143,22 @@ EOF
     [[ $err == *'loom send fixture-task.1 --subject'* ]] || fail 'reuse instruction missing'
     if err=$(bash "$ops/dispatch.sh" ../.loom-instance/consumer.toml 8 2>&1); then fail 'retained worker bypassed cap'; fi
     [[ $err == *'worker limit reached (workers=1)'* ]] || fail 'retained slot missing from cap'
-    jq '.executor.released = true' "$record" > "$scratch/released"
-    mv "$scratch/released" "$record"
+    cat > "$scratch/bin/release-fixture" <<'STUB'
+#!/usr/bin/env bash
+[[ $1 == orchestration && $2 == worker-release && $3 == --dispatch && $4 == kept ]] || exit 1
+jq -nc --arg d "${FIXTURE_DISPATCH:-$4}" --arg s "$FIXTURE_RELEASE" '{ok:true,result:{dispatchId:$d,state:$s}}'
+STUB
+    chmod +x "$scratch/bin/release-fixture"
+    for outcome in retained release_pending; do
+        if LOOM_ORCA="$scratch/bin/release-fixture" FIXTURE_RELEASE=$outcome bash "$ops/orca.sh" release fixture-task.1 >/dev/null 2>&1; then
+            fail 'unconfirmed release freed a worker slot'
+        fi
+        jq -e --arg s "$outcome" '.executor.terminal_state == $s and .executor.released != true' "$record" >/dev/null
+    done
+    if LOOM_ORCA="$scratch/bin/release-fixture" FIXTURE_DISPATCH=another FIXTURE_RELEASE=released bash "$ops/orca.sh" release fixture-task.1 >/dev/null 2>&1; then
+        fail 'release for a different worker freed the slot'
+    fi
+    LOOM_ORCA="$scratch/bin/release-fixture" FIXTURE_RELEASE=already_released bash "$ops/orca.sh" release fixture-task.1 >/dev/null
     bash "$ops/dispatch.sh" ../.loom-instance/consumer.toml 8 >/dev/null || fail 'released worker still counted'
     other="$scratch/tree A"
     [[ $(jq -r .branch "$other/.loom-instance/state/fixture-task.1.json") != "$branch" ]] || fail 'shared collection branch'
@@ -1018,7 +1032,7 @@ case "$1" in
                 echo '{"ok":true,"result":{"status":"stopped"}}' ;;
             worker-release)
                 if [[ ${ORCA_STUB_RELEASE:-ok} == fail ]]; then echo '{"ok":false}'; exit 1; fi
-                echo '{"ok":true,"result":{"released":true}}' ;;
+                jq -nc --arg d "$4" '{ok:true,result:{dispatchId:$d,state:"released"}}' ;;
             worker-show)
                 if [[ -f $GH_STATE/compact-$4 && " $* " != *' --full '* ]]; then
                     cat "$GH_STATE/compact-$4"; exit 0

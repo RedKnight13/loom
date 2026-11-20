@@ -336,8 +336,10 @@ bash "$LOOM_TOOLS/ops/loom" send add-flag.1 --subject "Review fix" --body "Updat
 ```
 
 Harvest, verify and collect the revised commit. Release the worker when the
-review is complete. A kept-open terminal can consume memory after the task
-settles and counts against the configured worker cap until release.
+review is complete. Loom reserves the slot for a terminal reported as active,
+reclaimable or retained after its task settles. A pending release also holds
+the slot. An exact released or already-released receipt frees it, including
+when Orca automatically released the worker before the conductor called release.
 
 ## 5. Local executor
 {: id="5-local-executor"}

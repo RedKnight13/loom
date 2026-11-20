@@ -142,7 +142,7 @@ adopt_followup() {  # file, child-view, receipt, report boundary
       .executor.state = "running" | .executor.followup_receipt = $receipt |
       .report_offset = $offset | .launched_at = (now | todateiso8601) |
       .previous_collected_sha = (.collected_sha // .previous_collected_sha) |
-      del(.executor.settled_at, .executor.released, .executor.released_at, .collected_sha, .acked)
+      del(.executor.terminal_state, .executor.settled_at, .executor.released, .executor.released_at, .collected_sha, .acked)
     ' --argjson v "$view" --arg archive "${archive##*/}" --arg receipt "${receipt##*/}" --argjson offset "$boundary"
 }
 
@@ -334,6 +334,7 @@ harvest)
     state=$(loom_harvest "$file" 'worker_done_without_report (orca)')
     terminal=$(worker_view "$show" | jq -r '.terminal // empty')
     loom_write "$file" '.executor.state = "settled" | .executor.settled_at = (now | todateiso8601) |
+        (if $terminal != "" then .executor.terminal_state = $terminal else . end) |
         if $terminal == "retained" then .executor.kept_open = true
         elif $terminal == "released" then .executor.kept_open = false | .executor.released = true
         else . end' --arg terminal "$terminal"
@@ -363,7 +364,7 @@ stop)
     if [[ $(jq -r '.reports[-1].fact' "$file") != 'stopped via orca by the conductor' ]]; then
         loom_append "$file" failed 'stopped via orca by the conductor'
     fi
-    loom_write "$file" '.executor.state = "settled" | .executor.kept_open = false'
+    loom_write "$file" '.executor.state = "settled" | .executor.kept_open = false | del(.executor.terminal_state)'
     loom_unlock
     printf '%s stopped via orca (dispatch %s)\n' "$id" "$dispatch"
     ;;
@@ -514,6 +515,9 @@ send)
     [[ $(jq -r '.executor.continuation_pending // false' "$file") == false ]] ||
         loom_error 'previous send unresolved; reconcile before sending again'
     dispatch=$(jq -r '.executor.dispatch' "$file")
+    if jq -e '.executor.terminal_state | IN("release_pending","release_unknown")' "$file" >/dev/null; then
+        loom_error "$id has an unresolved terminal release; retry loom release $id before sending"
+    fi
     # A continuation stays on the recorded remote workspace; never resume a
     # local worker when the assignment declares remote compute.
     jq -e '(.compute // []) as $hosts | ($hosts | length) == 0 or
@@ -721,14 +725,24 @@ release)
     dispatch=$(jq -r '.executor.dispatch // empty' "$file")
     [[ -n $dispatch ]] || loom_error "$id has no Orca dispatch to release"
     receipt="$LOOM_STATE/$id.orca-release.receipt"
+    # A lost reply or interrupted call cannot free a worker slot.
+    loom_write "$file" '.executor.terminal_state = "release_pending"'
     rc=0
     loom_orca orchestration worker-release --dispatch "$dispatch" --json > "$receipt" 2>&1 || rc=$?
-    if [[ $rc != 0 ]] || ! jq -e '.ok == true' "$receipt" >/dev/null 2>&1; then
-        printf '%s: orca did not confirm the release (exit %s); nothing recorded. See %s\n' "$id" "$rc" "$receipt" >&2
-        exit 1
+    if [[ $rc != 0 ]]; then
+        loom_error "$id release failed (exit $rc); see ${receipt##*/}"
     fi
+    outcome=$(jq -er --arg d "$dispatch" 'select(.ok == true and .result.dispatchId == $d) |
+        .result.state | select(type == "string")' "$receipt") || loom_error "$id release lacks a matching dispatch receipt"
+    case $outcome in
+        released|already_released) ;;
+        retained|release_pending|release_unknown)
+            loom_write "$file" '.executor.terminal_state = $state' --arg state "$outcome"
+            loom_error "$id terminal is $outcome; its worker slot is still reserved" ;;
+        *) loom_error "$id release outcome is unconfirmed; see ${receipt##*/}" ;;
+    esac
     # shellcheck disable=SC2016
-    loom_write "$file" '.executor.released = true | .executor.release_receipt = $r' --arg r "${receipt##*/}"
+    loom_write "$file" '.executor.released = true | .executor.terminal_state = "released" | .executor.release_receipt = $r' --arg r "${receipt##*/}"
     loom_unlock
     printf '%s released via orca (dispatch %s)\n' "$id" "$dispatch"
     ;;

@@ -29,9 +29,10 @@ for file in "$LOOM_STATE"/*.json; do
       [$id, .state, (.fact | gsub("[\\t\\r\\n]+"; " "))] | @tsv
     ' "$file"
     # Ack settles the report. It does not settle a kept-open workspace (gap #30).
-    jq -r --arg id "${id%.json}" '
-      select(.executor.kind == "orca" and .executor.state == "settled" and .executor.kept_open == true) |
-      select(.collected_sha != null and .executor.released != true) |
-      [$id, "release", "kept-open workspace not released (Orca dispatch \(.executor.dispatch))"] | @tsv
-    ' "$file"
+    if loom_retained_worker "$file"; then
+        jq -r --arg id "${id%.json}" '
+          select(.collected_sha != null) |
+          [$id, "release", "worker slot reserved (Orca dispatch \(.executor.dispatch))"] | @tsv
+        ' "$file"
+    fi
 done

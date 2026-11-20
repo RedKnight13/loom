@@ -626,7 +626,8 @@ loom_compute_pick() {  # loom_compute_pick <host>...: first reachable host
 # assignment reserved for follow-ups until Loom records release or stop.
 loom_retained_worker() {
     jq -e '.executor.kind == "orca" and .executor.state == "settled" and
-        .executor.kept_open == true and .executor.released != true' "$1" >/dev/null
+        .executor.released != true and
+        (.executor.kept_open == true or (.executor.terminal_state | IN("active","reclaimable","retained","release_pending","release_unknown")))' "$1" >/dev/null
 }
 
 # An assignment still occupying a worker slot: live, or dispatched and not yet

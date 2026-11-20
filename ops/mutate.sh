@@ -124,8 +124,11 @@ run() {
 }
 run lib.sh 's|export LOOM_STATE="$instance/state"|export LOOM_STATE="$HOME/.loom"|' "configured worktrees share the home state" mworktree1
 run dispatch.sh 's/worker_short="loom-.*-\$short"/worker_short=$short/' "linked worktrees share a worker branch" mworktree2
-run lib.sh 's/\.executor.kept_open == true and \.executor.released != true/false/' "retained Orca worker loses its reservation" mworktree3
+run lib.sh '/^loom_retained_worker() {/a\
+    return 1
+' "retained Orca worker loses its reservation" mworktree3
 run dispatch.sh 's/ || loom_retained_worker "$file"//' "worker cap ignores retained Orca terminals" mworktree4
+run orca.sh 's/released|already_released)/released|already_released|release_pending)/' "accepted pending release frees a worker slot" mworktree5
 run watchdog.sh 's/kill -KILL -- "-$pid" 2>\/dev\/null || //' "no process-group kill" m1
 run lib.sh 's/\[\[ $now == "$identity" \]\]/true/' "no guard identity check" m2
 run lib.sh 's/tail -n +"$((offset + 1))"/cat/' "report_offset ignored" m3
