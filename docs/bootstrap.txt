@@ -282,6 +282,10 @@ prompt is not proof of dependable operation.
    The agent must follow this protocol. Existing dispatch/start/launch commands
    are not automatically guarded; a gap remains between check and delegation.
 
+   For a quality fix on an existing Orca ticket, reuse its assignment with
+   bash "$LOOM_TOOLS/ops/loom" send ID --subject TEXT --body TEXT. Harvest,
+   verify and collect the revision. Release the worker after review finishes.
+
 9. Render a ticket without opening an issue:
      bash "$LOOM_TOOLS/ops/ticket.sh" "$FILE" \
        --short first-check --title "First check" \

@@ -617,6 +617,13 @@ loom_compute_pick() {  # loom_compute_pick <host>...: first reachable host
     return 1
 }
 
+# A completed assignment can still hold a live Orca terminal. Keep the
+# assignment reserved for follow-ups until Loom records release or stop.
+loom_retained_worker() {
+    jq -e '.executor.kind == "orca" and .executor.state == "settled" and
+        .executor.kept_open == true and .executor.released != true' "$1" >/dev/null
+}
+
 # An assignment still occupying a worker slot: live, or dispatched and not yet
 # settled (an Orca pending record).
 loom_open() {  # loom_open <file>
@@ -657,9 +664,10 @@ loom_no_open_sibling() {  # <record>; caller holds the state lock
     for sibling in "$LOOM_STATE"/*.json; do
         [[ -f $sibling && $sibling != "$file" ]] || continue
         loom_validate "$sibling"
-        if jq -e --arg repo "$repo" --argjson ticket "$ticket" '.repo == $repo and .ticket == $ticket' "$sibling" >/dev/null &&
-            loom_open "$sibling"; then
-            loom_error "ticket already has an open assignment: ${sibling##*/}"
+        jq -e --arg repo "$repo" --argjson ticket "$ticket" '.repo == $repo and .ticket == $ticket' "$sibling" >/dev/null || continue
+        if loom_retained_worker "$sibling"; then
+            loom_error "reuse the retained worker with loom send $(basename "$sibling" .json) --subject TEXT"
         fi
+        ! loom_open "$sibling" || loom_error "ticket already has an open assignment: ${sibling##*/}"
     done
 }

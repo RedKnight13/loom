@@ -253,7 +253,7 @@ a commit. Preserve existing configuration; bootstrap does not commit it.
 ### Worker cap
 
 `workers` is the maximum number of open assignments for this consumer. `dispatch`
-counts records that are live or dispatched-but-unsettled and refuses past the
+counts open assignments and settled Orca workers recorded as kept open. It refuses past the
 cap with the ids that hold the slots. Omit the key for no cap.
 
 `agent` names the Orca worker agent (for example `codex` or `claude`). It is
@@ -325,6 +325,19 @@ Selection grants no launch, installation, model, cap or placement permission.
 Loom Orca `start` accepts only `--agent`; model/effort remain pinned at dispatch from
 the reviewed consumer. Per-role advice needs explicitly reviewed consumer
 configs to be applied, and effective launch fields must then be verified.
+
+### Review fixes on an existing assignment
+
+For a quality fix within the same ticket, send the finding and acceptance check
+to its existing Orca assignment. The assignment keeps its worktree and history.
+
+```sh
+bash "$LOOM_TOOLS/ops/loom" send add-flag.1 --subject "Review fix" --body "Update the parser and rerun the malformed-input check."
+```
+
+Harvest, verify and collect the revised commit. Release the worker when the
+review is complete. A kept-open terminal can consume memory after the task
+settles and counts against the configured worker cap until release.
 
 ## 5. Local executor
 {: id="5-local-executor"}

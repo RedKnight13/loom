@@ -31,6 +31,10 @@ a fresh shell per call, bind these variables in the same invocation or explicitl
 source an approved private setup file. Do not assume bindings persist across
 tool calls or sessions.
 
+For review feedback or a quality fix on an existing Orca ticket, continue its
+assignment with `loom send ID --subject TEXT --body TEXT`. Use its recorded
+worktree, harvest and verify the revision, then collect and release when done.
+
 At every session entry and immediately before every delegation, run through an
 available shell execution tool:
 

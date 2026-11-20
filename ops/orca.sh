@@ -332,7 +332,11 @@ harvest)
     [[ $(dispatch_state "$show" "$dispatch") == settled ]] ||
         loom_error "dispatch $dispatch is not positively completed; nothing harvested: see ${show##*/}"
     state=$(loom_harvest "$file" 'worker_done_without_report (orca)')
-    loom_write "$file" '.executor.state = "settled" | .executor.settled_at = (now | todateiso8601)'
+    terminal=$(worker_view "$show" | jq -r '.terminal // empty')
+    loom_write "$file" '.executor.state = "settled" | .executor.settled_at = (now | todateiso8601) |
+        if $terminal == "retained" then .executor.kept_open = true
+        elif $terminal == "released" then .executor.kept_open = false | .executor.released = true
+        else . end' --arg terminal "$terminal"
     loom_unlock
     printf '%s %s (harvested from orca dispatch %s)\n' "$id" "$state" "$dispatch"
     ;;
@@ -359,7 +363,7 @@ stop)
     if [[ $(jq -r '.reports[-1].fact' "$file") != 'stopped via orca by the conductor' ]]; then
         loom_append "$file" failed 'stopped via orca by the conductor'
     fi
-    loom_write "$file" '.executor.state = "settled"'
+    loom_write "$file" '.executor.state = "settled" | .executor.kept_open = false'
     loom_unlock
     printf '%s stopped via orca (dispatch %s)\n' "$id" "$dispatch"
     ;;
@@ -407,16 +411,16 @@ keep-open)
     id=$1
     loom_id "$id"
     loom_init
+    loom_lock
     file=$(loom_record "$id")
     [[ $(loom_executor "$file") == orca ]] || loom_error "$id is not an Orca assignment"
     dispatch=$(jq -r '.executor.dispatch // empty' "$file")
     [[ -n $dispatch ]] || loom_error "$id has no Orca dispatch"
+    [[ $(jq -r '.executor.released // false' "$file") == false ]] || loom_error "$id already released"
     receipt="$LOOM_STATE/$id.orca-keep-open.receipt"
     rc=0
     loom_orca orchestration worker-keep-open --dispatch "$dispatch" --json > "$receipt" 2>&1 || rc=$?
     [[ $rc == 0 ]] || { printf '%s: orca refused keep-open (exit %s): see %s\n' "$id" "$rc" "$receipt" >&2; exit 1; }
-    loom_lock
-    file=$(loom_record "$id")
     loom_write "$file" '.executor.kept_open = true'
     loom_unlock
     printf '%s kept open via orca (dispatch %s)\n' "$id" "$dispatch"
@@ -707,6 +711,7 @@ release)
     id=$1
     loom_id "$id"
     loom_init
+    loom_lock
     file=$(loom_record "$id")
     [[ $(loom_executor "$file") == orca ]] || loom_error "$id is not an Orca assignment"
     [[ $(jq -r '.executor.continuation_pending // false' "$file") == false ]] || loom_error 'send outcome unresolved; reconcile before release'
@@ -722,8 +727,6 @@ release)
         printf '%s: orca did not confirm the release (exit %s); nothing recorded. See %s\n' "$id" "$rc" "$receipt" >&2
         exit 1
     fi
-    loom_lock
-    file=$(loom_record "$id")
     # shellcheck disable=SC2016
     loom_write "$file" '.executor.released = true | .executor.release_receipt = $r' --arg r "${receipt##*/}"
     loom_unlock

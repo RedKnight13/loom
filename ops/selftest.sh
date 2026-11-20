@@ -135,6 +135,17 @@ EOF
         [[ $(git -C "$tree" show "$branch:result") == "work for $tree" ]] || fail 'wrong worktree collected'
         bash "$ops/loom" verify fixture-task.1 >/dev/null
     done
+    # Represent an Orca worker whose task settled while its terminal stayed open.
+    jq '.executor = {kind:"orca",state:"settled",kept_open:true,dispatch:"kept"}' "$record" > "$scratch/retained"
+    mv "$scratch/retained" "$record"
+    printf 'workers = 1\n' >> ../.loom-instance/consumer.toml
+    if err=$(bash "$ops/dispatch.sh" ../.loom-instance/consumer.toml 7 2>&1); then fail 'retained ticket dispatched twice'; fi
+    [[ $err == *'loom send fixture-task.1 --subject'* ]] || fail 'reuse instruction missing'
+    if err=$(bash "$ops/dispatch.sh" ../.loom-instance/consumer.toml 8 2>&1); then fail 'retained worker bypassed cap'; fi
+    [[ $err == *'worker limit reached (workers=1)'* ]] || fail 'retained slot missing from cap'
+    jq '.executor.released = true' "$record" > "$scratch/released"
+    mv "$scratch/released" "$record"
+    bash "$ops/dispatch.sh" ../.loom-instance/consumer.toml 8 >/dev/null || fail 'released worker still counted'
     other="$scratch/tree A"
     [[ $(jq -r .branch "$other/.loom-instance/state/fixture-task.1.json") != "$branch" ]] || fail 'shared collection branch'
     mkdir "$other/.loom-instance/state/v2"
@@ -1435,6 +1446,11 @@ EOF
     pass 'fresh durable exact-dispatch completion survives retained live terminal; incomplete, failed, working and compact proof refused'
     pass 'follow-up tracking, fail-closed harvest, identity-bound recovery and evidence preservation'
 
+    if err=$(dispatch 2>&1); then fail 'harvested retained worker allowed a duplicate'; fi
+    [[ $err == *"loom send $ido --subject"* ]] || fail 'missing retained assignment address'
+    bash "$ops/collect.sh" "$ido" >/dev/null
+    bash "$ops/orca.sh" release "$ido" >/dev/null
+
     # Unversioned configs inside a repo must produce usable records (gap #68).
     mkdir -p "$scratch/cfg/local"
     printf 'ignored.toml\n' > "$scratch/cfg/local/.gitignore"
@@ -1448,6 +1464,8 @@ EOF
         jq -e '.ok == true' <<< "$obj" >/dev/null || fail "show failed for $config_name config record"
         pid=$(cat "$GH_STATE/disp-$idc.pid"); for _ in $(seq 1 50); do kill -0 "$pid" 2>/dev/null || break; sleep 0.1; done
         bash "$ops/orca.sh" harvest "$idc" >/dev/null || fail "harvest failed for $config_name config record"
+        bash "$ops/collect.sh" "$idc" >/dev/null
+        bash "$ops/orca.sh" release "$idc" >/dev/null
     done
     pass 'ignored and untracked configs inside a repo record null and start/show accept them'
 
@@ -1620,6 +1638,7 @@ VERBS
     bash "$ops/collect.sh" "$idp" >/dev/null || fail 'remote collect failed'
     git -C "$LOOM_REPO" show-ref --verify --quiet "refs/heads/orca/$idp" || fail 'remote branch not fetched home'
 
+    bash "$ops/orca.sh" release "$idp" >/dev/null
     export ORCA_STUB_WORKER="$scratch/bin/w-hang" GRANDCHILD="$scratch/orca-grandchild"
     out=$(bash "$ops/dispatch.sh" "$scratch/placement.toml" 7); ida=${out##*$'\n'}
     bash "$ops/orca.sh" start "$ida" >/dev/null || fail 'start for the active-harvest case'

@@ -75,22 +75,26 @@ loom_lock
 # One ticket, one live worker. Attempts are numbered per short name across
 # all tickets: a corrected ticket (mandates are immutable) may reuse a name.
 attempt=1
+workers=$(jq '.workers // null' <<< "$config")
 open_ids=()
 shopt -s nullglob
 for file in "$LOOM_STATE"/*.json; do
     loom_validate "$file"
     if jq -e --arg repo "$repo" --argjson ticket "$2" '.repo == $repo and .ticket == $ticket' "$file" >/dev/null; then
+        if loom_retained_worker "$file"; then
+            loom_error "reuse the retained worker with loom send $(basename "$file" .json) --subject TEXT"
+        fi
         ! loom_open "$file" || loom_error "ticket already has an open assignment: $(basename "$file" .json)"
     fi
     # Global cap for this consumer, when `workers` is declared.
-    if jq -e --arg repo "$repo" '.repo == $repo' "$file" >/dev/null && loom_open "$file"; then
+    if [[ $workers != null ]] && jq -e --arg repo "$repo" '.repo == $repo' "$file" >/dev/null &&
+        { loom_open "$file" || loom_retained_worker "$file"; }; then
         open_ids+=("$(basename "$file" .json)")
     fi
     jq -e --arg short "$short" '.short_name == $short' "$file" >/dev/null || continue
     n=$(jq -r '.attempt' "$file")
     (( n < attempt )) || attempt=$((n + 1))
 done
-workers=$(jq '.workers // null' <<< "$config")
 if [[ $workers != null ]]; then
     (( ${#open_ids[@]} < workers )) || loom_error "worker limit reached (workers=$workers): ${open_ids[*]}"
 fi
