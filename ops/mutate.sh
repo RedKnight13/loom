@@ -236,6 +236,7 @@ run orca.sh '/^    loom_no_open_sibling /d' "Orca start ignores pending sibling"
 run collect.sh '/^    refuse_checked_out$/d' "collection overwrites linked checkout" mlegacy6
 run orca.sh 's/orchestration ask --to "dispatch:$dispatch"/orchestration ask --to "dispatch:$1"/' "ask addresses assignment instead of dispatch" mlegacy7
 run orca.sh 's/\.previous_collected_sha = (.collected_sha \/\/ .previous_collected_sha)/.previous_collected_sha = null/' "followup forgets prior collection" mlegacy8
+run lib.sh 's/set -o noclobber/set +o noclobber/' "lock acquisition overwrites a live owner's marker" mlegacy9
 run lib.sh '/^    loom_legacy_platform || return 125$/d' "Darwin guard forgets platform initialization" msettle1
 run lib.sh 's/A-Za-z?/A-Za-z/' "Darwin indeterminate state rejects process snapshot" msettle4
 run lib.sh 's/\[\[ $(loom_legacy_status "$file") == settled \]\]/true/' "harvest skips positive settlement" msettle2
