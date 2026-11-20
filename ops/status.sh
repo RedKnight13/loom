@@ -6,6 +6,7 @@ set -euo pipefail
 # shellcheck source=ops/lib.sh
 source "${BASH_SOURCE[0]%/*}/lib.sh"
 [[ $# == 0 ]] || loom_error 'usage: status.sh'
+loom_bind_instance
 LOOM_STATE=${LOOM_STATE:-$HOME/.loom}
 shopt -s nullglob
 for file in "$LOOM_STATE"/*.json; do

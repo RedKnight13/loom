@@ -13,7 +13,30 @@ loom_error() { printf 'loom: %s\n' "$*" >&2; exit 1; }
 LOOM_CALLER_UMASK=${LOOM_CALLER_UMASK:-$(umask)}
 export LOOM_CALLER_UMASK
 
+# The tools checkout can serve many consumers. Bind once before any child
+# changes cwd. A missing instance preserves existing unconfigured installations.
+loom_check_instance() {
+    local checkout=$1 instance=$1/.loom-instance path tracked
+    for path in "$instance" "$instance/state"; do
+        [[ ! -L $path && ( ! -e $path || -d $path ) ]] || loom_error "invalid instance directory: $path"
+    done
+    tracked=$(git -C "$checkout" ls-files -- .loom-instance) || loom_error 'cannot inspect instance paths'
+    [[ -z $tracked ]] || loom_error 'the instance directory contains tracked files'
+}
+
+loom_bind_instance() {
+    local checkout instance
+    [[ -z ${LOOM_STATE:-} ]] || return 0
+    checkout=$(git -C "${LOOM_REPO:-.}" rev-parse --show-toplevel 2>/dev/null) || return 0
+    instance=$checkout/.loom-instance
+    [[ -e $instance || -L $instance ]] || return 0
+    loom_check_instance "$checkout"
+    git -C "$checkout" check-ignore -q -- .loom-instance/ || loom_error 'add /.loom-instance/ to the consumer .gitignore'
+    export LOOM_STATE="$instance/state"
+}
+
 loom_init() {
+    loom_bind_instance
     umask 077
     LOOM_STATE=${LOOM_STATE:-$HOME/.loom}
     mkdir -p "$LOOM_STATE"

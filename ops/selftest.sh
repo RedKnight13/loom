@@ -106,6 +106,59 @@ laws = [
 ]
 EOF
 
+# The same ticket can run in two linked worktrees, even with one worker pool.
+(
+    unset LOOM_STATE LOOM_REPO
+    export HOME="$scratch/instance-home"
+    mkdir -p "$HOME"
+    for tree in "$scratch/tree A" "$scratch/tree B"; do
+        git -C "$repo" worktree add -q --detach "$tree" "$base"
+        cd "$tree"
+        mkdir subdir
+        cd subdir
+        printf 'keep-me\n' > ../.gitignore
+        bash "$ops/setup-worktree.sh" >/dev/null
+        bash "$ops/setup-worktree.sh" >/dev/null
+        [[ $(grep -cFx '/.loom-instance/' ../.gitignore) == 1 ]] || fail 'setup duplicated its ignore rule'
+        grep -qxF keep-me ../.gitignore || fail 'setup changed unrelated ignore rules'
+        cp "$scratch/consumer.toml" ../.loom-instance/consumer.toml
+        git check-ignore -q ../.loom-instance/consumer.toml || fail 'private config is visible to Git'
+        bash "$ops/loom" dispatch --consumer ../.loom-instance/consumer.toml --issue 7 --executor local >/dev/null || fail 'worktree could not dispatch into the shared worker pool'
+        record=$tree/.loom-instance/state/fixture-task.1.json
+        [[ -f $record ]] || fail 'dispatch wrote outside the worktree state'
+        branch=$(jq -er '.branch // .short_name' "$record")
+        worker=$(jq -r .workdir "$record")
+        printf 'work for %s\n' "$tree" > "$worker/result"
+        git -C "$worker" add result
+        git -C "$worker" -c commit.gpgsign=false commit -qm result
+        bash "$ops/collect.sh" fixture-task.1 >/dev/null
+        [[ $(git -C "$tree" show "$branch:result") == "work for $tree" ]] || fail 'wrong worktree collected'
+        bash "$ops/loom" verify fixture-task.1 >/dev/null
+    done
+    other="$scratch/tree A"
+    [[ $(jq -r .branch "$other/.loom-instance/state/fixture-task.1.json") != "$branch" ]] || fail 'shared collection branch'
+    mkdir "$other/.loom-instance/state/v2"
+    LOOM_REPO="$other" bash "$ops/loom" status > "$scratch/native-status" && fail 'missed the selected native state'
+    jq -e '.ok == false and (.fact | contains("context"))' "$scratch/native-status" >/dev/null
+    bash "$ops/loom" status | jq -e '.ok' >/dev/null || fail 'sibling native route leaked'
+    LOOM_STATE="$scratch/explicit" LOOM_REPO="$other" bash "$ops/loom" status | jq -e '.ok and .items == []' >/dev/null || fail 'explicit state override lost'
+    [[ ! -e $HOME/.loom && ! -e $scratch/explicit ]] || fail 'read-only state selection wrote to another store'
+    cd "$scratch"
+    # An unconfigured checkout still reads its original home state.
+    mkdir -p "$HOME/.loom"
+    printf 'invalid record\n' > "$HOME/.loom/broken.json"
+    if LOOM_REPO="$repo" bash "$ops/loom" status >/dev/null 2>&1; then fail 'legacy home state hidden'; fi
+    LOOM_REPO="$tree" bash "$ops/loom" status | jq -e .ok >/dev/null || fail 'home state leaked into worktree'
+    ln -s "$other/.loom-instance" "$repo/.loom-instance"
+    if LOOM_REPO="$repo" bash "$ops/setup-worktree.sh" >/dev/null 2>&1; then fail 'setup accepted linked instance'; fi
+    if LOOM_REPO="$repo" bash "$ops/loom" status >/dev/null 2>&1; then fail 'runtime accepted linked instance'; fi
+    rm "$repo/.loom-instance"
+    git -C "$repo" worktree remove --force "$other"
+    git -C "$repo" worktree remove --force "$tree"
+)
+pass 'linked worktrees isolate state, worker names, collection and native routing'
+[[ ${LOOM_SELFTEST_WORKTREE_ONLY:-0} != 1 ]] || exit 0
+
 dispatch() { bash "$ops/dispatch.sh" "$scratch/consumer.toml" 7; }
 dispatch_n() { bash "$ops/dispatch.sh" "$scratch/consumer.toml" "$1"; }
 within() {  # within <secs> <cmd...>: fail instead of hanging

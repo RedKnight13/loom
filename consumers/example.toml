@@ -1,7 +1,7 @@
 # Example consumer: a repository whose issues become Tickets.
 #
-# Copy this file to consumers/<name>.toml and fill it in. A private config is
-# gitignored; only this example and consumers/loom.toml are tracked.
+# Copy into the configured consumer worktree at .loom-instance/consumer.toml
+# and fill in the values for that worktree.
 repo      = "you/your-repo"              # where Tickets (issues) live
 checks    = "make check"                 # verify.sh runs this in a fresh clone
 worktrees = "~/work/your-repo-workdirs"  # local executor workspace root

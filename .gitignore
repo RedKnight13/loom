@@ -3,7 +3,8 @@ consumers/*.toml
 !consumers/example.toml
 !consumers/loom.toml
 
-# Loom state never lives in the tree, but just in case.
+# Private worktree instance and worker evidence.
+/.loom-instance/
 .loom/
 
 # Editors and OS noise.

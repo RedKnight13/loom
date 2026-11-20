@@ -14,6 +14,7 @@ config=$(loom_config "$1")
 if [[ $(jq -r '.schema // 1' <<< "$config") == 2 ]]; then
     loom_error 'schema-2 ticket dispatch requires a provisioned workflow context; GitHub ticket/default-branch discovery remains a separate dependency'
 fi
+loom_bind_instance
 loom_legacy_dispatch_fence
 # A config under version control must be committed: the record pins the exact
 # config the assignment ran under (gap #20). Ignored and untracked configs
@@ -94,7 +95,15 @@ if [[ $workers != null ]]; then
     (( ${#open_ids[@]} < workers )) || loom_error "worker limit reached (workers=$workers): ${open_ids[*]}"
 fi
 mkdir -p "$worktrees"
-workdir="$worktrees/$short.$attempt"
+worker_short=$short
+if [[ $LOOM_STATE == "$checkout/.loom-instance/state" ]]; then
+    # Linked worktrees share Git refs and can share a worker pool or Orca host.
+    git_dir=$(git -C "$checkout" rev-parse --absolute-git-dir)
+    namespace=$(printf '%s' "$git_dir" | git -C "$checkout" hash-object --stdin)
+    worker_short="loom-${namespace:0:16}-$short"
+fi
+worker_name=$worker_short.$attempt
+workdir="$worktrees/$worker_name"
 if [[ $executor == orca ]]; then workdir=""; else
     [[ ! -e $workdir && ! -L $workdir ]] || loom_error "workdir already exists; conductor must resolve it: $workdir"
 fi
@@ -106,7 +115,7 @@ if [[ $executor == local ]]; then
     git clone -q --no-checkout "$checkout" "$workdir"
     git -C "$workdir" remote remove origin
     git -C "$workdir" fetch -q "$checkout" "$base_sha"
-    git -C "$workdir" checkout -q -b "$short" "$base_sha"
+    git -C "$workdir" checkout -q -b "$worker_short" "$base_sha"
     for key in user.name user.email; do
         if value=$(git -C "$checkout" config --get "$key"); then
             git -C "$workdir" config "$key" "$value"
@@ -123,13 +132,13 @@ fi
     if [[ $(jq -r '.checks // empty' <<< "$config") ]]; then
         printf '\n## Checks the conductor will run\n\nOn ready, the conductor runs exactly this in a fresh clone of your branch; run it yourself before reporting:\n\n    %s\n' "$(jq -r '.checks' <<< "$config")"
     fi
-    printf '\n## How to report\n\nEnd every turn by appending one line to REPORT.md in this directory:\n\n    state: <ready|blocked|failed|waiting> — <one-line fact>\n\nready = a reviewable result is in this directory; blocked = one concrete question; failed = what failed and why; waiting = turn done, nothing owed.\n\nPut logs and other evidence under .loom/ in this directory. Loom keeps that directory out of the commit and copies it into the assignment record. Do not leave logs at the workspace root.\n\nDo not run git add or git commit: leave your changes in the working tree. Loom commits them onto branch %s when you report.\n' "$short"
+    printf '\n## How to report\n\nEnd every turn by appending one line to REPORT.md in this directory:\n\n    state: <ready|blocked|failed|waiting> — <one-line fact>\n\nready = a reviewable result is in this directory; blocked = one concrete question; failed = what failed and why; waiting = turn done, nothing owed.\n\nPut logs and other evidence under .loom/ in this directory. Loom keeps that directory out of the commit and copies it into the assignment record. Do not leave logs at the workspace root.\n\nDo not run git add or git commit: leave your changes in the working tree. Loom commits them onto branch %s when you report.\n' "$worker_short"
 } > "$workfile"
 jq -n --argjson ticket "$2" --arg repo "$repo" --arg short "$short" \
       --arg workdir "$workdir" --arg checkout "$checkout" --arg base "$base_sha" \
       --argjson attempt "$attempt" --argjson limit "$(jq '.limit_min // null' <<< "$config")" \
       --argjson checks "$(jq '.checks // null' <<< "$config")" --argjson config_commit "$config_commit" \
-      --arg executor "$executor" --arg runtime "$orca_runtime" \
+      --arg executor "$executor" --arg runtime "$orca_runtime" --arg worker "$worker_short" --arg name "$worker_name" \
       --argjson compute "$(jq 'if has("compute") then [.compute] | flatten else null end' <<< "$config")" \
       --argjson compute_setup "$(jq '.compute_setup // null' <<< "$config")" \
       --argjson compute_selector "$(jq '.compute_selector // null' <<< "$config")" \
@@ -145,6 +154,7 @@ jq -n --argjson ticket "$2" --arg repo "$repo" --arg short "$short" \
    start_timeout_ms: $timeout, workers: $workers, agent: $agent, config_commit: $config_commit, limit_min: $limit, worker_pid: null, worker_start: null,
    executor: (if $executor == "orca" then {kind: "orca", state: "pending", runtime: $runtime} else {kind: "local"} end),
    started_at: (now | todateiso8601), reports: []}
+   + (if $worker == $short then {} elif $executor == "orca" then {worker_name:$name} else {branch:$worker} end)
 ' > "$LOOM_STATE/.pending"
 mv "$LOOM_STATE/.pending" "$LOOM_STATE/$id.json"
 if [[ $executor == orca ]]; then

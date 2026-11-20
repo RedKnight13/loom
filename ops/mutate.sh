@@ -15,6 +15,9 @@ set -u
 if [[ ${LOOM_MUTATE_CALIBRATION_ONLY:-0} == 1 ]]; then
     export LOOM_SELFTEST_CALIBRATION_ONLY=1
 fi
+if [[ ${LOOM_MUTATE_PREFIX:-} == mworktree* ]]; then
+    export LOOM_SELFTEST_WORKTREE_ONLY=1
+fi
 cd "$(dirname "${BASH_SOURCE[0]}")/.." || exit 1
 
 if [[ ${1:-} == --on ]]; then
@@ -55,6 +58,7 @@ copy_tree() { mkdir -p "$1" && tree_files | xargs -0 tar cf - | (cd "$1" && tar 
 mutation_test() {  # <tree> <mutant-id>, empty id selects the control
     local tree=$1 name=${2:-}
     case $name in
+        mworktree*) LOOM_SELFTEST_WORKTREE_ONLY=1 bash "$tree/ops/selftest.sh" ;;
         mreview-native-check-start) bash "$tree/tests/review/review-check-start.sh" ;;
         mreview-native-serialized-mail) bash "$tree/tests/review/review-native.sh" mail ;;
         mreview-native-option-boundary|mreview-native-legacy-routing) bash "$tree/tests/review/review-native.sh" routing ;;
@@ -118,6 +122,8 @@ run() {
     order+=("$4")
     one "$@" &
 }
+run lib.sh 's|export LOOM_STATE="$instance/state"|export LOOM_STATE="$HOME/.loom"|' "configured worktrees share the home state" mworktree1
+run dispatch.sh 's/worker_short="loom-.*-\$short"/worker_short=$short/' "linked worktrees share a worker branch" mworktree2
 run watchdog.sh 's/kill -KILL -- "-$pid" 2>\/dev\/null || //' "no process-group kill" m1
 run lib.sh 's/\[\[ $now == "$identity" \]\]/true/' "no guard identity check" m2
 run lib.sh 's/tail -n +"$((offset + 1))"/cat/' "report_offset ignored" m3

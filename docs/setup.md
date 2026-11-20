@@ -165,16 +165,28 @@ locally or on a compute host with `bash ops/mutate.sh --on HOST`.
 ## 3. State
 {: id="3-state"}
 
-Loom keeps one JSON record per assignment in `$LOOM_STATE` (default `~/.loom`).
-It is conductor-only; workers never write it.
+Set up each consumer worktree separately. A worktree owns its private config,
+assignment records, locks and calibration in `.loom-instance/`. All worktrees
+can use the same Loom tools checkout. Before switching an existing setup,
+finish active assignments in their original store or select it explicitly.
 
 <div class="code-region" role="region" tabindex="0" aria-label="Shell commands" markdown="1">
 
 ```bash
-export LOOM_STATE="$HOME/.loom"     # optional; this is the default
+cd /path/to/consumer-worktree
+export LOOM_REPO="$(git rev-parse --show-toplevel)"
+bash "$LOOM_TOOLS/ops/setup-worktree.sh"
 ```
 
 </div>
+
+Setup appends `/.loom-instance/` to the consumer’s root `.gitignore` and creates
+a private state directory. Run setup again in each linked worktree. In a new
+shell, Loom finds the instance from any subdirectory. An exported `LOOM_REPO`
+selects that checkout from elsewhere, so rebind or unset it when switching trees.
+Keep `LOOM_STATE` unset for automatic selection. Existing setups without an
+instance still default to `~/.loom`; setting `LOOM_STATE="$HOME/.loom"`
+selects that store explicitly. Setup leaves existing records in place.
 
 Records are validated on every read. A corrupt record stops the scripts rather
 than reading as healthy.
@@ -183,7 +195,7 @@ than reading as healthy.
 
 | Variable | Meaning |
 | --- | --- |
-| `LOOM_STATE` | state directory (default `~/.loom`) |
+| `LOOM_STATE` | explicit state override (worktree default `.loom-instance/state`) |
 | `LOOM_REPO` | consumer checkout for `dispatch`/`collect` (default: cwd) |
 | `LOOM_LOCK_WAIT` | seconds to wait for a live lock (default 10) |
 | `LOOM_ORCA` | Orca binary (tests stub it) |
@@ -197,8 +209,8 @@ than reading as healthy.
 {: id="4-register-a-consumer"}
 
 A consumer is any repo that owns tickets. Reuse its approved TOML file;
-otherwise create `consumers/project.toml` in the Loom checkout with values you
-have resolved for this project. The following is TOML file content, not a shell
+copy its settings or the tools checkout’s `consumers/example.toml` into
+`.loom-instance/consumer.toml` in the consumer worktree and review its values. The following is TOML file content, not a shell
 command. Replace the example repository, check command and workspace root.
 
 <div class="code-region" role="region" tabindex="0" aria-label="Consumer TOML configuration" markdown="1">
@@ -226,7 +238,7 @@ locations; use your actual consumer checkout and approved config file:
 
 ```bash
 export LOOM_REPO="$HOME/src/your-repo"
-export FILE="$LOOM_TOOLS/consumers/project.toml"
+export FILE="$LOOM_REPO/.loom-instance/consumer.toml"
 ```
 
 </div>
@@ -235,7 +247,7 @@ export FILE="$LOOM_TOOLS/consumers/project.toml"
 Without it, dispatch and calibration use the current directory.
 
 A tracked config must be committed by its authorized conductor before calibration
-or dispatch; the assignment record pins that commit. Ignored, untracked private configs in Loom’s `consumers/` do not need
+or dispatch; the assignment record pins that commit. Ignored, untracked private configs in `.loom-instance/` do not need
 a commit. Preserve existing configuration; bootstrap does not commit it.
 
 ### Worker cap
@@ -379,7 +391,7 @@ state: ready — added the flag and a test
 </div>
 
 The worker must not stage, commit or push. Loom commits what it left, on
-branch `<short>`, when the turn is harvested. `WORK.md`, `REPORT.md` and `.loom/` are excluded from that commit;
+the branch recorded in the assignment, when the turn is harvested. `WORK.md`, `REPORT.md` and `.loom/` are excluded from that commit;
 `.loom/` is copied to `$LOOM_STATE/<id>.evidence/` instead.
 
 ## 6. Orca executor
@@ -604,13 +616,13 @@ work; exit 2 reports usage errors. A passed drill in check mode is recorded
 proof, not a new execution. `ready` never means project acceptance.
 
 Private sanitized records live at
-`${LOOM_STATE:-$HOME/.loom}/calibration/<key>.json`. Relative `LOOM_STATE`
+`calibration/<key>.json` in the active state directory (worktree default `.loom-instance/state`). Relative `LOOM_STATE`
 resolves against invocation cwd; spaces are allowed, control characters and
 `.`/`..` path components are refused. Existing state/calibration directories
 require owner-only mode 0700 and proof files mode 0600. Missing baseline blocks;
 corrupt/unknown schema, unsafe state or symlinks fail closed. Do not delete
 locks or change permissions as an automatic repair. Failed recording preserves
-the prior baseline. Keep separately redacted setup evidence under `.loom/`
+the prior baseline. Keep separately redacted setup evidence under `.loom-instance/`
 only where private; do not publish paths, identities, hosts or credentials.
 
 Every new session and immediately before delegation, invoke `--check`, including

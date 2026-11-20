@@ -254,9 +254,10 @@ start)
     [[ -z $model ]] || extra+=(--model "$model")
     [[ -z $effort ]] || extra+=(--effort "$effort")
     [[ -z $timeout ]] || extra+=(--timeout-ms "$timeout")
+    worker_name=$(jq -r --arg id "$id" '.worker_name // $id' "$file")
     rc=0
     loom_orca orchestration worker-start --spec-file "$spec" --worktree new-top-level \
-        --repo "$repo_sel" --name "$id" --base-branch "$base" --setup skip \
+        --repo "$repo_sel" --name "$worker_name" --base-branch "$base" --setup skip \
         --agent "$agent" --task-title "loom $id" --display-name "loom $id" \
         --comment "$repo#$ticket" ${placement_args[@]+"${placement_args[@]}"} ${extra[@]+"${extra[@]}"} \
         --json > "$receipt" 2>&1 || rc=$?
@@ -271,7 +272,7 @@ start)
             workdir=$(jq -r '[.. | objects | .worktree? | objects | .path? | strings] | first // empty' "$receipt" 2>/dev/null) || workdir=''
     fi
     if [[ -z $workdir ]] || ! loom_ws "$ws_host" "$workdir" true 2>/dev/null; then
-        workdir=$(loom_orca worktree show --worktree "name:$id" --json 2>/dev/null | jq -r '[.. | objects | .path? | select(type == "string")] | first // empty') || workdir=''
+        workdir=$(loom_orca worktree show --worktree "name:$worker_name" --json 2>/dev/null | jq -r '[.. | objects | .path? | select(type == "string")] | first // empty') || workdir=''
     fi
     loom_lock
     file=$(loom_record "$id")
