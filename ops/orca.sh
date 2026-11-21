@@ -360,11 +360,22 @@ stop)
     fi
     loom_lock
     file=$(loom_record "$id")
+    [[ $(jq -r '.executor.dispatch' "$file") == "$dispatch" && $(jq -r '.executor.state' "$file") == running ]] ||
+        loom_error 'assignment changed before recording stop; inspect its dispatch'
+    terminal=release_unknown
+    show=$(new_receipt show)
+    if loom_orca orchestration worker-show --dispatch "$dispatch" --full --json > "$show" 2>&1; then
+        terminal=$(worker_view "$show" | jq -er --arg d "$dispatch" '
+            select(.dispatch == $d) | .terminal |
+            select(IN("active","reclaimable","retained","release_pending","release_unknown","released"))') || terminal=release_unknown
+    fi
     loom_harvest "$file" 'stopped via orca by the conductor' >/dev/null
     if [[ $(jq -r '.reports[-1].fact' "$file") != 'stopped via orca by the conductor' ]]; then
         loom_append "$file" failed 'stopped via orca by the conductor'
     fi
-    loom_write "$file" '.executor.state = "settled" | .executor.kept_open = false | del(.executor.terminal_state)'
+    loom_write "$file" '.executor.state = "settled" | .executor.stopped_dispatch = $d |
+        .executor.terminal_state = $terminal | .executor.released = ($terminal == "released") |
+        .executor.kept_open = ($terminal == "retained")' --arg d "$dispatch" --arg terminal "$terminal"
     loom_unlock
     printf '%s stopped via orca (dispatch %s)\n' "$id" "$dispatch"
     ;;
@@ -720,7 +731,7 @@ release)
     [[ $(loom_executor "$file") == orca ]] || loom_error "$id is not an Orca assignment"
     [[ $(jq -r '.executor.continuation_pending // false' "$file") == false ]] || loom_error 'send outcome unresolved; reconcile before release'
     [[ $(jq -r '.executor.state' "$file") == settled ]] || loom_error "$id is not settled; release after harvest or a confirmed stop"
-    [[ $(jq -r '.collected_sha // empty' "$file") =~ ^[0-9a-f]{40}$ ]] || loom_error "$id branch is not collected; release after collect"
+    [[ $(jq -r '.collected_sha // empty' "$file") =~ ^[0-9a-f]{40}$ ]] || jq -e '.executor.stopped_dispatch != null and .executor.stopped_dispatch == .executor.dispatch' "$file" >/dev/null || loom_error "$id branch is not collected; release after collect"
     [[ $(jq -r '.executor.released // false' "$file") == false ]] || loom_error "$id already released"
     dispatch=$(jq -r '.executor.dispatch // empty' "$file")
     [[ -n $dispatch ]] || loom_error "$id has no Orca dispatch to release"

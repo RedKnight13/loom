@@ -1502,6 +1502,10 @@ EOF
     ! grep -q "^$ids"$'\t'"failed"$'\t' <<< "$(bash "$ops/status.sh")" || fail 'acked failure still in status'
     bash "$ops/ack.sh" "$ids" 'again' >/dev/null 2>&1 && fail 'second ack accepted'
 
+    jq -e '.executor.terminal_state == "retained" and .executor.released == false' "$(rec "$ids")" >/dev/null || fail 'stop discarded terminal ownership'
+    dispatch >/dev/null 2>&1 && fail 'stop let a replacement take a retained slot'
+    bash "$ops/orca.sh" release "$ids" >/dev/null || fail 'could not release stopped worker'
+
     # a failed start is recorded, never retried
     out=$(dispatch); idf=${out##*$'\n'}
     ORCA_STUB_FAIL=1 bash "$ops/orca.sh" start "$idf" >/dev/null 2>&1 && fail 'failed worker-start reported success'

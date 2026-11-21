@@ -31,7 +31,7 @@ for file in "$LOOM_STATE"/*.json; do
     # Ack settles the report. It does not settle a kept-open workspace (gap #30).
     if loom_retained_worker "$file"; then
         jq -r --arg id "${id%.json}" '
-          select(.collected_sha != null) |
+          select(.collected_sha != null or (.executor.stopped_dispatch != null and .executor.stopped_dispatch == .executor.dispatch)) |
           [$id, "release", "worker slot reserved (Orca dispatch \(.executor.dispatch))"] | @tsv
         ' "$file"
     fi
