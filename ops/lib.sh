@@ -22,6 +22,9 @@ loom_init() {
 # Each acquisition publishes a uniquely named owner file. Only the contender
 # that successfully removes that exact file may remove the empty lock directory.
 # A delayed reaper/unlocker therefore cannot unlink a replacement owner's file.
+# mkdir's exit status alone is not the mutex: uutils mkdir 0.10 (Ubuntu 26.04)
+# exits 0 after losing a creation race. Bash's own O_EXCL create of .lock/held
+# decides the winner; whoever removes an owner file removes its held marker.
 loom_lock() {
     local tries=0 max owner pid start now claim
     max=$(( ${LOOM_LOCK_WAIT:-10} * 5 ))
@@ -31,7 +34,8 @@ loom_lock() {
     start=$(LC_ALL=C loom_pstart "$pid") || start=
     claim=$(mktemp "$LOOM_STATE/.lock-owner.$pid.XXXXXXXX") || loom_error 'cannot create lock claim'
     printf '%s\n%s\n' "$pid" "$start" > "$claim"
-    until mkdir "$LOOM_STATE/.lock" 2>/dev/null; do
+    until mkdir "$LOOM_STATE/.lock" 2>/dev/null &&
+          ( set -o noclobber; : > "$LOOM_STATE/.lock/held" ) 2>/dev/null; do
         for owner in "$LOOM_STATE/.lock"/owner.* "$LOOM_STATE/.lock/owner"; do
             [[ -f $owner && ! -L $owner ]] || continue
             { IFS= read -r pid; IFS= read -r start || :; } < "$owner" || continue
@@ -42,6 +46,7 @@ loom_lock() {
             if { [[ -n $start && -n $now && $start != "$now" ]]; } ||
                { [[ -z $now ]] && ! kill -0 "$pid" 2>/dev/null; }; then
                 if rm -- "$owner" 2>/dev/null; then
+                    rm -f "$LOOM_STATE/.lock/held"
                     rmdir "$LOOM_STATE/.lock" 2>/dev/null || :
                 fi
             fi
@@ -59,7 +64,7 @@ loom_lock() {
 
 loom_unlock() {
     if [[ -n ${LOOM_LOCK_OWNER:-} ]] && rm -- "$LOOM_LOCK_OWNER" 2>/dev/null; then
-        rm -f "$LOOM_STATE/.pending"
+        rm -f "$LOOM_STATE/.pending" "$LOOM_STATE/.lock/held"
         rmdir "$LOOM_STATE/.lock" 2>/dev/null || :
     fi
     LOOM_LOCK_OWNER=

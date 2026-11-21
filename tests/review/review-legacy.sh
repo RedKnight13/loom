@@ -66,6 +66,22 @@ printf '99999999\n' > "$LOOM_STATE/.lock/owner"
 mkdir "$LOOM_STATE/.lock"
 printf '%s\nobsolete start\n' "$$" > "$LOOM_STATE/.lock/owner.reused"
 (LOOM_LOCK_WAIT=1; loom_lock; loom_unlock)
+# uutils mkdir 0.10 (Ubuntu 26.04) exits 0 after losing a creation race. A
+# contender given that false success must not join a live owner.
+(
+    LOOM_LOCK_WAIT=1; loom_lock
+    live_owner=$LOOM_LOCK_OWNER
+    (
+        mkdir() {
+            if [[ $* == *'/.lock' ]]; then command mkdir "$@" 2>/dev/null || :; return 0; fi
+            command mkdir "$@"
+        }
+        if (LOOM_LOCK_WAIT=0; loom_lock) >/dev/null 2>&1; then fail 'lost mkdir race admitted a second lock owner'; fi
+    )
+    [[ -f $live_owner ]] || fail 'lost mkdir race damaged the live owner'
+    loom_unlock
+)
+[[ ! -d $LOOM_STATE/.lock ]] || fail 'lock not released after lost mkdir race'
 # Competing real shells must serialize the whole critical section.
 lock_pids=()
 for _ in 1 2 3 4; do
