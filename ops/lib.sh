@@ -13,7 +13,30 @@ loom_error() { printf 'loom: %s\n' "$*" >&2; exit 1; }
 LOOM_CALLER_UMASK=${LOOM_CALLER_UMASK:-$(umask)}
 export LOOM_CALLER_UMASK
 
+# The tools checkout can serve many consumers. Bind once before any child
+# changes cwd. A missing instance preserves existing unconfigured installations.
+loom_check_instance() {
+    local checkout=$1 instance=$1/.loom-instance path tracked
+    for path in "$instance" "$instance/state"; do
+        [[ ! -L $path && ( ! -e $path || -d $path ) ]] || loom_error "invalid instance directory: $path"
+    done
+    tracked=$(git -C "$checkout" ls-files -- .loom-instance) || loom_error 'cannot inspect instance paths'
+    [[ -z $tracked ]] || loom_error 'the instance directory contains tracked files'
+}
+
+loom_bind_instance() {
+    local checkout instance
+    [[ -z ${LOOM_STATE:-} ]] || return 0
+    checkout=$(git -C "${LOOM_REPO:-.}" rev-parse --show-toplevel 2>/dev/null) || return 0
+    instance=$checkout/.loom-instance
+    [[ -e $instance || -L $instance ]] || return 0
+    loom_check_instance "$checkout"
+    git -C "$checkout" check-ignore -q -- .loom-instance/ || loom_error 'add /.loom-instance/ to the consumer .gitignore'
+    export LOOM_STATE="$instance/state"
+}
+
 loom_init() {
+    loom_bind_instance
     umask 077
     LOOM_STATE=${LOOM_STATE:-$HOME/.loom}
     mkdir -p "$LOOM_STATE"
@@ -599,6 +622,14 @@ loom_compute_pick() {  # loom_compute_pick <host>...: first reachable host
     return 1
 }
 
+# A completed assignment can still hold a live Orca terminal. Keep the
+# assignment reserved for follow-ups until Loom records release or stop.
+loom_retained_worker() {
+    jq -e '.executor.kind == "orca" and .executor.state == "settled" and
+        .executor.released != true and
+        (.executor.kept_open == true or (.executor.terminal_state | IN("active","reclaimable","retained","release_pending","release_unknown")))' "$1" >/dev/null
+}
+
 # An assignment still occupying a worker slot: live, or dispatched and not yet
 # settled (an Orca pending record).
 loom_open() {  # loom_open <file>
@@ -639,9 +670,10 @@ loom_no_open_sibling() {  # <record>; caller holds the state lock
     for sibling in "$LOOM_STATE"/*.json; do
         [[ -f $sibling && $sibling != "$file" ]] || continue
         loom_validate "$sibling"
-        if jq -e --arg repo "$repo" --argjson ticket "$ticket" '.repo == $repo and .ticket == $ticket' "$sibling" >/dev/null &&
-            loom_open "$sibling"; then
-            loom_error "ticket already has an open assignment: ${sibling##*/}"
+        jq -e --arg repo "$repo" --argjson ticket "$ticket" '.repo == $repo and .ticket == $ticket' "$sibling" >/dev/null || continue
+        if loom_retained_worker "$sibling"; then
+            loom_error "reuse the retained worker with loom send $(basename "$sibling" .json) --subject TEXT"
         fi
+        ! loom_open "$sibling" || loom_error "ticket already has an open assignment: ${sibling##*/}"
     done
 }

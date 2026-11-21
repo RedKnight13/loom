@@ -344,6 +344,9 @@ _loom_workflow_raw() {
 loom_workflow_main() (
     set -euo pipefail
     umask 077
+    # shellcheck source=ops/lib.sh
+    source "$(loom_workflow_root)/lib.sh"
+    loom_bind_instance
     loom_workflow_load
     local command=${1:-} context='' request='' protocol='' id='' reviewed='' limit=1000 cursor=0 arg rc=0 args
     local _wf_context _wf_co _wf_binding _wf_pin _wf_plan _wf_exec _wf_workspace _wf_id _wf_task _wf_store _wf_dir _wf_tmp

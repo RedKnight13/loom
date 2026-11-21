@@ -40,7 +40,7 @@ scripts under `ops/` remain the mechanism; `ops/loom` is the contract.
 | `loom <verb> …` | The call. One JSON object on stdout, exit 0 iff `ok`. `version`, `accept`, `ignore`, `dispatch`, `launch`, `start`, `harvest`, `stop`, `release`, `watch`, `status`, `verify` (`--on HOST`), `collect`, `report`, `ack`, `detect`, `compute`, `capacity`, `hosts`, `show`, `read`, `abandon`, `keep-open`, `list`, `request`, `peek`, `inbox`, `send`, `ask`, `reply`, `gate`, `task`, `run`, `reference`, `worktree`, `repo`, `base-ref`, `automation`. See the specs. |
 | `ack.sh <id> "<why>"` | A person has dealt with this assignment: sets `.acked` once, refuses a live worker. Status drops the report row; history stays. |
 | `ticket.sh <consumer.toml> --short … --title … --scope … --out … --done … [--label NAME]… [--no-default-label]` | Renders the Mandate exactly from the template, proves dispatch's own parser accepts it, opens the issue with its labels. `loom-ready` is added by default when the repo has that label (#38). Ticket text is literal, never evaluated. `--dry-run` prints the body. |
-| `dispatch.sh <consumer.toml> <issue#>` | Reads the issue's Mandate via `gh`; reserves the ticket at dispatch and refuses another open assignment, including one not yet launched. Creates `<worktrees>/<short>.<attempt>` as a **private clone** (own `.git`, **no remote**, so it can commit but cannot push), on branch `<short>` at the default branch, with the consumer's git identity. Writes `WORK.md` (mandate + laws + how to report), excluded from git. Records the assignment. |
+| `dispatch.sh <consumer.toml> <issue#>` | Reads the issue's Mandate via `gh`; reserves the ticket at dispatch and refuses another open assignment, including one not yet launched. Creates a **private clone** in the configured worker pool (own `.git`, **no remote**, so it can commit but cannot push), on a task branch at the default branch, with the consumer's git identity. Writes `WORK.md` (mandate + laws + how to report), excluded from git. Records the assignment. |
 | `launch.sh <id> -- <cmd...>` | Runs the worker in its workdir with **no stdin** and its **own process group**; records PID + start time; logs to `$LOOM_STATE/<id>.log`. After positively observed process-group settlement, harvests the newest `state:` line the worker wrote **this launch** (older lines are skipped by offset). Settlement with no line → `failed / worker_exit_no_report (exit N)`. Unknown settlement retains the assignment. |
 | `watchdog.sh [--limit-min N]` | Local worker silent past N minutes (default 30) → verifies its identity and requests a **process-group kill**. Records `failed / watchdog_kill` only after observed settlement. A lost launcher can recover a matching group-completion receipt; disappearance alone never permits harvest. Unknown identity or settlement stays pending. Orca workers are surfaced for an owner decision, never signalled here. |
 | `heartbeat.sh --until <ID\|all> [--every SEC] [--limit-min N]` | The conductor's clock: runs the watchdog every SEC (default 60), prints only its actions, stops when the assignment (or all) has settled, then prints status. |
@@ -76,9 +76,14 @@ directory into `$LOOM_STATE/<id>.evidence/` and never commits it. It never
 writes `$LOOM_STATE`, never pushes (the clone has no remote), and never leaves
 its workdir. Everything else is the conductor's.
 
+A configured instance prefixes worker directory names, Orca workspace names and
+local worker branches with a worktree-specific identifier. The assignment ID
+stays `<short>.<attempt>` inside each instance. Use the branch recorded in the
+assignment for review and collection.
+
 ## State
 
-`$LOOM_STATE` (default `~/.loom`), conductor-only: one JSON record per
+`$LOOM_STATE` (configured worktree default `.loom-instance/state`, legacy default `~/.loom`), conductor-only: one JSON record per
 assignment plus its log. Writes take a lock with a unique owner claim. Stale recovery removes only that
 claim; a delayed contender cannot remove a replacement owner's claim. A live
 owner is waited on for `LOOM_LOCK_WAIT` seconds (default 10). Records are validated on every read;

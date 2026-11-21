@@ -134,7 +134,7 @@ inspect the complete envelope: exit 0 means ready prerequisites/offline drill,
 1 means blocked/failed, 2 means usage error. Calibration acceptance is always
 `not_run`. Review drift before explicitly recording again; checking never
 refreshes a baseline. Records are private, sanitized data under
-`${LOOM_STATE:-$HOME/.loom}/calibration/<key>.json`. Relative `LOOM_STATE`
+`calibration/<key>.json` in the active state directory (worktree default `.loom-instance/state`). Relative `LOOM_STATE`
 is resolved against invocation cwd. Existing state directories require mode
 0700 and proof files mode 0600; calibration never repairs permissions.
 

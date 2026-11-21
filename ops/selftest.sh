@@ -106,6 +106,84 @@ laws = [
 ]
 EOF
 
+# The same ticket can run in two linked worktrees, even with one worker pool.
+(
+    unset LOOM_STATE LOOM_REPO
+    export HOME="$scratch/instance-home"
+    mkdir -p "$HOME"
+    for tree in "$scratch/tree A" "$scratch/tree B"; do
+        git -C "$repo" worktree add -q --detach "$tree" "$base"
+        cd "$tree"
+        mkdir subdir
+        cd subdir
+        printf 'keep-me\n' > ../.gitignore
+        bash "$ops/setup-worktree.sh" >/dev/null
+        bash "$ops/setup-worktree.sh" >/dev/null
+        [[ $(grep -cFx '/.loom-instance/' ../.gitignore) == 1 ]] || fail 'setup duplicated its ignore rule'
+        grep -qxF keep-me ../.gitignore || fail 'setup changed unrelated ignore rules'
+        cp "$scratch/consumer.toml" ../.loom-instance/consumer.toml
+        git check-ignore -q ../.loom-instance/consumer.toml || fail 'private config is visible to Git'
+        bash "$ops/loom" dispatch --consumer ../.loom-instance/consumer.toml --issue 7 --executor local >/dev/null || fail 'worktree could not dispatch into the shared worker pool'
+        record=$tree/.loom-instance/state/fixture-task.1.json
+        [[ -f $record ]] || fail 'dispatch wrote outside the worktree state'
+        branch=$(jq -er '.branch // .short_name' "$record")
+        worker=$(jq -r .workdir "$record")
+        printf 'work for %s\n' "$tree" > "$worker/result"
+        git -C "$worker" add result
+        git -C "$worker" -c commit.gpgsign=false commit -qm result
+        bash "$ops/collect.sh" fixture-task.1 >/dev/null
+        [[ $(git -C "$tree" show "$branch:result") == "work for $tree" ]] || fail 'wrong worktree collected'
+        bash "$ops/loom" verify fixture-task.1 >/dev/null
+    done
+    # Represent an Orca worker whose task settled while its terminal stayed open.
+    jq '.executor = {kind:"orca",state:"settled",kept_open:true,dispatch:"kept"}' "$record" > "$scratch/retained"
+    mv "$scratch/retained" "$record"
+    printf 'workers = 1\n' >> ../.loom-instance/consumer.toml
+    if err=$(bash "$ops/dispatch.sh" ../.loom-instance/consumer.toml 7 2>&1); then fail 'retained ticket dispatched twice'; fi
+    [[ $err == *'loom send fixture-task.1 --subject'* ]] || fail 'reuse instruction missing'
+    if err=$(bash "$ops/dispatch.sh" ../.loom-instance/consumer.toml 8 2>&1); then fail 'retained worker bypassed cap'; fi
+    [[ $err == *'worker limit reached (workers=1)'* ]] || fail 'retained slot missing from cap'
+    cat > "$scratch/bin/release-fixture" <<'STUB'
+#!/usr/bin/env bash
+[[ $1 == orchestration && $2 == worker-release && $3 == --dispatch && $4 == kept ]] || exit 1
+jq -nc --arg d "${FIXTURE_DISPATCH:-$4}" --arg s "$FIXTURE_RELEASE" '{ok:true,result:{dispatchId:$d,state:$s}}'
+STUB
+    chmod +x "$scratch/bin/release-fixture"
+    for outcome in retained release_pending; do
+        if LOOM_ORCA="$scratch/bin/release-fixture" FIXTURE_RELEASE=$outcome bash "$ops/orca.sh" release fixture-task.1 >/dev/null 2>&1; then
+            fail 'unconfirmed release freed a worker slot'
+        fi
+        jq -e --arg s "$outcome" '.executor.terminal_state == $s and .executor.released != true' "$record" >/dev/null
+    done
+    if LOOM_ORCA="$scratch/bin/release-fixture" FIXTURE_DISPATCH=another FIXTURE_RELEASE=released bash "$ops/orca.sh" release fixture-task.1 >/dev/null 2>&1; then
+        fail 'release for a different worker freed the slot'
+    fi
+    LOOM_ORCA="$scratch/bin/release-fixture" FIXTURE_RELEASE=already_released bash "$ops/orca.sh" release fixture-task.1 >/dev/null
+    bash "$ops/dispatch.sh" ../.loom-instance/consumer.toml 8 >/dev/null || fail 'released worker still counted'
+    other="$scratch/tree A"
+    [[ $(jq -r .branch "$other/.loom-instance/state/fixture-task.1.json") != "$branch" ]] || fail 'shared collection branch'
+    mkdir "$other/.loom-instance/state/v2"
+    LOOM_REPO="$other" bash "$ops/loom" status > "$scratch/native-status" && fail 'missed the selected native state'
+    jq -e '.ok == false and (.fact | contains("context"))' "$scratch/native-status" >/dev/null
+    bash "$ops/loom" status | jq -e '.ok' >/dev/null || fail 'sibling native route leaked'
+    LOOM_STATE="$scratch/explicit" LOOM_REPO="$other" bash "$ops/loom" status | jq -e '.ok and .items == []' >/dev/null || fail 'explicit state override lost'
+    [[ ! -e $HOME/.loom && ! -e $scratch/explicit ]] || fail 'read-only state selection wrote to another store'
+    cd "$scratch"
+    # An unconfigured checkout still reads its original home state.
+    mkdir -p "$HOME/.loom"
+    printf 'invalid record\n' > "$HOME/.loom/broken.json"
+    if LOOM_REPO="$repo" bash "$ops/loom" status >/dev/null 2>&1; then fail 'legacy home state hidden'; fi
+    LOOM_REPO="$tree" bash "$ops/loom" status | jq -e .ok >/dev/null || fail 'home state leaked into worktree'
+    ln -s "$other/.loom-instance" "$repo/.loom-instance"
+    if LOOM_REPO="$repo" bash "$ops/setup-worktree.sh" >/dev/null 2>&1; then fail 'setup accepted linked instance'; fi
+    if LOOM_REPO="$repo" bash "$ops/loom" status >/dev/null 2>&1; then fail 'runtime accepted linked instance'; fi
+    rm "$repo/.loom-instance"
+    git -C "$repo" worktree remove --force "$other"
+    git -C "$repo" worktree remove --force "$tree"
+)
+pass 'linked worktrees isolate state, worker names, collection and native routing'
+[[ ${LOOM_SELFTEST_WORKTREE_ONLY:-0} != 1 ]] || exit 0
+
 dispatch() { bash "$ops/dispatch.sh" "$scratch/consumer.toml" 7; }
 dispatch_n() { bash "$ops/dispatch.sh" "$scratch/consumer.toml" "$1"; }
 within() {  # within <secs> <cmd...>: fail instead of hanging
@@ -954,7 +1032,7 @@ case "$1" in
                 echo '{"ok":true,"result":{"status":"stopped"}}' ;;
             worker-release)
                 if [[ ${ORCA_STUB_RELEASE:-ok} == fail ]]; then echo '{"ok":false}'; exit 1; fi
-                echo '{"ok":true,"result":{"released":true}}' ;;
+                jq -nc --arg d "$4" '{ok:true,result:{dispatchId:$d,state:"released"}}' ;;
             worker-show)
                 if [[ -f $GH_STATE/compact-$4 && " $* " != *' --full '* ]]; then
                     cat "$GH_STATE/compact-$4"; exit 0
@@ -1382,6 +1460,11 @@ EOF
     pass 'fresh durable exact-dispatch completion survives retained live terminal; incomplete, failed, working and compact proof refused'
     pass 'follow-up tracking, fail-closed harvest, identity-bound recovery and evidence preservation'
 
+    if err=$(dispatch 2>&1); then fail 'harvested retained worker allowed a duplicate'; fi
+    [[ $err == *"loom send $ido --subject"* ]] || fail 'missing retained assignment address'
+    bash "$ops/collect.sh" "$ido" >/dev/null
+    bash "$ops/orca.sh" release "$ido" >/dev/null
+
     # Unversioned configs inside a repo must produce usable records (gap #68).
     mkdir -p "$scratch/cfg/local"
     printf 'ignored.toml\n' > "$scratch/cfg/local/.gitignore"
@@ -1395,6 +1478,8 @@ EOF
         jq -e '.ok == true' <<< "$obj" >/dev/null || fail "show failed for $config_name config record"
         pid=$(cat "$GH_STATE/disp-$idc.pid"); for _ in $(seq 1 50); do kill -0 "$pid" 2>/dev/null || break; sleep 0.1; done
         bash "$ops/orca.sh" harvest "$idc" >/dev/null || fail "harvest failed for $config_name config record"
+        bash "$ops/collect.sh" "$idc" >/dev/null
+        bash "$ops/orca.sh" release "$idc" >/dev/null
     done
     pass 'ignored and untracked configs inside a repo record null and start/show accept them'
 
@@ -1416,6 +1501,10 @@ EOF
     bash "$ops/ack.sh" "$ids" 'owner retired this drill' >/dev/null || fail 'ack failed'
     ! grep -q "^$ids"$'\t'"failed"$'\t' <<< "$(bash "$ops/status.sh")" || fail 'acked failure still in status'
     bash "$ops/ack.sh" "$ids" 'again' >/dev/null 2>&1 && fail 'second ack accepted'
+
+    jq -e '.executor.terminal_state == "retained" and .executor.released == false' "$(rec "$ids")" >/dev/null || fail 'stop discarded terminal ownership'
+    dispatch >/dev/null 2>&1 && fail 'stop let a replacement take a retained slot'
+    bash "$ops/orca.sh" release "$ids" >/dev/null || fail 'could not release stopped worker'
 
     # a failed start is recorded, never retried
     out=$(dispatch); idf=${out##*$'\n'}
@@ -1567,6 +1656,7 @@ VERBS
     bash "$ops/collect.sh" "$idp" >/dev/null || fail 'remote collect failed'
     git -C "$LOOM_REPO" show-ref --verify --quiet "refs/heads/orca/$idp" || fail 'remote branch not fetched home'
 
+    bash "$ops/orca.sh" release "$idp" >/dev/null
     export ORCA_STUB_WORKER="$scratch/bin/w-hang" GRANDCHILD="$scratch/orca-grandchild"
     out=$(bash "$ops/dispatch.sh" "$scratch/placement.toml" 7); ida=${out##*$'\n'}
     bash "$ops/orca.sh" start "$ida" >/dev/null || fail 'start for the active-harvest case'

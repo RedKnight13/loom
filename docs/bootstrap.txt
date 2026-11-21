@@ -6,6 +6,9 @@ asking; ask only for consequential choices that remain unresolved. A pasted
 prompt is not proof of dependable operation.
 
 1. Establish capabilities and scope.
+   From the intended consumer worktree, capture and export its root before
+   changing directories: export LOOM_REPO="$(git rev-parse --show-toplevel)".
+   Keep this binding for calls from the tools checkout.
    - Inspect the current project, its instruction files, repository remotes,
      existing Loom checkout/configuration, trusted checks and tool choices.
      Preserve existing files and unrelated changes; do not reset, clean,
@@ -61,6 +64,12 @@ prompt is not proof of dependable operation.
    bash "$LOOM_TOOLS/ops/loom" below.
 
 4. Resolve consumer configuration.
+   Check existing assignments and explicit LOOM_STATE before switching an
+   existing installation. Finish active work in its original store or retain
+   that store explicitly. For worktree isolation leave LOOM_STATE unset.
+   Run bash "$LOOM_TOOLS/ops/setup-worktree.sh" with LOOM_REPO bound. It adds
+   /.loom-instance/ to the consumer's root .gitignore and reserves a private
+   directory. Run setup separately for each worktree that will use Loom.
    Reuse an existing config when correct. Infer candidates from repository
    remotes, project instructions and CI, but do not invent an owner's decision
    or treat an arbitrary shell command as trusted. Ask only for unresolved
@@ -78,9 +87,9 @@ prompt is not proof of dependable operation.
    command you launch. Report a choice the owner leaves open as unset; a
    suggestion is not permission to launch that many workers, and recommendations
    must still propose explicit bounds.
-   Create or narrowly update consumers/<name>.toml from consumers/example.toml
-   only within authorized scope; preserve unrelated values. Private configs
-   there are ignored, except the tracked examples. A tracked consumer config
+   Set FILE="$LOOM_REPO/.loom-instance/consumer.toml". Reuse this config or
+   copy approved settings from a previous config or consumers/example.toml in
+   the tools checkout. Fill in the resolved values and preserve unrelated ones. A tracked consumer config
    must be committed before calibration or dispatch; leave that to its
    authorized conductor.
    This standard setup uses the shipped schema-1 consumer flow. The native
@@ -94,7 +103,7 @@ prompt is not proof of dependable operation.
    per call, bind them in that invocation or explicitly source an approved
    private setup file; do not assume they persist across tool calls.
 
-5. Inspect structural wiring and save redacted setup evidence privately under .loom/.
+5. Inspect structural wiring and save redacted setup evidence privately under .loom-instance/.
    Check `gh auth status` and `gh repo view <owner/name> --json defaultBranchRef,name`
    without copying credentials or identity into shared documentation. Check the
    consumer checkout matches that repository and trusted checks are available.
@@ -256,8 +265,8 @@ prompt is not proof of dependable operation.
    Recording performs fixed offline fixture work, never consumer checks,
    compute_setup, installation or real worker launch. --check does no writes,
    locks or drill rerun; a passed drill there refers to the recorded drill.
-   Sanitized baselines live under ${LOOM_STATE:-$HOME/.loom}/calibration/<key>.json,
-   not automatically in the project's .loom/ folder. Keep state private; never
+   Sanitized baselines live in the active state's calibration/<key>.json.
+   Configured worktrees use .loom-instance/state unless LOOM_STATE is set. Keep state private; never
    repair permissions, remove locks or overwrite evidence merely to pass.
    At session entry and immediately before every delegation invoke --check
    again, including after context loss, tool reconnect or dependency changes.
@@ -272,6 +281,10 @@ prompt is not proof of dependable operation.
    connectivity/check observations after changes even when --check is ready.
    The agent must follow this protocol. Existing dispatch/start/launch commands
    are not automatically guarded; a gap remains between check and delegation.
+
+   For a quality fix on an existing Orca ticket, reuse its assignment with
+   bash "$LOOM_TOOLS/ops/loom" send ID --subject TEXT --body TEXT. Harvest,
+   verify and collect the revision. Release the worker after review finishes.
 
 9. Render a ticket without opening an issue:
      bash "$LOOM_TOOLS/ops/ticket.sh" "$FILE" \

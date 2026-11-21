@@ -94,6 +94,7 @@ status_object() {
 # Legacy assignment IDs always remain on their original handler.
 # shellcheck source=ops/workflow.sh
 source "$ops/workflow.sh"
+loom_bind_instance
 if loom_workflow_selected "$cmd" "$@"; then
     native_err=$(mktemp)
     native_rc=0

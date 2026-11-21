@@ -69,7 +69,11 @@ shellcheck -x ops/*.sh ops/loom
 Call `~/loom/ops/loom` by path, or add `~/loom/ops` to your `PATH`.
 The longer mutation suite is a **contributor gate**, not a routine installation
 step. Setup writes configuration and workspace files within your authorization;
-private runtime records default to `~/.loom` (`LOOM_STATE` overrides it).
+each configured Git worktree has its own ignored `.loom-instance/` directory.
+A single tools checkout can serve all of them. From the consumer worktree, run
+`bash ~/loom/ops/setup-worktree.sh` to reserve its private config and state
+location. Existing home-state assignments remain available with
+`LOOM_STATE="$HOME/.loom"`.
 
 Follow [the setup guide](docs/setup.md) to create your consumer config and install
 the [session checklist](templates/LOOM_SESSION.md) in the project's supported
@@ -77,9 +81,9 @@ instruction file. Calibration records a fixed offline drill and checks for wirin
 drift at session entry and before delegation:
 
 ```bash
-export LOOM_REPO=~/src/your-repo
-loom calibrate --consumer /path/to/consumer.toml
-loom calibrate --consumer /path/to/consumer.toml --check
+cd ~/src/your-repo
+loom calibrate --consumer .loom-instance/consumer.toml
+loom calibrate --consumer .loom-instance/consumer.toml --check
 ```
 
 Read the complete response. Ready calibration means the recorded wiring and

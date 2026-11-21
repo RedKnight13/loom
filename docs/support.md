@@ -114,7 +114,7 @@ execution. No additional TOML keys are required.
 
 Ready means current prerequisites and offline drill only; acceptance is always
 `not_run`. Exit 0 is ready, 1 is blocked/failed and 2 is usage failure. Sanitized
-private baselines are under `${LOOM_STATE:-$HOME/.loom}/calibration/<key>.json`.
+private baselines are under `calibration/<key>.json` in the active state directory (worktree default `.loom-instance/state`).
 Fingerprint changes require review before explicit re-recording; check never
 refreshes evidence. A failed record preserves the previous baseline. Observable changes during
 record/check are refused; adversarial filesystem races remain outside the

@@ -23,11 +23,17 @@ customizations. Reconcile duplicate/malformed markers instead of appending.
 
 Read this project's consumer config, laws and [session checklist](templates/LOOM_SESSION.md).
 Set `LOOM_TOOLS` to the absolute trusted Loom checkout path. Export `LOOM_REPO`
-as the intended consumer checkout path. Set `FILE` to the absolute approved
-consumer config path before using the commands below. If the shell tool starts
+from the current consumer worktree with `export LOOM_REPO="$(git rev-parse --show-toplevel)"`.
+Use `FILE="$LOOM_REPO/.loom-instance/consumer.toml"` for a worktree setup.
+Leave `LOOM_STATE` unset for worktree selection. For earlier installations,
+use their approved config and state paths. If the shell tool starts
 a fresh shell per call, bind these variables in the same invocation or explicitly
 source an approved private setup file. Do not assume bindings persist across
 tool calls or sessions.
+
+For review feedback or a quality fix on an existing Orca ticket, continue its
+assignment with `loom send ID --subject TEXT --body TEXT`. Use its recorded
+worktree, harvest and verify the revision, then collect and release when done.
 
 At every session entry and immediately before every delegation, run through an
 available shell execution tool:
@@ -146,10 +152,10 @@ TOML keys, model calls, scheduler, telemetry or automatic enforcement.
 `--check` compares without writes, locks or drill execution. Exit 1 means
 blocked/failed observation; exit 2 means invalid usage. A successful record
 runs only the fixed isolated offline drill and stores sanitized schema-1 data
-under `${LOOM_STATE:-$HOME/.loom}/calibration/<key>.json`; a failed record keeps
+under `calibration/<key>.json` in the active state directory (worktree default `.loom-instance/state`); a failed record keeps
 the previous baseline. Do not delete locks, chmod state or repair unrelated
 configuration simply to make a check pass. Separate redacted setup evidence
-may live under project `.loom/`, subject to its privacy conventions.
+may live under project `.loom-instance/`, subject to its privacy conventions.
 
 New clone/config locations need their own baseline. Changed source, consumer,
 bridge, executable bytes/resolution or selected executor require review;
